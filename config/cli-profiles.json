@@ -1,0 +1,44 @@
+[
+  {
+    "id": "claude-code",
+    "name": "Claude Code",
+    "command": "claude",
+    "args": [],
+    "install": "npm i -g @anthropic-ai/claude-code"
+  },
+  {
+    "id": "kimi-cli",
+    "name": "Kimi Code CLI",
+    "command": "kimi",
+    "args": [],
+    "install": "npm i -g @moonshot-ai/kimi-code"
+  },
+  {
+    "id": "codex",
+    "name": "Codex CLI",
+    "command": "codex",
+    "args": [],
+    "install": "npm i -g @openai/codex"
+  },
+  {
+    "id": "gemini-cli",
+    "name": "Gemini CLI",
+    "command": "gemini",
+    "args": [],
+    "install": "npm i -g @google/gemini-cli"
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode",
+    "command": "opencode",
+    "args": [],
+    "install": "npm i -g opencode-ai"
+  },
+  {
+    "id": "shell",
+    "name": "Plain Shell",
+    "command": "",
+    "args": [],
+    "install": ""
+  }
+]

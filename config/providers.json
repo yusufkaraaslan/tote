@@ -1,0 +1,60 @@
+[
+  {
+    "id": "kimi",
+    "name": "Kimi",
+    "url": "https://www.kimi.com",
+    "color": "#1c64f2"
+  },
+  {
+    "id": "claude",
+    "name": "Claude",
+    "url": "https://claude.ai",
+    "color": "#d97757"
+  },
+  {
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "url": "https://chatgpt.com",
+    "color": "#10a37f"
+  },
+  {
+    "id": "gemini",
+    "name": "Gemini",
+    "url": "https://gemini.google.com",
+    "color": "#4285f4"
+  },
+  {
+    "id": "minimax",
+    "name": "MiniMax",
+    "url": "https://agent.minimax.io",
+    "color": "#ff5a5f"
+  },
+  {
+    "id": "zai",
+    "name": "Z.ai",
+    "url": "https://chat.z.ai",
+    "color": "#8b5cf6"
+  },
+  {
+    "id": "qwen",
+    "name": "Qwen",
+    "url": "https://chat.qwen.ai",
+    "color": "#615ced"
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "url": "https://chat.deepseek.com",
+    "color": "#4d6bfe"
+  },
+  {
+    "id": "dsh-local",
+    "name": "DSH Web (local)",
+    "url": "http://127.0.0.1:3080",
+    "color": "#0ea5e9",
+    "local": {
+      "startCommand": "npx -y @deepseek-ai/dsh web",
+      "note": "DeepSeek Harness local Web UI. Tote auto-starts it on first click."
+    }
+  }
+]

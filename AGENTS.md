@@ -1,0 +1,16 @@
+# Tote — agent notes
+
+Electron hub app: web LLM tabs + shared workspace folder + docked CLI-agent terminals.
+
+- Run: `npm install && npm start` (postinstall copies xterm assets to src/renderer/vendor).
+- Main process: `src/main/` (sessions per provider partition, downloads → ACTIVE workspace's inbox/, Downloads-folder bridge for native apps, app launcher, IPC, node-pty). Setup wizard logic lives in `src/main/installer.js` (system checks, Claude Desktop MCP binding, MCP snippet) + the `#wizard-*` section of `src/renderer/app.js`.
+- CLI profiles carry an `install` command (npm -g) used by the wizard; keep package names accurate when adding profiles.
+- Workspaces are two-level: one `global` + project spaces in `config/workspaces.json`. All file ops resolve the ACTIVE space at call time via `WorkspaceManager.getRoot()` — never cache the root.
+- Renderer: `src/renderer/` vanilla JS, no bundler. Bridge surface = `window.tote` (see `src/preload/preload.js`).
+- Providers, CLI profiles, workspaces and apps are **data**, not code: defaults in `config/*.json`, runtime copies in userData. Prefer adding entries there over hardcoding.
+- Never give the renderer `nodeIntegration`. New capabilities go through ipcMain handlers in `main.js` + preload wrappers.
+- Keep all workspace file access inside `WorkspaceManager.resolveSafe` (path-escape guard).
+- Terminals must stay real PTYs (node-pty) — piping through child_process breaks TUI agents. node-pty's prebuilt `spawn-helper` must be executable (postinstall chmods it; asarUnpack for packaged builds) or spawns fail with `posix_spawnp failed`.
+- Webview popups (OAuth) must open in-app so they share the provider partition; only non-http schemes go to the system browser. UA = Electron's real UA minus Electron/Tote tokens — never a hardcoded foreign UA.
+- Views are per-workspace: web tabs are instances stored in `views.json` (`+` menu opens providers, duplicates allowed), terminals tagged with `wsId`; `showWorkspaceViews()` restores a space's setup on switch.
+- Layout: workspace tab strip on top; files + terminal are dockable panels (left/bottom/right) driven by the active workspace's `views.json` layout via `applyLayout()` in app.js (layout is per space, not global). Any splitter drag must toggle `body.dragging` so webviews don't eat mouse events. Fit xterm before `ptySpawn` and `ptyResize` after, or TUIs render at 80×24.

@@ -1,0 +1,10 @@
+{
+  "active": "global",
+  "list": [
+    {
+      "id": "global",
+      "name": "Global",
+      "path": "~/tote/workspace"
+    }
+  ]
+}

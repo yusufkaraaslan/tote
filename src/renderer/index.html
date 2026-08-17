@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+  <title>Tote</title>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- workspace strip: the ACTIVE space is the routing context for everything below -->
+    <div id="ws-bar">
+      <div id="ws-tabs"></div>
+      <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
+      <div class="ws-actions">
+        <button id="btn-files" class="toggle" title="Show / hide files panel"><span class="ico">▤</span>files</button>
+        <button id="btn-terminal" class="toggle" title="Show / hide terminal panel (Ctrl+`)"><span class="ico">▥</span>terminal</button>
+        <span class="sep"></span>
+        <div id="apps-wrap">
+          <button id="btn-apps" title="Launch a native app into the active workspace"><span class="ico">⧉</span>apps</button>
+          <div id="apps-menu" class="hidden"></div>
+        </div>
+        <button id="btn-settings" title="Settings"><span class="ico">⚙</span></button>
+      </div>
+    </div>
+
+    <div id="main">
+      <div id="dock-left" class="dock dock-col hidden">
+        <!-- Files panel: dockable left / bottom / right -->
+        <aside id="files-panel" class="panel">
+          <div class="sidebar-header sub">
+            <span class="sidebar-title">FILES</span>
+            <div class="sidebar-actions">
+              <button id="btn-new-file" title="New file">+file</button>
+              <button id="btn-new-folder" title="New folder">+dir</button>
+              <button id="btn-refresh" title="Refresh tree">↻</button>
+              <button class="dock-menu-btn" data-panel="files" title="Panel: dock / hide">≡</button>
+            </div>
+          </div>
+          <div id="workspace-root" title=""></div>
+          <div id="tree"></div>
+        </aside>
+      </div>
+      <div id="split-left" class="splitter v hidden" data-side="left"></div>
+
+      <div id="center">
+        <div id="tabbar">
+          <div id="tabs"></div>
+          <div id="tab-add-wrap">
+            <button id="btn-add-tab" class="plus" title="Open a web LLM in this workspace">+</button>
+            <div id="tab-add-menu" class="hidden"></div>
+          </div>
+        </div>
+        <div id="webviews">
+          <div id="welcome">
+            <h1>Tote</h1>
+            <p>Pick a workspace on the top strip, then fire any frontend against it.</p>
+            <p>Web tabs download straight into <code>&lt;workspace&gt;/inbox/&lt;provider&gt;/</code> —
+            resume the work in a CLI terminal.</p>
+            <p class="dim">Native apps launched from <b>apps</b> keep their own perks; files they save
+            to Downloads are bridged into the active workspace automatically.</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="split-right" class="splitter v hidden" data-side="right"></div>
+      <div id="dock-right" class="dock dock-col hidden"></div>
+    </div>
+
+    <div id="split-bottom" class="splitter h hidden" data-side="bottom"></div>
+    <div id="dock-bottom" class="dock dock-row hidden">
+      <!-- Terminal panel: dockable left / bottom / right -->
+      <div id="terminal-panel" class="panel hidden">
+        <div id="terminal-bar">
+          <div id="term-tabs"></div>
+          <div id="term-new">
+            <button id="btn-new-term" class="plus" title="New agent terminal in this workspace">+</button>
+            <div id="term-menu" class="hidden"></div>
+          </div>
+          <button class="dock-menu-btn" data-panel="terminal" title="Panel: dock / hide">≡</button>
+        </div>
+        <div id="term-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- inline file editor -->
+  <div id="editor-modal" class="modal hidden">
+    <div class="modal-card editor-card">
+      <div class="modal-title" id="editor-title">file</div>
+      <textarea id="editor-text" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="editor-cancel">cancel</button>
+        <button id="editor-save" class="primary">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- settings -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-card settings-card">
+      <div class="modal-title">Settings</div>
+      <h3>Web providers</h3>
+      <div id="settings-providers"></div>
+      <div class="add-row">
+        <input id="np-name" placeholder="Name" />
+        <input id="np-url" placeholder="https://..." />
+        <button id="np-add">add</button>
+      </div>
+      <h3>Native apps</h3>
+      <div id="settings-apps"></div>
+      <div class="add-row">
+        <input id="na-name" placeholder="App name (e.g. Kimi)" />
+        <button id="na-add">pick binary &amp; add</button>
+      </div>
+      <h3>Behavior</h3>
+      <label class="settings-check">
+        <input type="checkbox" id="set-bridge" />
+        Move files saved to system Downloads into the active workspace inbox
+      </label>
+      <h3>CLI profiles</h3>
+      <div id="settings-clis"></div>
+      <div class="add-row">
+        <input id="nc-name" placeholder="Name" />
+        <input id="nc-cmd" placeholder="command (e.g. claude)" />
+        <button id="nc-add">add</button>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-run-wizard">run setup wizard</button>
+        <button id="btn-open-config">open config folder</button>
+        <button id="btn-settings-close" class="primary">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- generic input prompt (Electron has no window.prompt) -->
+  <div id="input-modal" class="modal hidden">
+    <div class="modal-card input-card">
+      <div class="modal-title" id="input-title">Name</div>
+      <input id="input-field" />
+      <div class="modal-actions">
+        <button id="input-cancel">cancel</button>
+        <button id="input-ok" class="primary">ok</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- first-run setup wizard -->
+  <div id="wizard-modal" class="modal hidden">
+    <div class="modal-card wizard-card">
+      <div class="modal-title">Tote setup</div>
+      <div id="wizard-steps">
+        <div class="wz-dot" data-step="0">system</div>
+        <div class="wz-dot" data-step="1">cli agents</div>
+        <div class="wz-dot" data-step="2">connections</div>
+        <div class="wz-dot" data-step="3">spaces</div>
+        <div class="wz-dot" data-step="4">done</div>
+      </div>
+
+      <div id="wizard-body">
+        <div class="wz-page" data-page="0">
+          <p class="wz-hint">Tote itself needs Node.js and npm (also used to install CLI
+          agents), git for project spaces, and a working terminal layer.</p>
+          <div id="wz-system"></div>
+          <button id="wz-recheck">re-check</button>
+        </div>
+
+        <div class="wz-page hidden" data-page="1">
+          <p class="wz-hint">Install the agents you want. Each install runs live in the
+          terminal below — watch it, skip it, or re-run later from this wizard.</p>
+          <div id="wz-clis"></div>
+          <div id="wz-term"></div>
+        </div>
+
+        <div class="wz-page hidden" data-page="2">
+          <div id="wz-connections"></div>
+          <p class="wz-hint">For any other MCP-capable app (Cursor, Cherry Studio, Kimi Code
+          via <code>/mcp-config</code>…), paste this snippet into its MCP config to mount the
+          active workspace:</p>
+          <textarea id="wz-snippet" readonly spellcheck="false"></textarea>
+          <button id="wz-copy-snippet">copy snippet</button>
+        </div>
+
+        <div class="wz-page hidden" data-page="3">
+          <p class="wz-hint">Your spaces. <b>Global</b> is the default; add one space per
+          project. The active space receives all downloads and is where new terminals start.</p>
+          <div id="wz-spaces"></div>
+          <button id="wz-add-space">+ add workspace</button>
+        </div>
+
+        <div class="wz-page hidden" data-page="4">
+          <p class="wz-hint">All set. Typical flow: pick a space → research in a web tab →
+          download (lands in the space's inbox) → resume in a CLI terminal
+          (<code>claude -c</code> / <code>kimi -C</code> continue their last session).</p>
+          <label class="settings-check">
+            <input type="checkbox" id="wz-dont-show" checked />
+            don't show this wizard on startup (reopen anytime: settings → run setup wizard)
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="wz-back">back</button>
+        <button id="wz-next" class="primary">next</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="context-menu" class="hidden"></div>
+  <div id="toasts"></div>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

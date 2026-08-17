@@ -15,21 +15,6 @@ native app, or CLI agent) works against *that folder*, and every file that lands
 to the right place. Research in a web tab, download, resume in Claude Code — no manual
 file shuffling.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ [◈ Global] [◇ nexus-core] +      [▤ files] [▥ terminal] ⧉ apps ⚙ │  ← workspace strip
-├─────────────────┬──────────────────────────────────────────┤
-│  FILES       ≡  │  [Claude #1] [Claude #2] [Kimi] +        │
-│  tree of the    │                                          │
-│  ACTIVE space   │      active web tab (persistent login,   │
-│  (editor,       │      downloads → <space>/inbox/)         │
-│  inbox/)        │                                          │
-├─────────────────┴──────────────────────────────────────────┤
-│  [Claude Code] [kimi]                              +  ≡    │
-└────────────────────────────────────────────────────────────┘
-Files and terminal panels dock left / bottom / right (≡ menu) and resize by dragging.
-```
-
 ## The workflow it exists for
 
 1. Click your project space on the top strip (e.g. `nexus-core`).

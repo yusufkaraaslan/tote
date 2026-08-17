@@ -45,12 +45,13 @@ Files and terminal panels dock left / bottom / right (≡ menu) and resize by dr
 
 ## Screenshots
 
-| | |
+| Agents docked at the bottom (Claude Code + OpenCode) | A *research* space: `inbox/<provider>/` collects downloads, Kimi tab open |
 |---|---|
 | ![Two CLI agents docked at the bottom](docs/screenshots/agents-bottom.png) | ![A research space: inbox per provider, Kimi tab](docs/screenshots/research-space.png) |
-| Agents docked at the bottom (Claude Code + OpenCode) in the same space | A *research* space: `inbox/<provider>/` collects downloads, Kimi tab open |
-| ![First-run setup wizard](docs/screenshots/wizard.png) | |
-| First-run setup wizard: system checks, CLI installs, connections, spaces | |
+
+First-run setup wizard — system checks, one-click CLI installs, connections, spaces:
+
+![First-run setup wizard](docs/screenshots/wizard.png)
 
 ## Quick start
 

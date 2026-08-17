@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents } = req
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, execFileSync } = require('child_process');
 const { ConfigStore } = require('./config');
 const { WorkspaceManager } = require('./workspace');
 const { PtyManager } = require('./ptyManager');
@@ -49,6 +49,43 @@ function migrateFromOmniHub() {
     }
   } catch (e) {
     console.error('migration from OmniHub failed:', e.message);
+  }
+}
+
+// --- login-shell PATH ------------------------------------------------------
+// A GUI launch (Finder, Dock, .desktop entry) hands the app a minimal PATH —
+// /usr/bin:/bin:/usr/sbin:/sbin on macOS — so npm, git and any CLI behind a
+// version manager are invisible to everything we exec from here: the wizard's
+// system check reports them missing, `cli:check` marks every profile
+// uninstalled, and local services fail to start. Read the real PATH from the
+// user's login shell once and adopt it. Agent terminals don't rely on this —
+// ptyManager gives each one its own login shell so per-shell setups stay live.
+function adoptLoginShellPath() {
+  if (process.platform === 'win32') return;
+  const shell = process.env.SHELL || '/bin/bash';
+  const mark = '__TOTE_PATH__';
+  try {
+    // -i so the interactive rc file (where fnm/nvm/asdf hook in) is sourced;
+    // markers because rc files are free to print banners around our output.
+    const out = execFileSync(shell, ['-l', '-i', '-c', `printf '${mark}%s${mark}' "$PATH"`], {
+      stdio: ['ignore', 'pipe', 'ignore'], // stdin closed: an rc file that reads gets EOF, not a hang
+      timeout: 5000,
+      encoding: 'utf8',
+    });
+    const found = out.split(mark)[1];
+    if (!found) return;
+    // Login shell wins on order, but keep anything it didn't mention.
+    const seen = new Set();
+    const merged = [];
+    for (const dir of [...found.split(':'), ...(process.env.PATH || '').split(':')]) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir);
+        merged.push(dir);
+      }
+    }
+    process.env.PATH = merged.join(':');
+  } catch (e) {
+    console.error('could not read PATH from login shell:', e.message);
   }
 }
 
@@ -499,6 +536,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     migrateFromOmniHub();
+    adoptLoginShellPath();
     configStore = new ConfigStore(app);
     workspace = new WorkspaceManager(configStore);
     ptys = new PtyManager();

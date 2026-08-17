@@ -8,6 +8,38 @@ try {
   ptyLoadError = e.message;
 }
 
+// Single-quote a word for the shell: end the quote, escape the quote, reopen.
+function shq(word) {
+  return `'${String(word).replace(/'/g, `'\\''`)}'`;
+}
+
+// What to actually hand pty.spawn() for a CLI profile.
+//
+// A GUI-launched app inherits a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin on
+// macOS), so exec'ing `codex` or `claude` directly fails with posix_spawnp on
+// every install that puts its binaries behind a version manager (fnm, nvm,
+// asdf, volta) or in ~/.local/bin. Going through a login shell gives each
+// terminal the same environment the user's own terminal has. It has to be
+// resolved per terminal rather than captured once, because setups like fnm
+// build their bin dir per shell and can switch node version by directory.
+function shellCommand(profile) {
+  const args = profile.args || [];
+  // Windows has no login-shell concept and PowerShell already starts with the
+  // user's full PATH, so keep exec'ing directly there.
+  if (process.platform === 'win32') {
+    return { file: profile.command || 'powershell.exe', args };
+  }
+  const shell = process.env.SHELL || '/bin/bash';
+  // -l for the profile files, -i so the interactive rc file (where fnm/nvm/asdf
+  // hook in) is sourced too.
+  if (!profile.command) return { file: shell, args: ['-l', '-i'] }; // "user's default shell"
+  // exec replaces the shell, so the agent ends up owning the PTY directly:
+  // signals, exit code and TUI repaint behave exactly as before, and no prompt
+  // is ever drawn.
+  const line = 'exec ' + [profile.command, ...args].map(shq).join(' ');
+  return { file: shell, args: ['-l', '-i', '-c', line] };
+}
+
 class PtyManager {
   constructor() {
     this.sessions = new Map();
@@ -22,11 +54,8 @@ class PtyManager {
     if (!pty) {
       throw new Error('node-pty failed to load: ' + ptyLoadError);
     }
-    const cmd =
-      profile.command ||
-      (process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash');
-    const args = profile.args || [];
-    const proc = pty.spawn(cmd, args, {
+    const { file, args } = shellCommand(profile);
+    const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,

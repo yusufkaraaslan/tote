@@ -70,7 +70,9 @@ Upgrading from an install named **OmniHub**? Quit it first, then start Tote — 
 config, logins and Claude Desktop binding are migrated automatically on first launch.
 
 Troubleshooting: if terminals fail with `posix_spawnp failed`, run `npm install` again
-(the postinstall step restores the exec bit on node-pty's `spawn-helper`). Right-click a
+(the postinstall step restores the exec bit on node-pty's `spawn-helper`). Agent terminals
+run through your login shell, so a CLI that works in your own terminal works here too —
+including ones installed via fnm/nvm/asdf, which a desktop app otherwise can't see. Right-click a
 web tab for **reload** / **close**.
 
 ### Build real installers

@@ -5,3 +5,4 @@ src/renderer/vendor/
 *.log
 .DS_Store
 .remember/
+inbox/

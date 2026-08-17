@@ -449,6 +449,7 @@ webview.provider-view.active { display: flex; }
 .settings-row:hover { background: #161d2e; }
 .settings-row .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-row .sub { color: #5c6a8c; font-size: 11px; }
+.settings-row .glyph { color: #9aa7c0; font-size: 12px; }
 .add-row { display: flex; gap: 6px; }
 .add-row input { flex: 1; min-width: 0; }
 .input-card { width: 380px; }

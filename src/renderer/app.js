@@ -78,6 +78,8 @@ function renderWorkspaceSwitcher() {
       menu.innerHTML = '';
       menu.appendChild(ctxItem('open folder', () => tote.openPath('.')));
       menu.appendChild(ctxItem('copy path', () => navigator.clipboard.writeText(w.path)));
+      menu.appendChild(ctxItem('rename…', () => renameWorkspace(w)));
+      menu.appendChild(ctxItem('change folder…', () => changeWorkspaceFolder(w)));
       menu.appendChild(ctxItem('remove workspace (keeps files on disk)', () => removeWorkspace(w), true));
       menu.style.left = e.clientX + 'px';
       menu.style.top = e.clientY + 'px';
@@ -122,17 +124,52 @@ async function removeWorkspace(ws) {
   }
 }
 
-$('#btn-add-ws').onclick = async () => {
+async function renameWorkspace(ws) {
+  const name = await askInput('Rename workspace', ws.name);
+  if (!name || name === ws.name) return false;
+  try {
+    state.workspaces = await tote.renameWorkspace(ws.id, name);
+    renderWorkspaceSwitcher();
+    toast('Workspace renamed to "' + name + '".', 'success');
+    return true;
+  } catch (e) {
+    toast(e.message, 'error');
+    return false;
+  }
+}
+
+// Re-point a space at another folder (main opens a picker). Nothing on disk
+// moves; already-open terminals keep their old cwd.
+async function changeWorkspaceFolder(ws) {
+  try {
+    const res = await tote.setWorkspacePath(ws.id);
+    if (!res) return false; // canceled
+    state.workspaces = res;
+    renderWorkspaceSwitcher();
+    if (ws.id === state.workspaces.active) await refreshTree();
+    toast('Workspace "' + ws.name + '" now points at ' + activeWorkspaceById(ws.id).path, 'success');
+    return true;
+  } catch (e) {
+    toast(e.message, 'error');
+    return false;
+  }
+}
+const activeWorkspaceById = (id) => state.workspaces.list.find((w) => w.id === id) || {};
+
+async function addWorkspace() {
   const name = await askInput('New workspace name (e.g. nexus-core)');
-  if (!name) return;
+  if (!name) return false;
   const res = await tote.addWorkspace(name); // main opens a folder picker
-  if (!res) return; // canceled
+  if (!res) return false; // canceled
   state.workspaces = res;
   renderWorkspaceSwitcher();
   showWorkspaceViews();
   await refreshTree();
   toast('Workspace "' + name + '" added and activated.', 'success');
-};
+  return true;
+}
+
+$('#btn-add-ws').onclick = addWorkspace;
 
 /* ---------------- web tabs (per workspace) ----------------
  * A workspace owns a list of tab instances (several of the same provider are
@@ -938,6 +975,37 @@ addEventListener('resize', fitActiveTerm);
 
 /* ---------------- settings ---------------- */
 function renderSettings() {
+  // workspaces (spaces)
+  const wHost = $('#settings-workspaces');
+  wHost.innerHTML = '';
+  for (const w of state.workspaces.list) {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    const glyph = document.createElement('span');
+    glyph.className = 'glyph';
+    glyph.textContent = w.id === 'global' ? '◈' : '◇';
+    row.appendChild(glyph);
+    const grow = document.createElement('span');
+    grow.className = 'grow';
+    grow.textContent = w.name + (w.id === state.workspaces.active ? ' (active)' : '') + '  ';
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = w.path;
+    grow.appendChild(sub);
+    grow.title = w.path;
+    row.appendChild(grow);
+    const btn = (label, fn) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = async () => { await fn(); renderSettings(); };
+      row.appendChild(b);
+    };
+    btn('rename', () => renameWorkspace(w));
+    btn('folder', () => changeWorkspaceFolder(w));
+    if (state.workspaces.list.length > 1) btn('remove', () => removeWorkspace(w));
+    wHost.appendChild(row);
+  }
+
   // providers
   const pHost = $('#settings-providers');
   pHost.innerHTML = '';
@@ -1041,6 +1109,10 @@ $('#set-bridge').onchange = async (e) => {
   state.settings.bridgeDownloads = e.target.checked;
   await tote.saveSettings(state.settings);
   toast('Downloads bridge ' + (e.target.checked ? 'enabled' : 'disabled') + '.', 'success');
+};
+
+$('#nw-add').onclick = async () => {
+  if (await addWorkspace()) renderSettings();
 };
 
 $('#na-add').onclick = async () => {

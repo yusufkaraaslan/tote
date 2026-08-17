@@ -66,6 +66,24 @@ class WorkspaceManager {
     return id;
   }
 
+  // Rename a space and/or point it at another folder. Files are never moved.
+  updateSpace(id, { name, path: absPath } = {}) {
+    const data = this.cfg.getWorkspaces();
+    const w = data.list.find((x) => x.id === id);
+    if (!w) throw new Error('Unknown workspace: ' + id);
+    if (name !== undefined) {
+      const n = String(name).trim();
+      if (!n) throw new Error('Workspace name cannot be empty');
+      w.name = n;
+    }
+    if (absPath !== undefined) {
+      w.path = absPath;
+      fs.mkdirSync(path.join(absPath, 'inbox'), { recursive: true });
+    }
+    this.cfg.saveWorkspaces(data);
+    return { ...w, path: expandTilde(w.path) };
+  }
+
   // Unregisters the space. Files on disk are never touched.
   remove(id) {
     const data = this.cfg.getWorkspaces();

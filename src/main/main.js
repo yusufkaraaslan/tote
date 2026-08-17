@@ -304,10 +304,12 @@ app.on('web-contents-created', (event, contents) => {
 
 // --- IPC: workspaces -----------------------------------------------------------------
 
-ipcMain.handle('workspaces:list', () => ({
-  active: workspace.activeId(),
-  list: workspace.list(),
-}));
+// The tree watcher is bound to the active root; re-arm it after anything that
+// can change which folder is active.
+const watchActive = () => workspace.watch(() => win && win.webContents.send('workspace:changed'));
+const wsState = () => ({ active: workspace.activeId(), list: workspace.list() });
+
+ipcMain.handle('workspaces:list', () => wsState());
 
 ipcMain.handle('workspaces:add', async (e, name) => {
   const res = await dialog.showOpenDialog(win, {
@@ -317,20 +319,41 @@ ipcMain.handle('workspaces:add', async (e, name) => {
   if (res.canceled || !res.filePaths[0]) return null;
   const id = workspace.add(name, res.filePaths[0]);
   workspace.setActive(id);
-  workspace.watch(() => win && win.webContents.send('workspace:changed'));
-  return { active: workspace.activeId(), list: workspace.list() };
+  watchActive();
+  return wsState();
 });
 
 ipcMain.handle('workspaces:setActive', (e, id) => {
   const ws = workspace.setActive(id);
-  workspace.watch(() => win && win.webContents.send('workspace:changed'));
+  watchActive();
   return ws;
 });
 
 ipcMain.handle('workspaces:remove', (e, id) => {
-  const active = workspace.remove(id);
-  workspace.watch(() => win && win.webContents.send('workspace:changed'));
-  return { active: active.id, list: workspace.list() };
+  workspace.remove(id);
+  watchActive();
+  return wsState();
+});
+
+ipcMain.handle('workspaces:rename', (e, id, name) => {
+  workspace.updateSpace(id, { name });
+  return wsState();
+});
+
+// Point an existing space at a different folder (folder picker). Nothing on
+// disk moves; open terminals keep their old cwd.
+ipcMain.handle('workspaces:setPath', async (e, id) => {
+  const w = workspace.list().find((x) => x.id === id);
+  if (!w) throw new Error('Unknown workspace: ' + id);
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Pick the folder for workspace "' + w.name + '"',
+    defaultPath: w.path,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return null;
+  workspace.updateSpace(id, { path: res.filePaths[0] });
+  if (id === workspace.activeId()) watchActive();
+  return wsState();
 });
 
 // --- IPC: files (active workspace) -----------------------------------------------------
@@ -542,7 +565,7 @@ if (!gotLock) {
     ptys = new PtyManager();
     setupAllProviderSessions();
     detectApps();
-    workspace.watch(() => win && win.webContents.send('workspace:changed'));
+    watchActive();
     applyBridgeSetting();
     createWindow();
 

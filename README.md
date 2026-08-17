@@ -89,7 +89,9 @@ The NSIS installer is non-one-click, so users can choose the install directory.
 First run creates the **Global** space at `~/tote/workspace`. Add project spaces
 with **+ space** on the top strip (name + any folder on disk — point it at an
 existing project if you like). Right-click a space tab to open its folder, copy the
-path, or remove it — Tote never deletes files, removing a space only unregisters it.
+path, rename it, point it at a different folder, or remove it — the same controls live under
+**settings → Workspaces**. Tote never deletes or moves files: removing a space only
+unregisters it, and changing its folder just re-points it.
 
 ## How each frontend honors "the correct workspace"
 
@@ -114,8 +116,8 @@ path, or remove it — Tote never deletes files, removing a space only unregiste
 - **Workspace pane** — tree, inline text editor, right-click new/rename/trash/
   open-externally/copy-path, and **Send to active tab (experimental)** which injects a
   file into the current chat's upload control.
-- **Settings** — add/remove providers, CLI profiles, native apps; toggle the Downloads
-  bridge. Everything is plain JSON in `<userData>/config/` (**open config folder**).
+- **Settings** — manage workspaces (add / rename / change folder / remove), add/remove
+  providers, CLI profiles, native apps; toggle the Downloads bridge. Everything is plain JSON in `<userData>/config/` (**open config folder**).
 
 ## Architecture
 

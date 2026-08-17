@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('tote', {
   addWorkspace: (name) => ipcRenderer.invoke('workspaces:add', name),
   setActiveWorkspace: (id) => ipcRenderer.invoke('workspaces:setActive', id),
   removeWorkspace: (id) => ipcRenderer.invoke('workspaces:remove', id),
+  renameWorkspace: (id, name) => ipcRenderer.invoke('workspaces:rename', id, name),
+  setWorkspacePath: (id) => ipcRenderer.invoke('workspaces:setPath', id),
 
   // files (active workspace)
   getRoot: () => ipcRenderer.invoke('workspace:getRoot'),

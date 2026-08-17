@@ -6,6 +6,8 @@
 (Claude Code, Codex, Gemini CLI, Kimi, OpenCode) live in one window; switch a
 workspace and every tab, terminal, download and layout follows.
 
+![Tote — workspace strip on top, files pane, a web LLM tab and Claude Code docked right](docs/screenshots/hero.png)
+
 Tote doesn't try to merge every model into one conversation. Instead it gives you
 **spaces**: one Global workspace plus as many project workspaces as you like. A workspace
 is the routing context — when a space is active, every frontend you fire (web LLM tab,
@@ -40,6 +42,15 @@ Files and terminal panels dock left / bottom / right (≡ menu) and resize by dr
    from the **apps** menu — anything it saves to your system Downloads is bridged
    into the active workspace automatically. Claude Desktop is even bound to the
    workspace folder over MCP before launch, so it opens *on* that folder.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Two CLI agents docked at the bottom](docs/screenshots/agents-bottom.png) | ![A research space: inbox per provider, Kimi tab](docs/screenshots/research-space.png) |
+| Agents docked at the bottom (Claude Code + OpenCode) in the same space | A *research* space: `inbox/<provider>/` collects downloads, Kimi tab open |
+| ![First-run setup wizard](docs/screenshots/wizard.png) | |
+| First-run setup wizard: system checks, CLI installs, connections, spaces | |
 
 ## Quick start
 

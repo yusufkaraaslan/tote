@@ -3,7 +3,7 @@
 Electron hub app: web LLM tabs + shared workspace folder + docked CLI-agent terminals.
 
 - Run: `npm install && npm start` (postinstall copies xterm assets to src/renderer/vendor).
-- Main process: `src/main/` (sessions per provider partition, downloads → ACTIVE workspace's inbox/, Downloads-folder bridge for native apps, app launcher, IPC, node-pty). Setup wizard logic lives in `src/main/installer.js` (system checks, Claude Desktop MCP binding, MCP snippet) + the `#wizard-*` section of `src/renderer/app.js`.
+- Main process: `src/main/` (sessions per provider partition, downloads → ACTIVE workspace's inbox/, Downloads-folder bridge for native apps (macOS only; copies, and only files the quarantine xattr attributes to a known LLM app), app launcher, IPC, node-pty). Setup wizard logic lives in `src/main/installer.js` (system checks, Claude Desktop MCP binding, MCP snippet) + the `#wizard-*` section of `src/renderer/app.js`.
 - CLI profiles carry an `install` command (npm -g) used by the wizard; keep package names accurate when adding profiles.
 - Workspaces are two-level: one `global` + project spaces in `config/workspaces.json`. All file ops resolve the ACTIVE space at call time via `WorkspaceManager.getRoot()` — never cache the root. Spaces are managed from the top strip's right-click menu and the Workspaces section of Settings (add / rename / change folder / remove → `workspaces:*` IPC); ids are stable across rename/re-point.
 - Renderer: `src/renderer/` vanilla JS, no bundler. Bridge surface = `window.tote` (see `src/preload/preload.js`).

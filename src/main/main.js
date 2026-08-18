@@ -8,7 +8,7 @@ const fs = require('fs');
 const http = require('http');
 const { spawn, execSync, execFileSync } = require('child_process');
 const { ConfigStore } = require('./config');
-const { WorkspaceManager } = require('./workspace');
+const { WorkspaceManager, originApp } = require('./workspace');
 const { PtyManager } = require('./ptyManager');
 const { systemCheck, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
 
@@ -142,17 +142,49 @@ function setupAllProviderSessions() {
 
 // --- Downloads bridge (native apps -> active workspace) -------------------------
 
+// Web tabs never come through here -- their downloads are intercepted by
+// setupProviderSession() and written straight into inbox/<provider>/. This
+// bridge exists only for NATIVE apps (Claude Desktop, ChatGPT.app, ...), which
+// save wherever the OS tells them to, i.e. ~/Downloads.
+
+// Names the quarantine stamp may carry for an app we consider ours. macOS
+// records the app's bundle name ("Claude"), which is not always the label we
+// show ("Claude Desktop"), so accept both -- for the built-in list and for
+// anything the user added to apps.json themselves. Rebuilt per event so a
+// newly added app works without a restart.
+function bridgeAllowlist() {
+  const names = new Set();
+  const add = (n) => { const v = String(n || '').trim().toLowerCase(); if (v) names.add(v); };
+  const bundleName = (p) => path.basename(String(p || ''), '.app');
+  for (const ka of KNOWN_APPS) {
+    add(ka.name);
+    for (const cand of ka.candidates.darwin || []) add(bundleName(cand));
+  }
+  for (const entry of configStore.getApps().list) {
+    add(entry.name);
+    add(bundleName(entry.path));
+  }
+  return names;
+}
+
 function applyBridgeSetting() {
   const on = configStore.getSettings().bridgeDownloads !== false;
   workspace.unwatchDownloads();
-  if (!on) return;
-  workspace.watchDownloads((absPath) => {
+  // macOS is the only platform that records WHICH app downloaded a file, and
+  // without that the bridge cannot tell a Claude Desktop export from a bank
+  // statement -- so it stays off everywhere else rather than guess (issue #1).
+  if (!on || process.platform !== 'darwin') return;
+  workspace.watchDownloads(async (absPath) => {
+    const app = await originApp(absPath);
+    // No origin (hand-made file) or an app we don't own (a browser, Slack,
+    // AirDrop): not ours to touch.
+    if (!app || !bridgeAllowlist().has(app.toLowerCase())) return;
     try {
       const target = workspace.ingest(absPath, '_desktop');
       if (win) {
         win.webContents.send('download:done', {
           providerId: '_desktop',
-          provider: 'Desktop app',
+          provider: app,
           workspace: workspace.active().name,
           filename: path.basename(target),
           path: target,
@@ -161,7 +193,7 @@ function applyBridgeSetting() {
       }
     } catch (e) {
       if (win) win.webContents.send('download:done', {
-        providerId: '_desktop', provider: 'Desktop app',
+        providerId: '_desktop', provider: app,
         workspace: workspace.active().name,
         filename: path.basename(absPath), path: absPath, state: 'interrupted: ' + e.message,
       });

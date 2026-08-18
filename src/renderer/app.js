@@ -786,6 +786,10 @@ function adoptLeafSeq(all) {
       for (const lf of T.leaves(g.tree)) {
         const n = parseInt(String(lf.id).slice(1), 10);
         if (n > leafSeq) leafSeq = n;
+        // Terminal leaves reference a per-run counter. Without adopting it too,
+        // the first terminal of the next run takes a number some other space's
+        // stale leaf still points at, and that space mounts this terminal.
+        if (lf.kind === 'term' && +lf.ref > state.termSeq) state.termSeq = +lf.ref;
       }
       const gn = parseInt(String(g.id || '').slice(1), 10);
       if (gn > groupSeq) groupSeq = gn;
@@ -888,6 +892,13 @@ function mountLeaf(lf) {
     const p = paneShell(key, provider.name, provider.color);
     ensureWebview(tab, provider, p.body);
     return p;
+  }
+  if (lf.kind === 'term') {
+    // A terminal belongs to the space that spawned it, the way a web leaf must
+    // name a tab of this space. Anything else -- a dead ref, or a leaf pointing
+    // at another space's agent -- is pruned by returning null.
+    const t = [...state.terms.values()].find((x) => x.localId === lf.ref || x.ptyId === lf.ref);
+    if (!t || t.wsId !== state.workspaces.active) return null;
   }
   return panes.get(key) || null;   // terminals are built by spawnTerm
 }

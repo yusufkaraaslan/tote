@@ -53,7 +53,8 @@ class ConfigStore {
   getSettings() { return this.read('settings.json', { bridgeDownloads: true }); }
   saveSettings(data) { this.write('settings.json', data); }
 
-  // Per-workspace open views (web tabs + active tab): { [wsId]: { tabs: [{id, providerId}], active } }
+  // Per-workspace open views: { [wsId]: { tabs: [{id, providerId}],
+  // groups: [{ id, name, tree, focus, zoom }], activeGroup, filesRatio } }
   getViews() { return this.read('views.json', {}); }
   saveViews(data) { this.write('views.json', data); }
 }

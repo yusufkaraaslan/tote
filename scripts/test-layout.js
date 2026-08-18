@@ -442,5 +442,49 @@ describe('migrate: an existing space keeps its arrangement', () => {
   });
 });
 
+describe('insertRoot: docking a pane to a container edge', () => {
+  test('docking into an empty tree yields the node itself', () => {
+    const out = T.insertRoot(null, T.leaf('F', 'files'), 'left', 0.2);
+    assert.deepStrictEqual(out, T.leaf('F', 'files'));
+  });
+
+  test('left docks at the container edge, spanning full height', () => {
+    const tree = T.split('col', 0.5, T.leaf('A', 'web'), T.leaf('B', 'term'));
+    const out = T.insertRoot(tree, T.leaf('F', 'files'), 'left', 0.2);
+    const r = T.rectsFor(out, R(0, 0, 1000, 600));
+    assert.deepStrictEqual(r.get('F'), R(0, 0, 200, 600));
+    assert.deepStrictEqual(r.get('A'), R(200, 0, 800, 300));
+    assert.deepStrictEqual(r.get('B'), R(200, 300, 800, 300));
+  });
+
+  test('ratio is the docked node share whichever edge it lands on', () => {
+    const tree = T.leaf('A', 'web');
+    const right = T.rectsFor(T.insertRoot(tree, T.leaf('F', 'files'), 'right', 0.2), R(0, 0, 1000, 600));
+    assert.deepStrictEqual(right.get('F'), R(800, 0, 200, 600));
+    const top = T.rectsFor(T.insertRoot(tree, T.leaf('F', 'files'), 'top', 0.25), R(0, 0, 1000, 600));
+    assert.deepStrictEqual(top.get('F'), R(0, 0, 1000, 150));
+    const bottom = T.rectsFor(T.insertRoot(tree, T.leaf('F', 'files'), 'bottom', 0.25), R(0, 0, 1000, 600));
+    assert.deepStrictEqual(bottom.get('F'), R(0, 450, 1000, 150));
+  });
+
+  test('the existing tree keeps its own shape and ratios', () => {
+    const tree = T.split('row', 0.3, T.leaf('A', 'web'), T.leaf('B', 'web'));
+    const out = T.insertRoot(tree, T.leaf('F', 'files'), 'left', 0.5);
+    assert.strictEqual(out.b.dir, 'row');
+    assert.strictEqual(out.b.ratio, 0.3);
+    const r = T.rectsFor(out, R(0, 0, 1000, 600));
+    assert.deepStrictEqual(r.get('A'), R(500, 0, 150, 600));
+  });
+
+  test('docking twice keeps the newest pane against the edge', () => {
+    let tree = T.leaf('A', 'web');
+    tree = T.insertRoot(tree, T.leaf('F', 'files'), 'left', 0.2);
+    tree = T.insertRoot(tree, T.leaf('G', 'files'), 'left', 0.2);
+    const r = T.rectsFor(tree, R(0, 0, 1000, 600));
+    assert.strictEqual(r.get('G').x, 0);
+    assert.ok(r.get('F').x >= r.get('G').w);
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

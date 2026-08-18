@@ -79,6 +79,16 @@
    * leave a half-applied layout behind. */
 
   // Auto-placement splits along the pane's longer axis, keeping tiles squarish.
+  // Dock a node against a container edge: the whole existing tree becomes its
+  // sibling, so the docked pane spans the full side no matter how the rest is
+  // split. `ratio` is always the DOCKED node's share of the axis.
+  function insertRoot(tree, node, edge, ratio) {
+    if (!tree) return node;
+    const dir = edge === 'top' || edge === 'bottom' ? 'col' : 'row';
+    const first = edge === 'left' || edge === 'top';
+    return first ? split(dir, ratio, node, tree) : split(dir, 1 - ratio, tree, node);
+  }
+
   function dirFor(rect) {
     return rect.w >= rect.h ? 'row' : 'col';
   }
@@ -269,7 +279,7 @@
   return {
     leaf: leaf, split: split, rectsFor: rectsFor,
     leaves: leaves, findLeaf: findLeaf,
-    dirFor: dirFor, splitLeaf: splitLeaf, removeLeaf: removeLeaf,
+    dirFor: dirFor, splitLeaf: splitLeaf, insertRoot: insertRoot, removeLeaf: removeLeaf,
     dividersFor: dividersFor, setRatio: setRatio, clampRatio: clampRatio,
     swapLeaves: swapLeaves, moveLeaf: moveLeaf,
     neighbour: neighbour, migrate: migrate,

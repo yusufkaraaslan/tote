@@ -79,6 +79,43 @@ code {
 .ws-tab.active .glyph { color: #7fa0ff; }
 #btn-add-ws { flex-shrink: 0; padding: 3px 9px; }
 
+/* ---------- group strip: virtual desktops inside the active space ---------- */
+#group-bar {
+  height: 26px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: #070a11;
+  border-bottom: 1px solid #1e2534;
+}
+.group-label {
+  color: #4c5878;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+#group-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+#group-tabs::-webkit-scrollbar { display: none; }
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid #232c44;
+  color: #7d8aa8;
+  font-size: 11px;
+}
+.group-chip:hover { background: #121a2b; color: #c6d0e6; }
+.group-chip.active { background: #1a2338; border-color: #2b5cff; color: #fff; }
+.group-dot { width: 4px; height: 4px; border-radius: 50%; background: #2b5cff; }
+.group-chip.active .group-dot { background: #7fa0ff; }
+#btn-add-group { flex-shrink: 0; padding: 1px 8px; }
+
 /* ---------- tiling: panes, dividers ---------- */
 /* --- tiling surface: panes are absolutely positioned, never reflowed --- */
 #tiles { position: relative; flex: 1; min-width: 0; min-height: 0; background: #0b0e14; overflow: hidden; }

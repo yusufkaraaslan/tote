@@ -33,6 +33,15 @@
       </div>
     </div>
 
+    <!-- group strip: virtual desktops INSIDE the active space. Each group owns a
+         tiling tree; switching applies that tree and leaves the other groups'
+         webviews and terminals running, hidden. -->
+    <div id="group-bar">
+      <span class="group-label">groups</span>
+      <div id="group-tabs"></div>
+      <button id="btn-add-group" class="plus" title="New group — a fresh layout in this space">+</button>
+    </div>
+
     <div id="main">
       <!-- Flat tiling surface. Every pane is a DIRECT child, created once per
            content instance and never reparented -- moving a pane changes its
@@ -55,6 +64,8 @@
           <p>Pick a workspace on the top strip, then open panes with <b>+ web</b> and <b>+ term</b>.</p>
           <p>Panes tile automatically. Drag a divider to resize, drag a pane's title bar
           to rearrange, and press <b>Cmd/Ctrl+Alt+F</b> to zoom the focused one.</p>
+          <p>Each space keeps several <b>groups</b> — separate layouts you switch
+          between with <b>Cmd/Ctrl+Alt+1…9</b>, like desktops.</p>
           <p class="dim">Web panes download straight into <code>&lt;workspace&gt;/inbox/&lt;provider&gt;/</code>.</p>
         </div>
       </div>

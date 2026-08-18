@@ -308,6 +308,13 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+
+  // The shell page never navigates. Anything that tries is a file dropped onto
+  // a spot that did not handle it -- Chromium's default is to open it in place,
+  // which would replace the whole UI with the dropped image.
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url !== win.webContents.getURL()) e.preventDefault();
+  });
 }
 
 // Popups from embedded webviews (OAuth windows, "open in new tab" links).

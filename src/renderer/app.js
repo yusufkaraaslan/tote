@@ -604,6 +604,31 @@ async function renderTermMenu() {
   }
 }
 
+/* A dropped file lands as its path, exactly as a native terminal does it:
+ * shell-escaped, space-separated, and with NO trailing newline -- when to send
+ * stays the agent's decision. */
+const shellEscapePath = (p) => p.replace(/([\s"'`\\$&*()|[\]{}<>;?!#~])/g, '\\$1');
+
+function acceptFileDrop(el, onPaths) {
+  el.addEventListener('dragover', (e) => {
+    if (![...(e.dataTransfer.types || [])].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    el.classList.add('drop-file');
+  });
+  el.addEventListener('dragleave', (e) => {
+    if (!el.contains(e.relatedTarget)) el.classList.remove('drop-file');
+  });
+  el.addEventListener('drop', (e) => {
+    el.classList.remove('drop-file');
+    const files = [...(e.dataTransfer.files || [])];
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onPaths(files.map((f) => tote.filePath(f)).filter(Boolean));
+  });
+}
+
 async function spawnTerm(profile) {
   const id = ++state.termSeq;
   const wsName = (activeWorkspace() && activeWorkspace().name) || '?';
@@ -642,6 +667,15 @@ async function spawnTerm(profile) {
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
     if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
     return false;
+  });
+
+  // Drag an image onto Claude Code and it arrives as a path it can read. Without
+  // this the drop falls through to Chromium, which navigates the window to the
+  // file instead.
+  acceptFileDrop(pane.el, (paths) => {
+    if (!entry.ptyId || !paths.length) return;
+    tote.ptyWrite(entry.ptyId, paths.map(shellEscapePath).join(' ') + ' ');
+    term.focus();
   });
 
   // Place the pane first so it has real dimensions, then fit synchronously: the
@@ -1268,6 +1302,11 @@ addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
 });
+
+// Anywhere else, a dropped file is swallowed: letting it through means Chromium
+// navigates away from the app.
+addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
+addEventListener('drop', (e) => e.preventDefault());
 
 addEventListener('resize', () => applyTiles());
 (() => {

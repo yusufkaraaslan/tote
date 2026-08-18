@@ -1,5 +1,5 @@
 // Preload: the only bridge between the sandboxed renderer and Electron.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('tote', {
   // workspaces (spaces)
@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('tote', {
   trash: (rel) => ipcRenderer.invoke('workspace:trash', rel),
   openPath: (rel) => ipcRenderer.invoke('workspace:openPath', rel),
   revealPath: (rel) => ipcRenderer.invoke('workspace:revealPath', rel),
+  // Electron 32 removed File.path; webUtils is the supported way to turn a
+  // dropped File back into an absolute path, and it must run in the renderer.
+  filePath: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
 
   // config
   getProviders: () => ipcRenderer.invoke('config:getProviders'),

@@ -126,6 +126,7 @@ code {
 .pane.hidden { display: none; }
 .pane.focused { border-color: #2b5cff; }
 .pane.dead { opacity: 0.65; }
+.pane.drop-file { border-color: #2b5cff; box-shadow: inset 0 0 0 1px #2b5cff88; }
 .pane-head {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;
   height: 26px; padding: 0 6px 0 8px; cursor: grab;

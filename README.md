@@ -110,7 +110,8 @@ unregisters it, and changing its folder just re-points it.
   persistent partition: log in once, forever. **Tabs belong to the workspace**: switch
   spaces and you get that space's tabs (and terminals) back exactly as you left them.
 - **Terminals** — Claude Code, Kimi CLI, Codex, Gemini CLI, OpenCode, plain shell. Real PTYs (node-pty), so full-screen TUIs render correctly, and **Shift+Enter
-  adds a line** instead of sending the message. Green/red dots show what's on your PATH.
+  adds a line** instead of sending the message. **Drag an image onto an agent pane**
+  and it arrives as a path the agent can read, the way a native terminal does it. Green/red dots show what's on your PATH.
 - **Layout** — everything is a **pane** in a tiling layout: opening one splits the focused
   pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
   to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at

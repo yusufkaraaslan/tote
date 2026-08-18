@@ -24,7 +24,7 @@ file shuffling.
    `nexus-core`. Say "continue from inbox/kimi/…". Tip: `claude -c` and `kimi -C`
    resume the agent's previous session directly.
 4. Prefer the vendor's native app (app-only discounts, voice, etc.)? Launch it
-   from the **apps** menu — anything it saves to your system Downloads is bridged
+   from the **apps** menu — what it downloads to your system Downloads is copied
    into the active workspace automatically. Claude Desktop is even bound to the
    workspace folder over MCP before launch, so it opens *on* that folder.
 
@@ -100,7 +100,7 @@ unregisters it, and changing its folder just re-points it.
 | Web LLM tabs | Per-session download interception → `<active>/inbox/<provider>/` | solid |
 | CLI agents | New PTY spawns with `cwd = <active>`; tab tagged with its space | solid |
 | Claude Desktop | MCP filesystem server bound to `<active>` written into `claude_desktop_config.json` (with .bak backup) before launch | solid (restart app if already open) |
-| Other native apps | Downloads-folder bridge: new files moved into `<active>/inbox/_desktop/` | best-effort (toggle in Settings) |
+| Other native apps | Downloads-folder bridge: files the app downloads are copied into `<active>/inbox/_desktop/`, originals left in place | macOS only (toggle in Settings) |
 
 ## What's inside
 

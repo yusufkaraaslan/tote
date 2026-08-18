@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFile } = require('child_process');
 
 const IGNORE = new Set(['node_modules', '.git', '.DS_Store', 'dist', 'out', '.cache']);
 const PARTIAL_EXT = new Set(['.crdownload', '.part', '.download', '.partial', '.tmp']);
@@ -20,6 +21,25 @@ function expandTilde(p) {
   return p === '~' ? os.homedir() : p.startsWith('~' + path.sep) || p.startsWith('~/')
     ? path.join(os.homedir(), p.slice(2))
     : p;
+}
+
+// macOS stamps every downloaded file with a com.apple.quarantine xattr whose
+// third field is the name of the app that fetched it:
+//   0081;6a7c6499;Slack;E751D4CB-1F33-403A-854A-4104E7363F14
+// Files that were never downloaded (echo, unzip, a manual copy) carry no such
+// attribute, so a null return means "no known download origin" -- which the
+// bridge treats as "leave it alone". Linux has no equivalent and Windows'
+// Zone.Identifier names a security zone rather than an app, so both return
+// null and the bridge stays off there (see issue #1).
+function originApp(absPath) {
+  return new Promise((resolve) => {
+    if (process.platform !== 'darwin') return resolve(null);
+    execFile('xattr', ['-p', 'com.apple.quarantine', absPath], { timeout: 3000 }, (err, stdout) => {
+      if (err) return resolve(null); // no xattr, unreadable, or already gone
+      const app = String(stdout).trim().split(';')[2];
+      resolve(app && app.trim() ? app.trim() : null);
+    });
+  });
 }
 
 class WorkspaceManager {
@@ -181,7 +201,9 @@ class WorkspaceManager {
     fs.renameSync(this.resolveSafe(fromRel), this.resolveSafe(toRel));
   }
 
-  // Move a file from anywhere on disk into the active workspace inbox.
+  // Copy a file from anywhere on disk into the active workspace inbox.
+  // Deliberately a copy, not a move: the bridge watches ~/Downloads, which is
+  // the user's folder, so nothing may disappear out of it.
   ingest(absSource, providerId) {
     const inbox = this.inboxDir(providerId);
     fs.mkdirSync(inbox, { recursive: true });
@@ -193,13 +215,7 @@ class WorkspaceManager {
       target = path.join(inbox, base.slice(0, base.length - ext.length) + ` (${i})` + ext);
       i++;
     }
-    try {
-      fs.renameSync(absSource, target);
-    } catch {
-      // cross-device: copy then remove
-      fs.copyFileSync(absSource, target);
-      fs.unlinkSync(absSource);
-    }
+    fs.copyFileSync(absSource, target);
     return target;
   }
 
@@ -220,8 +236,10 @@ class WorkspaceManager {
     });
   }
 
-  // Watches the OS Downloads folder to catch files saved by native apps,
-  // so they can be bridged into the active workspace.
+  // Watches the OS Downloads folder to catch files saved by native apps, so
+  // they can be bridged into the active workspace. The watcher itself cannot
+  // tell who wrote a file -- the caller must filter on originApp() before
+  // ingesting, or unrelated browser/AirDrop/hand-made files get swept up too.
   watchDownloads(callback) {
     const chokidar = require('chokidar');
     if (this.dlWatcher) this.dlWatcher.close();
@@ -242,4 +260,4 @@ class WorkspaceManager {
   }
 }
 
-module.exports = { WorkspaceManager };
+module.exports = { WorkspaceManager, originApp };

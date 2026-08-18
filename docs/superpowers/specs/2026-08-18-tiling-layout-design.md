@@ -120,7 +120,8 @@ rearranged space:
 - files docked right → `row(rest, files)`
 - terminal docked bottom, visible → `col(rest, term)` from `sizes.bottom`
 - a hidden panel contributes no leaf
-- no web tabs → the tree is whatever panels exist, or a single placeholder pane
+- no web tabs and no visible panels → an empty tree, which renders the existing
+  welcome copy (the same state as closing the last pane)
 
 `layout` is then dropped from that space's entry. `settings.layout` (the legacy
 global seed) stops being read.

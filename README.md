@@ -20,7 +20,7 @@ file shuffling.
 1. Click your project space on the top strip (e.g. `nexus-core`).
 2. Open the **Kimi** or **Claude** web tab, do your research, hit download —
    the file lands in `nexus-core/inbox/kimi/`, not your Downloads folder.
-3. Pop the terminal panel (Ctrl+`), fire **Claude Code** — it starts `cd`'d into
+3. Open a terminal pane (Ctrl+`), fire **Claude Code** — it starts `cd`'d into
    `nexus-core`. Say "continue from inbox/kimi/…". Tip: `claude -c` and `kimi -C`
    resume the agent's previous session directly.
 4. Prefer the vendor's native app (app-only discounts, voice, etc.)? Launch it
@@ -109,13 +109,18 @@ unregisters it, and changing its folder just re-points it.
   **+** menu — as many tabs of the same LLM as you like. Each provider is an isolated
   persistent partition: log in once, forever. **Tabs belong to the workspace**: switch
   spaces and you get that space's tabs (and terminals) back exactly as you left them.
-- **Terminals** — Claude Code, Kimi CLI, Codex, Gemini CLI, OpenCode, plain shell. Real PTYs (node-pty), so full-screen TUIs render correctly. Green/red dots
-  show what's on your PATH.
-- **Layout** — files and terminal panels each dock left / bottom / right (≡ menu on the panel bar)
-  and resize with a drag splitter; positions, sizes and open/closed state are remembered **per workspace**.
+- **Terminals** — Claude Code, Kimi CLI, Codex, Gemini CLI, OpenCode, plain shell. Real PTYs (node-pty), so full-screen TUIs render correctly, and **Shift+Enter
+  adds a line** instead of sending the message. Green/red dots show what's on your PATH.
+- **Layout** — everything is a **pane** in a tiling layout: opening one splits the focused
+  pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
+  to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at
+  whatever width you left it. Layouts are remembered **per workspace**.
+- **Groups** — each space holds several layouts, like desktops on your OS: switch with the
+  chips under the workspace strip or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
+  groups keep running in the background.
 - **Workspace pane** — tree, inline text editor, right-click new/rename/trash/
-  open-externally/copy-path, and **Send to active tab (experimental)** which injects a
-  file into the current chat's upload control.
+  open-externally/reveal-in-Finder/copy-path, and **Send to active tab (experimental)**
+  which injects a file into the current chat's upload control.
 - **Settings** — manage workspaces (add / rename / change folder / remove), add/remove
   providers, CLI profiles, native apps; toggle the Downloads bridge. Everything is plain JSON in `<userData>/config/` (**open config folder**).
 
@@ -132,7 +137,9 @@ src/main/
   workspace.js     spaces registry, safe paths, tree, ingest(), chokidar watchers
   ptyManager.js    node-pty sessions for CLI agents
 src/preload/       contextBridge API (renderer has no node access)
-src/renderer/      vanilla JS UI: switcher, tabs, tree, editor, xterm, wizard, settings
+src/renderer/
+  app.js           vanilla JS UI: spaces, groups, panes, tree, editor, xterm, wizard, settings
+  layout.js        pure tiling engine (tree edits + geometry), tested by `npm test`
 ```
 
 Design rules:

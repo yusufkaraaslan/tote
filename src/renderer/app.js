@@ -252,6 +252,7 @@ function closeTabInstance(tabId) {
 // stay alive in the background; applyTiles hides any pane not in this tree.
 function showWorkspaceViews() {
   applyTiles();
+  renderGroupBar();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -351,6 +352,10 @@ function ctxItem(label, fn, danger) {
   return el;
 }
 
+const REVEAL_LABEL = navigator.platform.startsWith('Mac') ? 'Reveal in Finder'
+  : navigator.platform.startsWith('Win') ? 'Show in Explorer'
+  : 'Show in file manager';
+
 function showContextMenu(x, y, node) {
   const menu = $('#context-menu');
   menu.innerHTML = '';
@@ -359,12 +364,14 @@ function showContextMenu(x, y, node) {
   if (node.type === 'file') {
     menu.appendChild(ctxItem('Open', () => openFile(node)));
     menu.appendChild(ctxItem('Open externally', () => tote.openPath(node.path)));
+    menu.appendChild(ctxItem(REVEAL_LABEL, () => tote.revealPath(node.path)));
     menu.appendChild(ctxItem('Send to active tab (experimental)', () => sendToTab(node.path)));
     menu.appendChild(ctxItem('Copy path', () => navigator.clipboard.writeText(node.path)));
   } else {
     menu.appendChild(ctxItem('New file here', () => newFile(node.path)));
     menu.appendChild(ctxItem('New folder here', () => newFolder(node.path)));
     menu.appendChild(ctxItem('Open externally', () => tote.openPath(node.path)));
+    menu.appendChild(ctxItem(REVEAL_LABEL, () => tote.revealPath(node.path)));
   }
   menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-sep' }));
   menu.appendChild(
@@ -626,6 +633,17 @@ async function spawnTerm(profile) {
                   wsId: state.workspaces.active, alive: false };
   state.terms.set(id, entry);
 
+  // Shift+Enter must open a new line, not send the message. xterm emits a bare
+  // CR for Enter and Shift+Enter alike, so an agent TUI cannot tell them apart;
+  // ESC+CR is the sequence Claude Code and Codex read as "newline" (the same one
+  // other terminals are configured to send by their setup command).
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown' || e.key !== 'Enter') return true;
+    if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
+    if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
+    return false;
+  });
+
   // Place the pane first so it has real dimensions, then fit synchronously: the
   // PTY must be created at the true size, not 80x24.
   openPane(T.leaf(newLeafId(), 'term', id));
@@ -656,13 +674,18 @@ function closeTerm(id) {
   const t = state.terms.get(id);
   if (!t) return;
   const V = state.views[t.wsId];
-  const lf = V && V.tiling
-    && T.leaves(V.tiling.tree).find((l) => l.kind === 'term' && l.ref === id);
-  if (lf && t.wsId === state.workspaces.active) { closePane(lf.id); return; }
-  if (lf) V.tiling.tree = T.removeLeaf(V.tiling.tree, lf.id);
+  const owner = groupsOf(V).find((g) =>
+    T.leaves(g.tree).some((l) => l.kind === 'term' && l.ref === id));
+  const lf = owner && T.leaves(owner.tree).find((l) => l.kind === 'term' && l.ref === id);
+  if (lf && t.wsId === state.workspaces.active && owner.id === V.activeGroup) {
+    closePane(lf.id);
+    return;
+  }
+  if (lf) owner.tree = T.removeLeaf(owner.tree, lf.id);
   if (t.alive) tote.ptyKill(t.ptyId);
   destroyPaneEl('term:' + id);
   state.terms.delete(id);
+  renderGroupBar();
   saveViews();
 }
 
@@ -716,28 +739,55 @@ const MIN_PANE = 140;
 
 let leafSeq = 0;
 const newLeafId = () => 'L' + (++leafSeq);
+let groupSeq = 0;
+const newGroupId = () => 'G' + (++groupSeq);
+
+// Every group of every space, including a not-yet-migrated single tiling.
+const groupsOf = (V) => (V ? (V.groups || (V.tiling ? [V.tiling] : [])) : []);
 
 // Persisted ids must not be handed out again after a restart.
 function adoptLeafSeq(all) {
   for (const V of Object.values(all || {})) {
-    for (const lf of T.leaves(V.tiling && V.tiling.tree)) {
-      const n = parseInt(String(lf.id).slice(1), 10);
-      if (n > leafSeq) leafSeq = n;
+    for (const g of groupsOf(V)) {
+      for (const lf of T.leaves(g.tree)) {
+        const n = parseInt(String(lf.id).slice(1), 10);
+        if (n > leafSeq) leafSeq = n;
+      }
+      const gn = parseInt(String(g.id || '').slice(1), 10);
+      if (gn > groupSeq) groupSeq = gn;
     }
   }
 }
 
-// Per-space tiling state, migrated from the old dock layout on first read.
-function tiles() {
+/* Groups are the space's virtual desktops: each holds its own tiling tree, and
+ * switching brings one tree to the front. Panes in the other groups stay alive
+ * and hidden -- exactly how another space's panes behave -- because applyTiles
+ * hides every pane that is not a leaf of the tree being applied. */
+function groups() {
   const V = wsViews();
-  if (!V.tiling) {
-    const m = T.migrate(
-      { tabs: V.tabs || [], active: V.active, layout: V.layout || state.settings.layout || {} },
-      newLeafId, { w: innerWidth || 1400, h: innerHeight || 800 });
-    V.tiling = { tree: m.tree, focus: m.focus, zoom: null };
-    delete V.layout;
+  if (!V.groups) {
+    let base = V.tiling;
+    if (!base) {
+      const m = T.migrate(
+        { tabs: V.tabs || [], active: V.active, layout: V.layout || state.settings.layout || {} },
+        newLeafId, { w: innerWidth || 1400, h: innerHeight || 800 });
+      base = { tree: m.tree, focus: m.focus, zoom: null };
+      delete V.layout;
+    }
+    delete V.tiling;
+    V.groups = [{ id: newGroupId(), name: '1', tree: base.tree, focus: base.focus, zoom: base.zoom || null }];
   }
-  return V.tiling;
+  if (!V.groups.length) V.groups.push({ id: newGroupId(), name: '1', tree: null, focus: null, zoom: null });
+  if (!V.groups.some((g) => g.id === V.activeGroup)) V.activeGroup = V.groups[0].id;
+  return V.groups;
+}
+
+// The active group's tiling state. Everything below edits this and nothing else,
+// so the tree code never has to know groups exist.
+function tiles() {
+  const gs = groups();
+  const active = wsViews().activeGroup;
+  return gs.find((g) => g.id === active) || gs[0];
 }
 
 function hostRect() {
@@ -875,19 +925,73 @@ function focusPane(leafId) {
   saveViews();
 }
 
+/* The files tree is a DOCK, not a tile: it takes the whole left edge whatever
+ * else is open, and comes back at the width it had when it was closed. The
+ * width is remembered per space so it survives group and app restarts. */
+const FILES_DEFAULT_PX = 270, FILES_MIN_RATIO = 0.1, FILES_MAX_RATIO = 0.6;
+
+function filesRatio() {
+  const V = wsViews();
+  const host = hostRect();
+  const want = typeof V.filesRatio === 'number'
+    ? V.filesRatio
+    : (host.w ? FILES_DEFAULT_PX / host.w : 0.2);
+  return Math.max(FILES_MIN_RATIO, Math.min(FILES_MAX_RATIO, want));
+}
+
+// Called before the leaf leaves the tree, while it still has a rect. A sole
+// pane fills the host and says nothing about the dock width, so keep the old one.
+function rememberFilesRatio(leafId) {
+  const S = tiles();
+  const host = hostRect();
+  if (!host.w || !S.tree || S.tree.type === 'leaf') return;
+  const r = T.rectsFor(S.tree, host, { gutter: GUTTER }).get(leafId);
+  if (r) wsViews().filesRatio = r.w / host.w;
+}
+
+function openFilesPane() {
+  const S = tiles();
+  const node = T.leaf(newLeafId(), 'files');
+  const had = T.leaves(S.tree).length;
+  S.tree = T.insertRoot(S.tree, node, 'left', filesRatio());
+  // A dock does not steal focus: whatever you were working in stays focused, so
+  // the next pane you open still splits the content area and not the sidebar.
+  if (!had) S.focus = node.id;
+  S.zoom = null;
+  applyTiles();
+  renderGroupBar();
+  saveViews();
+  return node;
+}
+
+/* Which pane gets split. The focused one -- except the files dock, which would
+ * wedge a web view or a terminal into a sidebar-width column. */
+function splitTarget(S) {
+  const live = T.leaves(S.tree);
+  const focused = S.focus ? T.findLeaf(S.tree, S.focus) : null;
+  const content = live.filter((l) => l.kind !== 'files');
+  if (focused && (focused.kind !== 'files' || !content.length)) return focused.id;
+  return (content[0] || live[0]).id;
+}
+
 // Opening a pane splits the focused one along its longer axis (dwindle).
 function openPane(node) {
   const S = tiles();
   if (!S.tree) {
     S.tree = node;
+  } else if (node.kind !== 'files' && !T.leaves(S.tree).some((l) => l.kind !== 'files')) {
+    // Only the dock is open: the first content pane takes the rest of the width
+    // instead of cutting the sidebar in half.
+    S.tree = T.insertRoot(S.tree, node, 'right', 1 - filesRatio());
   } else {
     const rects = T.rectsFor(S.tree, hostRect(), { gutter: GUTTER });
-    const target = (S.focus && T.findLeaf(S.tree, S.focus)) ? S.focus : T.leaves(S.tree)[0].id;
+    const target = splitTarget(S);
     S.tree = T.splitLeaf(S.tree, target, node, T.dirFor(rects.get(target) || hostRect()));
   }
   S.focus = node.id;
   S.zoom = null;
   applyTiles();
+  renderGroupBar();
   saveViews();
   return node;
 }
@@ -896,6 +1000,7 @@ function closePane(leafId) {
   const S = tiles();
   const lf = T.findLeaf(S.tree, leafId);
   if (!lf) return;
+  if (lf.kind === 'files') rememberFilesRatio(leafId);
   S.tree = T.removeLeaf(S.tree, leafId);
   if (S.zoom === leafId) S.zoom = null;
   // tear down the instance behind the pane
@@ -903,6 +1008,7 @@ function closePane(leafId) {
   else if (lf.kind === 'term') { killTermByRef(lf.ref); destroyPaneEl(paneKey(lf)); }
   else { const p = panes.get('files'); if (p) p.el.classList.add('hidden'); }
   applyTiles();
+  renderGroupBar();
   saveViews();
 }
 
@@ -1009,13 +1115,117 @@ function dropTargetAt(clientX, clientY, fromId) {
   return null;
 }
 
+/* ----- groups: the space's virtual desktops ----- */
+
+// Lowest unused integer, so closing group 2 of 3 frees the name "2".
+function nextGroupName(gs) {
+  const taken = new Set(gs.map((g) => g.name));
+  for (let i = 1; ; i++) if (!taken.has(String(i))) return String(i);
+}
+
+function renderGroupBar() {
+  const host = $('#group-tabs');
+  host.innerHTML = '';
+  const V = wsViews();
+  const gs = groups();
+  for (const g of gs) {
+    const chip = document.createElement('button');
+    chip.className = 'group-chip' + (g.id === V.activeGroup ? ' active' : '');
+    chip.textContent = g.name;
+    const count = T.leaves(g.tree).length;
+    chip.title = count ? g.name + ' — ' + count + ' pane(s)' : g.name + ' — empty';
+    if (count) chip.appendChild(Object.assign(document.createElement('i'), { className: 'group-dot' }));
+    chip.onclick = () => switchGroup(g.id);
+    chip.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      hideContextMenu();
+      const menu = $('#context-menu');
+      menu.innerHTML = '';
+      menu.appendChild(ctxItem('switch here', () => switchGroup(g.id)));
+      menu.appendChild(ctxItem('rename…', () => renameGroup(g)));
+      if (gs.length > 1) menu.appendChild(ctxItem('close group', () => closeGroup(g.id), true));
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+      menu.classList.remove('hidden');
+    };
+    host.appendChild(chip);
+  }
+}
+
+// Bring a group's tree to the front. Nothing is torn down: the other groups'
+// webviews and PTYs keep running behind the applied tree.
+function switchGroup(id) {
+  const V = wsViews();
+  if (V.activeGroup === id) return;
+  V.activeGroup = id;
+  applyTiles();
+  renderGroupBar();
+  focusActivePaneContent();
+  saveViews();
+}
+
+function addGroup() {
+  const V = wsViews();
+  const gs = groups();
+  const g = { id: newGroupId(), name: nextGroupName(gs), tree: null, focus: null, zoom: null };
+  gs.push(g);
+  V.activeGroup = g.id;
+  applyTiles();
+  renderGroupBar();
+  saveViews();
+}
+
+async function renameGroup(g) {
+  const name = await askInput('Rename group', g.name);
+  if (!name || name === g.name) return;
+  g.name = name;
+  renderGroupBar();
+  saveViews();
+}
+
+// Closing a group closes its panes through the one teardown path, so webviews
+// and PTYs go with it instead of leaking as unreachable instances.
+function closeGroup(id) {
+  const V = wsViews();
+  const gs = groups();
+  if (gs.length < 2) { toast('A space keeps at least one group.', 'error'); return; }
+  const idx = gs.findIndex((g) => g.id === id);
+  if (idx < 0) return;
+  const doomed = gs[idx];
+  const leaves = T.leaves(doomed.tree);
+  if (leaves.length && !confirm(`Close group "${doomed.name}" and its ${leaves.length} pane(s)?`)) return;
+
+  const wasActive = V.activeGroup;
+  V.activeGroup = id;                       // closePane always edits the ACTIVE group
+  for (const lf of leaves) closePane(lf.id);
+  gs.splice(idx, 1);
+  V.activeGroup = wasActive !== id && gs.some((g) => g.id === wasActive)
+    ? wasActive
+    : gs[Math.min(idx, gs.length - 1)].id;
+  applyTiles();
+  renderGroupBar();
+  focusActivePaneContent();
+  saveViews();
+}
+
+function focusActivePaneContent() {
+  const S = tiles();
+  const lf = S.focus && T.findLeaf(S.tree, S.focus);
+  if (!lf || lf.kind !== 'term') return;
+  const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
+  if (t) t.term.focus();
+}
+
+$('#btn-add-group').onclick = addGroup;
+
 /* ----- toolbar + keyboard ----- */
 
 $('#btn-files').onclick = () => {
   const S = tiles();
   const existing = T.leaves(S.tree).find((l) => l.kind === 'files');
   if (existing) closePane(existing.id);
-  else openPane(T.leaf(newLeafId(), 'files'));
+  else openFilesPane();
 };
 
 const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
@@ -1047,6 +1257,12 @@ addEventListener('keydown', (e) => {
     } else {
       focusPane(T.neighbour(rects, S.focus, dir));
     }
+    return;
+  }
+  if (e.key >= '1' && e.key <= '9') {          // switch group, like OS desktops
+    e.preventDefault();
+    const g = groups()[+e.key - 1];
+    if (g) switchGroup(g.id);
     return;
   }
   if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }

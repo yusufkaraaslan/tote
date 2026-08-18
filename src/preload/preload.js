@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('tote', {
   rename: (from, to) => ipcRenderer.invoke('workspace:rename', from, to),
   trash: (rel) => ipcRenderer.invoke('workspace:trash', rel),
   openPath: (rel) => ipcRenderer.invoke('workspace:openPath', rel),
+  revealPath: (rel) => ipcRenderer.invoke('workspace:revealPath', rel),
 
   // config
   getProviders: () => ipcRenderer.invoke('config:getProviders'),

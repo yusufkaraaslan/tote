@@ -414,6 +414,11 @@ ipcMain.handle('workspace:trash', async (e, rel) => {
   return true;
 });
 ipcMain.handle('workspace:openPath', (e, rel) => shell.openPath(workspace.resolveSafe(rel)));
+// Reveal selects the item in the OS file manager; openPath hands it to its
+// default application instead. Both stay inside resolveSafe.
+ipcMain.handle('workspace:revealPath', (e, rel) => {
+  shell.showItemInFolder(workspace.resolveSafe(rel));
+});
 
 // --- IPC: config ------------------------------------------------------------------------
 

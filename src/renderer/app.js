@@ -8,10 +8,10 @@ const state = {
   settings: { bridgeDownloads: true },
   workspaces: { active: null, list: [] },
   treeData: [],
-  views: {}, // wsId -> { tabs: [{ id, providerId }], active: tabId|null }  (persisted)
+  views: {}, // wsId -> { tabs: [{id, providerId}], tiling: {tree, focus, zoom} }  (persisted)
   tabs: new Map(), // tabId -> { wv: <webview>|null, providerId, wsId }  (webviews created lazily)
   activeTab: null, // tabId shown in the center (belongs to the active workspace)
-  terms: new Map(), // termId -> { term, fit, ptyId, el, tabEl, name, wsId, alive }
+  terms: new Map(), // termId -> { term, fit, ptyId, localId, pane, name, wsId, alive }
   termSeq: 0,
   activeTerm: null,
   activeTermByWs: {}, // wsId -> termId last active there
@@ -188,72 +188,21 @@ function saveViews() {
 const providerOf = (id) => state.providers.find((p) => p.id === id);
 const newId = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-function renderTabs() {
-  const bar = $('#tabs');
-  bar.innerHTML = '';
-  const V = wsViews();
-  const counts = {};
-  for (const t of V.tabs) counts[t.providerId] = (counts[t.providerId] || 0) + 1;
-  const seen = {};
-  for (const t of V.tabs) {
-    const p = providerOf(t.providerId);
-    if (!p) continue;
-    seen[p.id] = (seen[p.id] || 0) + 1;
-    const btn = document.createElement('div');
-    btn.className = 'tab' + (state.activeTab === t.id ? ' active' : '');
-    btn.dataset.tab = t.id;
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = p.color || '#888';
-    btn.appendChild(dot);
-    btn.appendChild(document.createTextNode(p.name));
-    if (counts[p.id] > 1) {
-      const n = document.createElement('span');
-      n.className = 'n';
-      n.textContent = '#' + seen[p.id];
-      btn.appendChild(n);
-    }
-    const close = document.createElement('span');
-    close.className = 'close';
-    close.textContent = '×';
-    close.title = 'close tab';
-    close.onclick = (e) => { e.stopPropagation(); closeTab(t.id); };
-    btn.appendChild(close);
-    btn.title = p.url + '  (right-click: reload / duplicate / close)';
-    btn.onclick = () => activateTab(t.id);
-    btn.oncontextmenu = (e) => {
-      e.preventDefault();
-      hideContextMenu();
-      const menu = $('#context-menu');
-      menu.innerHTML = '';
-      menu.appendChild(ctxItem('reload', () => {
-        const entry = state.tabs.get(t.id);
-        if (entry && entry.wv) entry.wv.reload(); else activateTab(t.id);
-      }));
-      menu.appendChild(ctxItem('duplicate (new ' + p.name + ' tab)', () => openTab(p.id)));
-      menu.appendChild(ctxItem('close', () => closeTab(t.id), true));
-      menu.style.left = e.clientX + 'px';
-      menu.style.top = e.clientY + 'px';
-      menu.classList.remove('hidden');
-    };
-    bar.appendChild(btn);
-  }
-}
-
+// A pane's title bar shows loading state; there is no global tab strip.
 function setTabLoading(tabId, on) {
-  const btn = document.querySelector(`[data-tab="${tabId}"]`);
-  if (btn) btn.classList.toggle('loading', on);
+  const p = panes.get('web:' + tabId);
+  if (p) p.el.classList.toggle('loading', on);
 }
 
+// Open a provider as a new pane in the active space.
 function openTab(providerId) {
   const V = wsViews();
   const tab = { id: newId('t'), providerId };
   V.tabs.push(tab);
-  renderTabs();
-  activateTab(tab.id);
+  openPane(T.leaf(newLeafId(), 'web', tab.id));
 }
 
-function ensureWebview(tab, provider) {
+function ensureWebview(tab, provider, container) {
   let entry = state.tabs.get(tab.id);
   if (entry && entry.wv) return entry.wv;
   const wv = document.createElement('webview');
@@ -275,43 +224,13 @@ function ensureWebview(tab, provider) {
   wv.addEventListener('render-process-gone', () => {
     wv.remove();
     const en = state.tabs.get(tab.id);
-    if (en) en.wv = null; // tab stays; next activation recreates the webview
-    toast(provider.name + ' tab crashed - click it to reload.', 'error');
-    if (state.activeTab === tab.id) $('#welcome').style.display = '';
+    if (en) en.wv = null; // pane stays; the next applyTiles recreates the webview
+    toast(provider.name + ' pane crashed - it will reload.', 'error');
   });
-  $('#webviews').appendChild(wv);
+  (container || $('#tiles')).appendChild(wv);
   entry = { wv, providerId: provider.id, wsId: state.workspaces.active };
   state.tabs.set(tab.id, entry);
   return wv;
-}
-
-function showOnlyWebview(tabId) {
-  for (const [id, en] of state.tabs) if (en.wv) en.wv.classList.toggle('active', id === tabId);
-  $('#welcome').style.display = tabId ? 'none' : '';
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tabId));
-}
-
-async function activateTab(tabId) {
-  const V = wsViews();
-  const tab = V.tabs.find((t) => t.id === tabId);
-  const provider = tab && providerOf(tab.providerId);
-  if (!provider) return;
-  if (provider.local) {
-    setTabLoading(tabId, true);
-    try {
-      await tote.ensureLocal(provider.id);
-    } catch (e) {
-      setTabLoading(tabId, false);
-      toast(e.message, 'error');
-      return;
-    }
-    setTabLoading(tabId, false);
-  }
-  V.active = tabId;
-  state.activeTab = tabId;
-  ensureWebview(tab, provider);
-  showOnlyWebview(tabId);
-  saveViews();
 }
 
 function destroyTabWebview(tabId) {
@@ -320,34 +239,19 @@ function destroyTabWebview(tabId) {
   state.tabs.delete(tabId);
 }
 
-function closeTab(tabId) {
+// Forget a web instance. The pane element and the tree leaf are handled by
+// closePane, which is the only caller.
+function closeTabInstance(tabId) {
   const V = wsViews();
   const idx = V.tabs.findIndex((t) => t.id === tabId);
-  if (idx < 0) return;
-  V.tabs.splice(idx, 1);
+  if (idx >= 0) V.tabs.splice(idx, 1);
   destroyTabWebview(tabId);
-  if (state.activeTab === tabId) {
-    const next = V.tabs[idx] || V.tabs[idx - 1];
-    state.activeTab = null;
-    V.active = null;
-    renderTabs();
-    if (next) activateTab(next.id); else showOnlyWebview(null);
-  } else {
-    renderTabs();
-  }
-  saveViews();
 }
 
-// Bring the ACTIVE workspace's views to the front (tabs + terminals). Other
-// workspaces' webviews/PTYs stay alive in the background.
+// Bring the ACTIVE space's panes to the front. Other spaces' webviews and PTYs
+// stay alive in the background; applyTiles hides any pane not in this tree.
 function showWorkspaceViews() {
-  const V = wsViews();
-  applyLayout(); // this space's docks / sizes / panel visibility
-  state.activeTab = null;
-  renderTabs();
-  const active = V.tabs.find((t) => t.id === V.active) || V.tabs[0];
-  if (active) activateTab(active.id); else showOnlyWebview(null);
-  renderTermTabs();
+  applyTiles();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -639,22 +543,32 @@ document.addEventListener('click', (e) => {
 /* ---------------- terminals ---------------- */
 const Fit = window.FitAddon && window.FitAddon.FitAddon;
 
-function togglePanel(force) {
-  const L = layout();
-  const show = force !== undefined ? force : !L.terminal.visible;
-  if (L.terminal.visible === show) return;
-  L.terminal.visible = show;
-  applyLayout();
-  saveLayout();
+// Refit every live terminal to its pane. Called on every layout change, so the
+// xterm fit runs per frame while the PTY resize is debounced to the end of the
+// drag -- resizing a PTY on every mousemove makes TUI agents redraw constantly.
+let ptyResizeTimer = null;
+function refitTerms() {
+  for (const t of state.terms.values()) {
+    if (!t.fit || !t.pane || t.pane.el.classList.contains('hidden')) continue;
+    try { t.fit.fit(); } catch {}
+  }
+  clearTimeout(ptyResizeTimer);
+  ptyResizeTimer = setTimeout(() => {
+    for (const t of state.terms.values()) {
+      if (!t.alive || !t.pane || t.pane.el.classList.contains('hidden')) continue;
+      try { tote.ptyResize(t.ptyId, t.term.cols, t.term.rows); } catch {}
+    }
+  }, 150);
 }
 
-function fitActiveTerm() {
-  const t = state.terms.get(state.activeTerm);
-  if (!t || !t.fit) return;
-  try {
-    t.fit.fit();
-    if (t.alive) tote.ptyResize(t.ptyId, t.term.cols, t.term.rows);
-  } catch {}
+// Kill the PTY behind a term pane. The pane element and the leaf are closePane's
+// business; this only tears down the instance.
+function killTermByRef(localId) {
+  const hit = [...state.terms].find(([, t]) => t.localId === localId);
+  if (!hit) return;
+  const [id, t] = hit;
+  if (t.alive) tote.ptyKill(t.ptyId);
+  state.terms.delete(id);
 }
 
 async function renderTermMenu() {
@@ -684,30 +598,11 @@ async function renderTermMenu() {
 }
 
 async function spawnTerm(profile) {
-  togglePanel(true);
   const id = ++state.termSeq;
   const wsName = (activeWorkspace() && activeWorkspace().name) || '?';
 
-  const el = document.createElement('div');
-  el.className = 'term-instance';
-  $('#term-container').appendChild(el);
-
-  const tabEl = document.createElement('div');
-  tabEl.className = 'term-tab';
-  const label = document.createElement('span');
-  label.textContent = profile.name;
-  tabEl.title = wsName + ' · cwd: ' + (activeWorkspace() ? activeWorkspace().path : '');
-  tabEl.append(label);
-  const close = document.createElement('span');
-  close.className = 'close';
-  close.textContent = '×';
-  close.onclick = (e) => {
-    e.stopPropagation();
-    closeTerm(id);
-  };
-  tabEl.appendChild(close);
-  tabEl.onclick = () => activateTerm(id);
-  $('#term-tabs').appendChild(tabEl);
+  const pane = paneShell('term:' + id, profile.name);
+  pane.el.title = wsName + ' · cwd: ' + (activeWorkspace() ? activeWorkspace().path : '');
 
   const term = new Terminal({
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
@@ -725,77 +620,50 @@ async function spawnTerm(profile) {
     fit = new Fit();
     term.loadAddon(fit);
   }
-  term.open(el);
+  term.open(pane.body);
 
-  const entry = { term, fit, ptyId: null, el, tabEl, name: profile.name, wsId: state.workspaces.active, alive: false };
+  const entry = { term, fit, ptyId: null, localId: id, pane, name: profile.name,
+                  wsId: state.workspaces.active, alive: false };
   state.terms.set(id, entry);
-  activateTerm(id);
-  // Fit synchronously so the PTY is created at the real size, not 80x24 —
-  // the RAF fit in activateTerm runs after ptySpawn and can't resize a PTY
-  // that doesn't exist yet.
+
+  // Place the pane first so it has real dimensions, then fit synchronously: the
+  // PTY must be created at the true size, not 80x24.
+  openPane(T.leaf(newLeafId(), 'term', id));
   if (fit) { try { fit.fit(); } catch {} }
 
   try {
     const res = await tote.ptySpawn(profile.id, term.cols || 80, term.rows || 24);
     entry.ptyId = res.id;
     entry.alive = true;
-    tabEl.title = res.workspace + ' · cwd: ' + res.cwd;
+    pane.el.title = res.workspace + ' · cwd: ' + res.cwd;
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + res.cwd + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
     term.onData((d) => tote.ptyWrite(res.id, d));
-    // Size may have changed while spawning (or the sync fit ran at 0x0); push it now.
+    // The pane may have been resized while spawning; push the real size now.
     if (fit) { try { fit.fit(); } catch {} }
     tote.ptyResize(res.id, term.cols, term.rows);
+    term.focus();
   } catch (e) {
     term.writeln('\x1b[31mCould not start ' + profile.name + ':\x1b[0m ' + e.message);
-    tabEl.classList.add('dead');
+    pane.el.classList.add('dead');
   }
 }
 
-function activateTerm(id) {
-  state.activeTerm = id;
-  const t = state.terms.get(id);
-  if (t) state.activeTermByWs[t.wsId] = id;
-  for (const [tid, tt] of state.terms) {
-    tt.el.classList.toggle('active', tid === id);
-    tt.tabEl.classList.toggle('active', tid === id);
-  }
-  requestAnimationFrame(fitActiveTerm);
-  if (t) t.term.focus();
-}
-
-// Show only the active workspace's terminal tabs; others stay alive but hidden.
-function renderTermTabs() {
-  const ws = state.workspaces.active;
-  let mine = [];
-  for (const [id, t] of state.terms) {
-    const isMine = t.wsId === ws;
-    t.tabEl.classList.toggle('hidden', !isMine);
-    if (isMine) mine.push(id);
-  }
-  const remembered = state.activeTermByWs[ws];
-  const pick = mine.includes(remembered) ? remembered : mine[mine.length - 1];
-  if (pick !== undefined) activateTerm(pick);
-  else {
-    state.activeTerm = null;
-    for (const t of state.terms.values()) { t.el.classList.remove('active'); t.tabEl.classList.remove('active'); }
-  }
-}
-
+// Close a terminal from outside the tiling UI -- e.g. its space was removed.
+// When the pane is in the active space, go through closePane so the tree, the
+// element and the PTY are torn down by the one code path.
 function closeTerm(id) {
   const t = state.terms.get(id);
   if (!t) return;
+  const V = state.views[t.wsId];
+  const lf = V && V.tiling
+    && T.leaves(V.tiling.tree).find((l) => l.kind === 'term' && l.ref === id);
+  if (lf && t.wsId === state.workspaces.active) { closePane(lf.id); return; }
+  if (lf) V.tiling.tree = T.removeLeaf(V.tiling.tree, lf.id);
   if (t.alive) tote.ptyKill(t.ptyId);
-  t.el.remove();
-  t.tabEl.remove();
+  destroyPaneEl('term:' + id);
   state.terms.delete(id);
-  if (state.activeTermByWs[t.wsId] === id) delete state.activeTermByWs[t.wsId];
-  if (state.activeTerm === id) {
-    const same = [...state.terms].filter(([, x]) => x.wsId === t.wsId).map(([k]) => k);
-    const next = same.pop();
-    if (next !== undefined) activateTerm(next);
-    else state.activeTerm = null;
-  }
+  saveViews();
 }
 
 tote.onPtyData((ptyId, data) => {
@@ -812,7 +680,7 @@ tote.onPtyExit((ptyId, code) => {
   for (const t of state.terms.values()) {
     if (t.ptyId === ptyId) {
       t.alive = false;
-      t.tabEl.classList.add('dead');
+      if (t.pane) t.pane.el.classList.add('dead');
       t.term.writeln('\r\n\x1b[90m[process exited with code ' + code + ']\x1b[0m');
       return;
     }
@@ -831,146 +699,367 @@ $('#btn-new-term').onclick = async (e) => {
   }
 };
 
-$('#btn-terminal').onclick = () => togglePanel();
 
-/* ---------------- layout: dockable panels ----------------
- * Two panels (files, terminal), three docks (left, bottom, right). A panel's
- * DOM node is moved into its dock; each dock has one persisted size and a
- * splitter that is shown only when the dock holds a visible panel.
- * Persisted as settings.layout. */
-const PANELS = { files: '#files-panel', terminal: '#terminal-panel' };
-const DOCKS = ['left', 'bottom', 'right'];
+/* ---------------- tiling layout ----------------
+ * One binary tree per space (TileTree, layout.js -- pure, tested by `npm test`).
+ *
+ * #tiles is FLAT: every pane is a DIRECT child, created once per content
+ * instance (a web tab, a pty, the files tree) and never reparented. A tree edit
+ * changes which RECT an element receives, never which parent it has. That is
+ * load-bearing: reparenting a <webview> detaches its guest and the page reloads,
+ * losing scroll position and unsent chat drafts. Measured, not assumed --
+ * docs/superpowers/specs/2026-08-18-tiling-layout-design.md. */
 
-const DEFAULT_LAYOUT = {
-  files: { dock: 'left', visible: true },
-  terminal: { dock: 'bottom', visible: false },
-  sizes: { left: 270, right: 520, bottom: 280 },
-};
+const T = window.TileTree;
+const GUTTER = 6;
+const MIN_PANE = 140;
 
-// Layout is PER WORKSPACE (stored in views.json next to the space's tabs), so
-// hiding/docking a panel in one space never touches another. New spaces start
-// from the legacy global settings.layout if present, else DEFAULT_LAYOUT.
-function layout() {
-  const V = wsViews();
-  if (!V.layout) {
-    const tpl = state.settings.layout || DEFAULT_LAYOUT;
-    V.layout = JSON.parse(JSON.stringify(tpl));
-    if (V.layout.terminal) V.layout.terminal.visible = false;
+let leafSeq = 0;
+const newLeafId = () => 'L' + (++leafSeq);
+
+// Persisted ids must not be handed out again after a restart.
+function adoptLeafSeq(all) {
+  for (const V of Object.values(all || {})) {
+    for (const lf of T.leaves(V.tiling && V.tiling.tree)) {
+      const n = parseInt(String(lf.id).slice(1), 10);
+      if (n > leafSeq) leafSeq = n;
+    }
   }
-  return V.layout;
 }
 
-function saveLayout() {
+// Per-space tiling state, migrated from the old dock layout on first read.
+function tiles() {
+  const V = wsViews();
+  if (!V.tiling) {
+    const m = T.migrate(
+      { tabs: V.tabs || [], active: V.active, layout: V.layout || state.settings.layout || {} },
+      newLeafId, { w: innerWidth || 1400, h: innerHeight || 800 });
+    V.tiling = { tree: m.tree, focus: m.focus, zoom: null };
+    delete V.layout;
+  }
+  return V.tiling;
+}
+
+function hostRect() {
+  const r = $('#tiles').getBoundingClientRect();
+  return { x: 0, y: 0, w: r.width, h: r.height };
+}
+
+/* ----- pane elements: one per content instance, created once, never moved ----- */
+
+const panes = new Map();
+const paneKey = (lf) => (lf.kind === 'files' ? 'files' : lf.kind + ':' + lf.ref);
+
+function paneShell(key, titleText, dotColor) {
+  let p = panes.get(key);
+  if (p) return p;
+  const el = document.createElement('div');
+  el.className = 'pane';
+  el.dataset.pane = key;
+  const head = document.createElement('div');
+  head.className = 'pane-head';
+  const dot = document.createElement('span');
+  dot.className = 'pane-dot';
+  if (dotColor) dot.style.background = dotColor; else dot.style.display = 'none';
+  const title = document.createElement('span');
+  title.className = 'pane-title';
+  title.textContent = titleText;
+  const x = document.createElement('span');
+  x.className = 'pane-x';
+  x.textContent = '✕';
+  x.title = 'Close pane';
+  head.append(dot, title, x);
+  const body = document.createElement('div');
+  body.className = 'pane-body';
+  el.append(head, body);
+  $('#tiles').appendChild(el);
+
+  p = { el, head, body, title, dot, key };
+  panes.set(key, p);
+
+  el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
+  x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
+  head.addEventListener('mousedown', (e) => {
+    if (e.target === x) return;
+    startPaneDrag(e, el);
+  });
+  return p;
+}
+
+// Give a leaf its element, creating the content if this is its first showing.
+// Returns null when the instance is gone (a pty that died, a tab that was
+// closed elsewhere) so the caller can prune the leaf.
+function mountLeaf(lf) {
+  const key = paneKey(lf);
+  if (lf.kind === 'files') {
+    const p = paneShell(key, 'files');
+    if (!p.body.firstChild) p.body.appendChild($('#files-panel'));
+    return p;
+  }
+  if (lf.kind === 'web') {
+    const V = wsViews();
+    const tab = (V.tabs || []).find((t) => t.id === lf.ref);
+    const provider = tab && providerOf(tab.providerId);
+    if (!provider) return null;
+    const p = paneShell(key, provider.name, provider.color);
+    ensureWebview(tab, provider, p.body);
+    return p;
+  }
+  return panes.get(key) || null;   // terminals are built by spawnTerm
+}
+
+/* ----- applying the tree ----- */
+
+function applyTiles() {
+  const S = tiles();
+  const host = hostRect();
+
+  // prune leaves whose instance no longer exists
+  for (const lf of T.leaves(S.tree)) {
+    if (!mountLeaf(lf)) { S.tree = T.removeLeaf(S.tree, lf.id); if (S.focus === lf.id) S.focus = null; }
+  }
+  const live = T.leaves(S.tree);
+  if (!live.some((l) => l.id === S.focus)) S.focus = live.length ? live[0].id : null;
+  if (S.zoom && !live.some((l) => l.id === S.zoom)) S.zoom = null;
+
+  const rects = T.rectsFor(S.tree, host, { gutter: GUTTER });
+  for (const p of panes.values()) { p.el.classList.add('hidden'); p.el.dataset.leaf = ''; }
+
+  for (const lf of live) {
+    const p = panes.get(paneKey(lf));
+    if (!p) continue;
+    const r = S.zoom === lf.id ? host : rects.get(lf.id);
+    p.el.dataset.leaf = lf.id;
+    p.el.classList.remove('hidden');
+    p.el.classList.toggle('focused', S.focus === lf.id);
+    p.el.style.left = r.x + 'px';
+    p.el.style.top = r.y + 'px';
+    p.el.style.width = r.w + 'px';
+    p.el.style.height = r.h + 'px';
+    p.el.style.zIndex = S.zoom === lf.id ? 20 : 1;
+  }
+
+  renderDividers(S, host);
+  $('#welcome').style.display = S.tree ? 'none' : '';
+  $('#btn-files').classList.toggle('on', live.some((l) => l.kind === 'files'));
+  requestAnimationFrame(refitTerms);
+}
+
+function renderDividers(S, host) {
+  $('#tiles').querySelectorAll('.divider').forEach((d) => d.remove());
+  if (S.zoom) return;                       // nothing to drag while zoomed
+  for (const d of T.dividersFor(S.tree, host, { gutter: GUTTER })) {
+    const el = document.createElement('div');
+    el.className = 'divider ' + d.dir;
+    el.style.left = d.rect.x + 'px';
+    el.style.top = d.rect.y + 'px';
+    el.style.width = d.rect.w + 'px';
+    el.style.height = d.rect.h + 'px';
+    el.addEventListener('mousedown', (e) => startDividerDrag(e, d));
+    $('#tiles').appendChild(el);
+  }
+}
+
+/* ----- interaction ----- */
+
+function focusPane(leafId) {
+  const S = tiles();
+  if (!leafId || S.focus === leafId) return;
+  S.focus = leafId;
+  for (const p of panes.values()) p.el.classList.toggle('focused', p.el.dataset.leaf === leafId);
+  const lf = T.findLeaf(S.tree, leafId);
+  if (lf && lf.kind === 'term') {
+    const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
+    if (t) t.term.focus();
+  }
   saveViews();
 }
 
-function applyLayout() {
-  const L = layout();
-  for (const [name, sel] of Object.entries(PANELS)) {
-    const el = $(sel);
-    const dock = $('#dock-' + L[name].dock);
-    if (el.parentElement !== dock) dock.appendChild(el);
-    el.classList.toggle('hidden', !L[name].visible);
+// Opening a pane splits the focused one along its longer axis (dwindle).
+function openPane(node) {
+  const S = tiles();
+  if (!S.tree) {
+    S.tree = node;
+  } else {
+    const rects = T.rectsFor(S.tree, hostRect(), { gutter: GUTTER });
+    const target = (S.focus && T.findLeaf(S.tree, S.focus)) ? S.focus : T.leaves(S.tree)[0].id;
+    S.tree = T.splitLeaf(S.tree, target, node, T.dirFor(rects.get(target) || hostRect()));
   }
-  for (const side of DOCKS) {
-    const dock = $('#dock-' + side);
-    const anyVisible = [...dock.children].some((c) => !c.classList.contains('hidden'));
-    dock.classList.toggle('hidden', !anyVisible);
-    $('#split-' + side).classList.toggle('hidden', !anyVisible);
-    if (side === 'bottom') dock.style.height = L.sizes.bottom + 'px';
-    else dock.style.width = L.sizes[side] + 'px';
-  }
-  $('#btn-files').classList.toggle('on', L.files.visible);
-  $('#btn-terminal').classList.toggle('on', L.terminal.visible);
-  requestAnimationFrame(fitActiveTerm);
+  S.focus = node.id;
+  S.zoom = null;
+  applyTiles();
+  saveViews();
+  return node;
 }
 
-// ≡ button on each panel bar: dock left / bottom / right, or hide.
-document.querySelectorAll('.dock-menu-btn').forEach((btn) => {
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    const name = btn.dataset.panel;
-    hideContextMenu();
-    const menu = $('#context-menu');
-    menu.innerHTML = '';
-    const cur = layout()[name].dock;
-    for (const [dock, label] of [['left', '◂ dock left'], ['bottom', '▾ dock bottom'], ['right', '▸ dock right']]) {
-      const item = ctxItem(label, () => {
-        layout()[name].dock = dock;
-        layout()[name].visible = true;
-        applyLayout();
-        saveLayout();
-      });
-      if (dock === cur) item.classList.add('checked');
-      menu.appendChild(item);
-    }
-    menu.appendChild(ctxItem('hide panel', () => {
-      layout()[name].visible = false;
-      applyLayout();
-      saveLayout();
-    }));
-    const r = btn.getBoundingClientRect();
-    menu.style.left = Math.min(r.left, innerWidth - 200) + 'px';
-    menu.style.top = r.bottom + 4 + 'px';
-    menu.classList.remove('hidden');
+function closePane(leafId) {
+  const S = tiles();
+  const lf = T.findLeaf(S.tree, leafId);
+  if (!lf) return;
+  S.tree = T.removeLeaf(S.tree, leafId);
+  if (S.zoom === leafId) S.zoom = null;
+  // tear down the instance behind the pane
+  if (lf.kind === 'web') { destroyPaneEl(paneKey(lf)); closeTabInstance(lf.ref); }
+  else if (lf.kind === 'term') { killTermByRef(lf.ref); destroyPaneEl(paneKey(lf)); }
+  else { const p = panes.get('files'); if (p) p.el.classList.add('hidden'); }
+  applyTiles();
+  saveViews();
+}
+
+function destroyPaneEl(key) {
+  const p = panes.get(key);
+  if (!p) return;
+  p.el.remove();
+  panes.delete(key);
+}
+
+function toggleZoom() {
+  const S = tiles();
+  if (!S.focus) return;
+  S.zoom = S.zoom === S.focus ? null : S.focus;
+  applyTiles();
+  saveViews();
+}
+
+/* Divider drag. body.dragging puts pointer-events:none on webviews -- without
+ * it the guest swallows mousemove the moment the cursor crosses it. */
+function startDividerDrag(e, d) {
+  e.preventDefault();
+  document.body.classList.add('dragging');
+  const S = tiles();
+  const move = (ev) => {
+    const raw = d.dir === 'row'
+      ? (ev.clientX - $('#tiles').getBoundingClientRect().left - d.host.x) / d.host.w
+      : (ev.clientY - $('#tiles').getBoundingClientRect().top - d.host.y) / d.host.h;
+    S.tree = T.setRatio(S.tree, d.path, T.clampRatio(d.host, d.dir, raw, MIN_PANE));
+    applyTiles();
   };
-});
+  const up = () => {
+    document.body.classList.remove('dragging');
+    removeEventListener('mousemove', move);
+    removeEventListener('mouseup', up);
+    refitTerms(true);
+    saveViews();
+  };
+  addEventListener('mousemove', move);
+  addEventListener('mouseup', up);
+}
+
+/* Pane drag: drop on the centre to swap, on an edge to re-split. Both are tree
+ * edits -- no DOM node moves, so nothing reloads. */
+function startPaneDrag(e, el) {
+  e.preventDefault();
+  const fromId = el.dataset.leaf;
+  if (!fromId) return;
+  document.body.classList.add('dragging');
+  const hint = document.createElement('div');
+  hint.className = 'drop-hint hidden';
+  $('#tiles').appendChild(hint);
+
+  let drop = null;
+  const move = (ev) => {
+    drop = dropTargetAt(ev.clientX, ev.clientY, fromId);
+    if (!drop) { hint.classList.add('hidden'); return; }
+    hint.classList.remove('hidden');
+    const r = drop.rect, e2 = drop.edge;
+    const box = e2 === 'centre' ? r
+      : e2 === 'left'  ? { x: r.x, y: r.y, w: r.w / 2, h: r.h }
+      : e2 === 'right' ? { x: r.x + r.w / 2, y: r.y, w: r.w / 2, h: r.h }
+      : e2 === 'top'   ? { x: r.x, y: r.y, w: r.w, h: r.h / 2 }
+      :                  { x: r.x, y: r.y + r.h / 2, w: r.w, h: r.h / 2 };
+    hint.style.left = box.x + 'px'; hint.style.top = box.y + 'px';
+    hint.style.width = box.w + 'px'; hint.style.height = box.h + 'px';
+  };
+  const up = () => {
+    document.body.classList.remove('dragging');
+    hint.remove();
+    removeEventListener('mousemove', move);
+    removeEventListener('mouseup', up);
+    if (drop && drop.id !== fromId) {
+      const S = tiles();
+      S.tree = drop.edge === 'centre'
+        ? T.swapLeaves(S.tree, fromId, drop.id)
+        : T.moveLeaf(S.tree, fromId, drop.id, drop.edge);
+      applyTiles();
+      saveViews();
+    }
+  };
+  addEventListener('mousemove', move);
+  addEventListener('mouseup', up);
+}
+
+// Which pane is under the cursor, and which quarter of it?
+function dropTargetAt(clientX, clientY, fromId) {
+  const S = tiles();
+  const box = $('#tiles').getBoundingClientRect();
+  const x = clientX - box.left, y = clientY - box.top;
+  const rects = T.rectsFor(S.tree, hostRect(), { gutter: GUTTER });
+  for (const [id, r] of rects) {
+    if (id === fromId) continue;
+    if (x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h) continue;
+    const fx = (x - r.x) / r.w, fy = (y - r.y) / r.h;
+    let edge = 'centre';
+    const m = 0.25;
+    if (fx < m && fx <= fy && fx <= 1 - fy) edge = 'left';
+    else if (fx > 1 - m && 1 - fx <= fy && 1 - fx <= 1 - fy) edge = 'right';
+    else if (fy < m) edge = 'top';
+    else if (fy > 1 - m) edge = 'bottom';
+    return { id, rect: r, edge };
+  }
+  return null;
+}
+
+/* ----- toolbar + keyboard ----- */
 
 $('#btn-files').onclick = () => {
-  layout().files.visible = !layout().files.visible;
-  applyLayout();
-  saveLayout();
+  const S = tiles();
+  const existing = T.leaves(S.tree).find((l) => l.kind === 'files');
+  if (existing) closePane(existing.id);
+  else openPane(T.leaf(newLeafId(), 'files'));
 };
 
-// Splitter drag. While dragging, webviews get pointer-events:none (see
-// styles.css body.dragging) — otherwise the guest view swallows mousemove as
-// soon as the cursor crosses it and the drag dies.
-document.querySelectorAll('.splitter').forEach((handle) => {
-  const side = handle.dataset.side;
-  handle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    const dock = $('#dock-' + side);
-    const start = side === 'bottom' ? e.clientY : e.clientX;
-    const startSize = side === 'bottom' ? dock.offsetHeight : dock.offsetWidth;
-    document.body.classList.add('dragging');
-    const move = (ev) => {
-      let size;
-      if (side === 'left') size = startSize + (ev.clientX - start);
-      else if (side === 'right') size = startSize + (start - ev.clientX);
-      else size = startSize + (start - ev.clientY);
-      const max = side === 'bottom' ? innerHeight - 220 : innerWidth - 480;
-      size = Math.max(160, Math.min(max, size));
-      layout().sizes[side] = size;
-      if (side === 'bottom') dock.style.height = size + 'px';
-      else dock.style.width = size + 'px';
-    };
-    const up = () => {
-      document.body.classList.remove('dragging');
-      removeEventListener('mousemove', move);
-      removeEventListener('mouseup', up);
-      fitActiveTerm();
-      saveLayout();
-    };
-    addEventListener('mousemove', move);
-    addEventListener('mouseup', up);
-  });
-});
+const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
+const ARROW = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 
 addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.key === '`') {
+  if (e.ctrlKey && !e.altKey && e.key === '`') {
     e.preventDefault();
-    togglePanel();
+    const S = tiles();
+    const term = T.leaves(S.tree).find((l) => l.kind === 'term');
+    if (term) focusPane(term.id);
+    else $('#btn-new-term').click();
+    return;
   }
+  if (!MOD(e)) return;
+  const S = tiles();
+  const dir = ARROW[e.key];
+  if (dir) {
+    e.preventDefault();
+    const rects = T.rectsFor(S.tree, hostRect(), { gutter: GUTTER });
+    if (e.shiftKey) {
+      const target = T.neighbour(rects, S.focus, dir);
+      if (target) {
+        const edge = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
+        S.tree = T.moveLeaf(S.tree, S.focus, target, edge);
+        applyTiles();
+        saveViews();
+      }
+    } else {
+      focusPane(T.neighbour(rects, S.focus, dir));
+    }
+    return;
+  }
+  if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }
+  if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
 });
 
-addEventListener('resize', fitActiveTerm);
-// Refit on any container size change (dock toggle, splitter, panel show, window).
+addEventListener('resize', () => applyTiles());
 (() => {
   let raf = 0;
   new ResizeObserver(() => {
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(fitActiveTerm);
-  }).observe($('#term-container'));
+    raf = requestAnimationFrame(() => applyTiles());
+  }).observe($('#tiles'));
 })();
 
 /* ---------------- settings ---------------- */
@@ -1142,7 +1231,6 @@ $('#np-add').onclick = async () => {
   });
   $('#np-name').value = $('#np-url').value = '';
   await tote.saveProviders(state.providers);
-  renderTabs();
   renderSettings();
 };
 
@@ -1408,8 +1496,8 @@ tote.onDownloadDone((m) => {
   state.settings = await tote.getSettings();
   state.workspaces = await tote.listWorkspaces();
   state.views = (await tote.getViews()) || {};
+  adoptLeafSeq(state.views);   // never re-issue a persisted pane id
   renderWorkspaceSwitcher();
-  applyLayout();
   showWorkspaceViews();
   await refreshTree();
   if (state.settings.setupDone === false) {

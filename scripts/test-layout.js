@@ -175,6 +175,15 @@ describe('dividersFor: the draggable strips between panes', () => {
     assert.deepStrictEqual(d[1].rect, R(200, 300, 800, 0));
   });
 
+  test('each divider carries the rect its split was given, for px -> ratio', () => {
+    const tree = T.split('row', 0.2,
+      T.leaf('files', 'files'),
+      T.split('col', 0.5, T.leaf('web', 'web'), T.leaf('term', 'term')));
+    const d = T.dividersFor(tree, R(0, 0, 1000, 600), { gutter: 0 });
+    assert.deepStrictEqual(d[0].host, R(0, 0, 1000, 600));   // root spans all
+    assert.deepStrictEqual(d[1].host, R(200, 0, 800, 600));  // inner split's share
+  });
+
   test('a lone leaf has no dividers', () => {
     assert.deepStrictEqual(T.dividersFor(T.leaf('A', 'web'), R(0, 0, 100, 100)), []);
   });

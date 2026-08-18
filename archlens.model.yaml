@@ -1,0 +1,848 @@
+game: tote
+version: 0.1.0
+engine: javascript
+scan:
+  exclude:
+  - node_modules
+  - .git
+  - __tests__
+  - tests
+  - coverage
+  - vendor
+  - .remember
+  - inbox
+  - dist
+  - release
+systems:
+- id: main
+  name: Main
+  components:
+  - id: config
+    name: config
+    kind: module
+    class_name: src/main/config.js
+    methods:
+    - name: getDir
+      args: []
+    - name: read
+      args:
+      - name: name
+        type: unknown
+      - name: fallback
+        type: unknown
+    - name: write
+      args:
+      - name: name
+        type: unknown
+      - name: data
+        type: unknown
+    - name: getProviders
+      args: []
+    - name: saveProviders
+      args:
+      - name: list
+        type: unknown
+    - name: getCliProfiles
+      args: []
+    - name: saveCliProfiles
+      args:
+      - name: list
+        type: unknown
+    - name: getWorkspaces
+      args: []
+    - name: saveWorkspaces
+      args:
+      - name: data
+        type: unknown
+    - name: getApps
+      args: []
+    - name: saveApps
+      args:
+      - name: data
+        type: unknown
+    - name: getSettings
+      args: []
+    - name: saveSettings
+      args:
+      - name: data
+        type: unknown
+    - name: getViews
+      args: []
+    - name: saveViews
+      args:
+      - name: data
+        type: unknown
+  - id: installer
+    name: installer
+    kind: module
+    class_name: src/main/installer.js
+    methods:
+    - name: systemCheck
+      args:
+      - name: ptys
+        type: unknown
+    - name: claudeStatus
+      args: []
+    - name: bindClaudeToWorkspace
+      args:
+      - name: rootPath
+        type: unknown
+    - name: mcpSnippet
+      args:
+      - name: rootPath
+        type: unknown
+  - id: main
+    name: main
+    kind: module
+    class_name: src/main/main.js
+    params:
+      path:
+        type: const
+        default: require('path')
+      fs:
+        type: const
+        default: require('fs')
+      http:
+        type: const
+        default: require('http')
+      win:
+        type: const
+        default: 'null'
+      KNOWN_APPS:
+        type: const
+        default: null
+      SEND_FILE_MAX:
+        type: const
+        default: 15 * 1024 * 1024
+      gotLock:
+        type: const
+        default: app.requestSingleInstanceLock()
+    signals:
+    - name: download:done
+      args: []
+    - name: workspace:changed
+      args: []
+    methods:
+    - name: chromeUA
+      args:
+      - name: ses
+        type: unknown
+    - name: migrateFromOmniHub
+      args: []
+    - name: adoptLoginShellPath
+      args: []
+    - name: uniquePath
+      args:
+      - name: p
+        type: unknown
+    - name: setupProviderSession
+      args:
+      - name: provider
+        type: unknown
+    - name: setupAllProviderSessions
+      args: []
+    - name: applyBridgeSetting
+      args: []
+    - name: ping
+      args:
+      - name: urlStr
+        type: unknown
+    - name: ensureLocalService
+      args:
+      - name: provider
+        type: unknown
+    - name: detectApps
+      args: []
+    - name: launchApp
+      args:
+      - name: entry
+        type: unknown
+    - name: createWindow
+      args: []
+    - name: partitionFor
+      args:
+      - name: providerId
+        type: unknown
+    - name: sleep
+      args:
+      - name: ms
+        type: unknown
+    - name: watchActive
+      args: []
+    - name: wsState
+      args: []
+    depends_on:
+    - main.config
+    - main.installer
+    - main.ptymanager
+    - main.workspace
+  - id: ptymanager
+    name: ptyManager
+    kind: module
+    class_name: src/main/ptyManager.js
+    signals:
+    - name: pty:data
+      args: []
+    - name: pty:exit
+      args: []
+    methods:
+    - name: available
+      args: []
+    - name: spawn
+      args:
+      - name: profile
+        type: unknown
+      - name: cwd
+        type: unknown
+      - name: cols
+        type: unknown
+      - name: rows
+        type: unknown
+      - name: sender
+        type: unknown
+    - name: write
+      args:
+      - name: id
+        type: unknown
+      - name: data
+        type: unknown
+    - name: resize
+      args:
+      - name: id
+        type: unknown
+      - name: cols
+        type: unknown
+      - name: rows
+        type: unknown
+    - name: kill
+      args:
+      - name: id
+        type: unknown
+    - name: killAll
+      args: []
+  - id: workspace
+    name: workspace
+    kind: module
+    class_name: src/main/workspace.js
+    methods:
+    - name: list
+      args: []
+    - name: activeId
+      args: []
+    - name: active
+      args: []
+    - name: setActive
+      args:
+      - name: id
+        type: unknown
+    - name: add
+      args:
+      - name: name
+        type: unknown
+      - name: absPath
+        type: unknown
+    - name: updateSpace
+      args:
+      - name: id
+        type: unknown
+      - name: arg1
+        type: unknown
+    - name: remove
+      args:
+      - name: id
+        type: unknown
+    - name: getRoot
+      args: []
+    - name: inboxDir
+      args:
+      - name: providerId
+        type: unknown
+    - name: resolveSafe
+      args:
+      - name: rel
+        type: unknown
+    - name: isTextFile
+      args:
+      - name: name
+        type: unknown
+    - name: tree
+      args:
+      - name: depth
+        type: unknown
+    - name: readText
+      args:
+      - name: rel
+        type: unknown
+    - name: writeText
+      args:
+      - name: rel
+        type: unknown
+      - name: content
+        type: unknown
+    - name: createFile
+      args:
+      - name: rel
+        type: unknown
+    - name: createFolder
+      args:
+      - name: rel
+        type: unknown
+    - name: rename
+      args:
+      - name: fromRel
+        type: unknown
+      - name: toRel
+        type: unknown
+    - name: ingest
+      args:
+      - name: absSource
+        type: unknown
+      - name: providerId
+        type: unknown
+    - name: watch
+      args:
+      - name: callback
+        type: unknown
+    - name: watchDownloads
+      args:
+      - name: callback
+        type: unknown
+    - name: unwatchDownloads
+      args: []
+- id: preload
+  name: Preload
+  components:
+  - id: preload
+    name: preload
+    kind: module
+    class_name: src/preload/preload.js
+    signals:
+    - name: workspaces:list
+      args: []
+    - name: workspaces:add
+      args: []
+    - name: workspaces:setActive
+      args: []
+    - name: workspaces:remove
+      args: []
+    - name: workspaces:rename
+      args: []
+    - name: workspaces:setPath
+      args: []
+    - name: workspace:getRoot
+      args: []
+    - name: workspace:tree
+      args: []
+    - name: workspace:read
+      args: []
+    - name: workspace:write
+      args: []
+    - name: workspace:createFile
+      args: []
+    - name: workspace:createFolder
+      args: []
+    - name: workspace:rename
+      args: []
+    - name: workspace:trash
+      args: []
+    - name: workspace:openPath
+      args: []
+    - name: config:getProviders
+      args: []
+    - name: config:saveProviders
+      args: []
+    - name: config:getCliProfiles
+      args: []
+    - name: config:saveCliProfiles
+      args: []
+    - name: config:openDir
+      args: []
+    - name: settings:get
+      args: []
+    - name: views:get
+      args: []
+    - name: views:save
+      args: []
+    - name: settings:save
+      args: []
+    - name: apps:list
+      args: []
+    - name: apps:add
+      args: []
+    - name: apps:remove
+      args: []
+    - name: apps:launch
+      args: []
+    - name: setup:systemCheck
+      args: []
+    - name: conn:claudeStatus
+      args: []
+    - name: conn:bindClaude
+      args: []
+    - name: conn:mcpSnippet
+      args: []
+    - name: pty:run
+      args: []
+    - name: provider:ensureLocal
+      args: []
+    - name: tab:sendFile
+      args: []
+    - name: app:openExternal
+      args: []
+    - name: pty:available
+      args: []
+    - name: pty:spawn
+      args: []
+    - name: pty:write
+      args: []
+    - name: pty:resize
+      args: []
+    - name: pty:kill
+      args: []
+    - name: cli:check
+      args: []
+    methods:
+    - name: listWorkspaces
+      args: []
+    - name: addWorkspace
+      args:
+      - name: name
+        type: unknown
+    - name: setActiveWorkspace
+      args:
+      - name: id
+        type: unknown
+    - name: removeWorkspace
+      args:
+      - name: id
+        type: unknown
+    - name: renameWorkspace
+      args:
+      - name: id
+        type: unknown
+      - name: name
+        type: unknown
+    - name: setWorkspacePath
+      args:
+      - name: id
+        type: unknown
+    - name: getRoot
+      args: []
+    - name: tree
+      args: []
+    - name: readFile
+      args:
+      - name: rel
+        type: unknown
+    - name: writeFile
+      args:
+      - name: rel
+        type: unknown
+      - name: content
+        type: unknown
+    - name: createFile
+      args:
+      - name: rel
+        type: unknown
+    - name: createFolder
+      args:
+      - name: rel
+        type: unknown
+    - name: rename
+      args:
+      - name: from
+        type: unknown
+      - name: to
+        type: unknown
+    - name: trash
+      args:
+      - name: rel
+        type: unknown
+    - name: openPath
+      args:
+      - name: rel
+        type: unknown
+    - name: getProviders
+      args: []
+    - name: saveProviders
+      args:
+      - name: list
+        type: unknown
+    - name: getCliProfiles
+      args: []
+    - name: saveCliProfiles
+      args:
+      - name: list
+        type: unknown
+    - name: openConfigDir
+      args: []
+    - name: getSettings
+      args: []
+    - name: getViews
+      args: []
+    - name: saveViews
+      args:
+      - name: v
+        type: unknown
+    - name: saveSettings
+      args:
+      - name: s
+        type: unknown
+    - name: listApps
+      args: []
+    - name: addApp
+      args:
+      - name: name
+        type: unknown
+    - name: removeApp
+      args:
+      - name: id
+        type: unknown
+    - name: launchApp
+      args:
+      - name: id
+        type: unknown
+    - name: systemCheck
+      args: []
+    - name: claudeStatus
+      args: []
+    - name: bindClaude
+      args: []
+    - name: mcpSnippet
+      args: []
+    - name: ptyRun
+      args:
+      - name: command
+        type: unknown
+    - name: ensureLocal
+      args:
+      - name: providerId
+        type: unknown
+    - name: sendFileToTab
+      args:
+      - name: wcId
+        type: unknown
+      - name: relPath
+        type: unknown
+    - name: openExternal
+      args:
+      - name: url
+        type: unknown
+    - name: ptyAvailable
+      args: []
+    - name: ptySpawn
+      args:
+      - name: profileId
+        type: unknown
+      - name: cols
+        type: unknown
+      - name: rows
+        type: unknown
+    - name: ptyWrite
+      args:
+      - name: id
+        type: unknown
+      - name: data
+        type: unknown
+    - name: ptyResize
+      args:
+      - name: id
+        type: unknown
+      - name: cols
+        type: unknown
+      - name: rows
+        type: unknown
+    - name: ptyKill
+      args:
+      - name: id
+        type: unknown
+    - name: checkCommand
+      args:
+      - name: cmd
+        type: unknown
+    - name: onPtyData
+      args:
+      - name: cb
+        type: unknown
+    - name: onPtyExit
+      args:
+      - name: cb
+        type: unknown
+    - name: onWorkspaceChanged
+      args:
+      - name: cb
+        type: unknown
+    - name: onDownloadDone
+      args:
+      - name: cb
+        type: unknown
+- id: renderer
+  name: Renderer
+  components:
+  - id: app
+    name: app
+    kind: module
+    class_name: src/renderer/app.js
+    params:
+      state:
+        type: const
+        default: null
+      saveViewsTimer:
+        type: const
+        default: 'null'
+      editorPath:
+        type: const
+        default: 'null'
+      Fit:
+        type: const
+        default: window.FitAddon && window.FitAddon.FitAddon
+      PANELS:
+        type: const
+        default: '{ files: ''#files-panel'', terminal: ''#terminal-panel'' }'
+      DOCKS:
+        type: const
+        default: '[''left'', ''bottom'', ''right'']'
+      DEFAULT_LAYOUT:
+        type: const
+        default: null
+      wizStep:
+        type: const
+        default: '0'
+      wizTerm:
+        type: const
+        default: 'null'
+      wizTermPty:
+        type: const
+        default: 'null'
+      wizOnExit:
+        type: const
+        default: 'null'
+      wizTermFit:
+        type: const
+        default: 'null'
+    methods:
+    - name: toast
+      args:
+      - name: msg
+        type: unknown
+      - name: kind
+        type: unknown
+    - name: askInput
+      args:
+      - name: title
+        type: unknown
+      - name: initial
+        type: unknown
+    - name: activeWorkspace
+      args: []
+    - name: renderWorkspaceSwitcher
+      args: []
+    - name: switchWorkspace
+      args:
+      - name: id
+        type: unknown
+    - name: removeWorkspace
+      args:
+      - name: ws
+        type: unknown
+    - name: renameWorkspace
+      args:
+      - name: ws
+        type: unknown
+    - name: changeWorkspaceFolder
+      args:
+      - name: ws
+        type: unknown
+    - name: addWorkspace
+      args: []
+    - name: wsViews
+      args:
+      - name: wsId
+        type: unknown
+    - name: saveViews
+      args: []
+    - name: renderTabs
+      args: []
+    - name: setTabLoading
+      args:
+      - name: tabId
+        type: unknown
+      - name: 'on'
+        type: unknown
+    - name: openTab
+      args:
+      - name: providerId
+        type: unknown
+    - name: ensureWebview
+      args:
+      - name: tab
+        type: unknown
+      - name: provider
+        type: unknown
+    - name: showOnlyWebview
+      args:
+      - name: tabId
+        type: unknown
+    - name: activateTab
+      args:
+      - name: tabId
+        type: unknown
+    - name: destroyTabWebview
+      args:
+      - name: tabId
+        type: unknown
+    - name: closeTab
+      args:
+      - name: tabId
+        type: unknown
+    - name: showWorkspaceViews
+      args: []
+    - name: refreshTree
+      args: []
+    - name: renderTree
+      args: []
+    - name: renderNodes
+      args:
+      - name: nodes
+        type: unknown
+    - name: hideContextMenu
+      args: []
+    - name: ctxItem
+      args:
+      - name: label
+        type: unknown
+      - name: fn
+        type: unknown
+      - name: danger
+        type: unknown
+    - name: showContextMenu
+      args:
+      - name: x
+        type: unknown
+      - name: y
+        type: unknown
+      - name: node
+        type: unknown
+    - name: openFile
+      args:
+      - name: node
+        type: unknown
+    - name: newFile
+      args:
+      - name: baseDir
+        type: unknown
+    - name: newFolder
+      args:
+      - name: baseDir
+        type: unknown
+    - name: sendToTab
+      args:
+      - name: relPath
+        type: unknown
+    - name: renderAppsMenu
+      args: []
+    - name: togglePanel
+      args:
+      - name: force
+        type: unknown
+    - name: fitActiveTerm
+      args: []
+    - name: renderTermMenu
+      args: []
+    - name: spawnTerm
+      args:
+      - name: profile
+        type: unknown
+    - name: activateTerm
+      args:
+      - name: id
+        type: unknown
+    - name: renderTermTabs
+      args: []
+    - name: closeTerm
+      args:
+      - name: id
+        type: unknown
+    - name: layout
+      args: []
+    - name: saveLayout
+      args: []
+    - name: applyLayout
+      args: []
+    - name: renderSettings
+      args: []
+    - name: openWizard
+      args: []
+    - name: closeWizard
+      args: []
+    - name: renderWizardStep
+      args: []
+    - name: wzRow
+      args:
+      - name: host
+        type: unknown
+      - name: label
+        type: unknown
+      - name: status
+        type: unknown
+      - name: sub
+        type: unknown
+      - name: action
+        type: unknown
+    - name: renderWzSystem
+      args: []
+    - name: renderWzClis
+      args: []
+    - name: ensureWizTerm
+      args: []
+    - name: runWizardInstall
+      args:
+      - name: profile
+        type: unknown
+      - name: btn
+        type: unknown
+    - name: renderWzConnections
+      args: []
+    - name: renderWzSnippet
+      args: []
+    - name: renderWzSpaces
+      args: []
+    - name: $
+      args:
+      - name: sel
+        type: unknown
+    - name: activeWorkspaceById
+      args:
+      - name: id
+        type: unknown
+    - name: providerOf
+      args:
+      - name: id
+        type: unknown
+    - name: newId
+      args:
+      - name: prefix
+        type: unknown
+- id: scripts
+  name: Scripts
+  components:
+  - id: copy_vendor
+    name: copy-vendor
+    kind: module
+    class_name: scripts/copy-vendor.js
+    params:
+      fs:
+        type: const
+        default: require('fs')
+      path:
+        type: const
+        default: require('path')
+      FILES:
+        type: const
+        default: null
+      outDir:
+        type: const
+        default: path.join(__dirname, '..', 'src', 'renderer', 'vendor')
+connections:
+- from: preload
+  to: main

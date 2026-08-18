@@ -121,6 +121,7 @@
       out.push({
         path: path,
         dir: n.dir,
+        host: r,        // the rect this split divides; converts a drag px to a ratio
         rect: n.dir === 'row'
           ? { x: ra.x + ra.w, y: r.y, w: gutter, h: r.h }
           : { x: r.x, y: ra.y + ra.h, w: r.w, h: gutter },

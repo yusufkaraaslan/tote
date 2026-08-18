@@ -15,8 +15,15 @@
       <div id="ws-tabs"></div>
       <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
       <div class="ws-actions">
-        <button id="btn-files" class="toggle" title="Show / hide files panel"><span class="ico">▤</span>files</button>
-        <button id="btn-terminal" class="toggle" title="Show / hide terminal panel (Ctrl+`)"><span class="ico">▥</span>terminal</button>
+        <div id="add-web-wrap">
+          <button id="btn-add-tab" title="Open a web LLM pane"><span class="ico">＋</span>web</button>
+          <div id="tab-add-menu" class="hidden"></div>
+        </div>
+        <div id="add-term-wrap">
+          <button id="btn-new-term" title="Open an agent terminal pane (Ctrl+`)"><span class="ico">＋</span>term</button>
+          <div id="term-menu" class="hidden"></div>
+        </div>
+        <button id="btn-files" class="toggle" title="Files pane"><span class="ico">▤</span>files</button>
         <span class="sep"></span>
         <div id="apps-wrap">
           <button id="btn-apps" title="Launch a native app into the active workspace"><span class="ico">⧉</span>apps</button>
@@ -27,61 +34,29 @@
     </div>
 
     <div id="main">
-      <div id="dock-left" class="dock dock-col hidden">
-        <!-- Files panel: dockable left / bottom / right -->
+      <!-- Flat tiling surface. Every pane is a DIRECT child, created once per
+           content instance and never reparented -- moving a pane changes its
+           rect, never its parent. Dividers are siblings, rebuilt per layout. -->
+      <div id="tiles">
         <aside id="files-panel" class="panel">
           <div class="sidebar-header sub">
-            <span class="sidebar-title">FILES</span>
+            <!-- no title here: the pane's own head already says "files" -->
             <div class="sidebar-actions">
               <button id="btn-new-file" title="New file">+file</button>
               <button id="btn-new-folder" title="New folder">+dir</button>
               <button id="btn-refresh" title="Refresh tree">↻</button>
-              <button class="dock-menu-btn" data-panel="files" title="Panel: dock / hide">≡</button>
             </div>
           </div>
           <div id="workspace-root" title=""></div>
           <div id="tree"></div>
         </aside>
-      </div>
-      <div id="split-left" class="splitter v hidden" data-side="left"></div>
-
-      <div id="center">
-        <div id="tabbar">
-          <div id="tabs"></div>
-          <div id="tab-add-wrap">
-            <button id="btn-add-tab" class="plus" title="Open a web LLM in this workspace">+</button>
-            <div id="tab-add-menu" class="hidden"></div>
-          </div>
+        <div id="welcome">
+          <h1>Tote</h1>
+          <p>Pick a workspace on the top strip, then open panes with <b>+ web</b> and <b>+ term</b>.</p>
+          <p>Panes tile automatically. Drag a divider to resize, drag a pane's title bar
+          to rearrange, and press <b>Cmd/Ctrl+Alt+F</b> to zoom the focused one.</p>
+          <p class="dim">Web panes download straight into <code>&lt;workspace&gt;/inbox/&lt;provider&gt;/</code>.</p>
         </div>
-        <div id="webviews">
-          <div id="welcome">
-            <h1>Tote</h1>
-            <p>Pick a workspace on the top strip, then fire any frontend against it.</p>
-            <p>Web tabs download straight into <code>&lt;workspace&gt;/inbox/&lt;provider&gt;/</code> —
-            resume the work in a CLI terminal.</p>
-            <p class="dim">Native apps launched from <b>apps</b> keep their own perks; files they save
-            to Downloads are bridged into the active workspace automatically.</p>
-          </div>
-        </div>
-      </div>
-
-      <div id="split-right" class="splitter v hidden" data-side="right"></div>
-      <div id="dock-right" class="dock dock-col hidden"></div>
-    </div>
-
-    <div id="split-bottom" class="splitter h hidden" data-side="bottom"></div>
-    <div id="dock-bottom" class="dock dock-row hidden">
-      <!-- Terminal panel: dockable left / bottom / right -->
-      <div id="terminal-panel" class="panel hidden">
-        <div id="terminal-bar">
-          <div id="term-tabs"></div>
-          <div id="term-new">
-            <button id="btn-new-term" class="plus" title="New agent terminal in this workspace">+</button>
-            <div id="term-menu" class="hidden"></div>
-          </div>
-          <button class="dock-menu-btn" data-panel="terminal" title="Panel: dock / hide">≡</button>
-        </div>
-        <div id="term-container"></div>
       </div>
     </div>
   </div>
@@ -218,6 +193,7 @@
 
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
+  <script src="layout.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

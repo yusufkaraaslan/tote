@@ -79,21 +79,42 @@ code {
 .ws-tab.active .glyph { color: #7fa0ff; }
 #btn-add-ws { flex-shrink: 0; padding: 3px 9px; }
 
-/* ---------- docks, panels, splitters ---------- */
-.dock { display: flex; background: #0e1320; min-width: 0; min-height: 0; flex-shrink: 0; }
-.dock-col { flex-direction: column; width: 270px; }
-.dock-row { flex-direction: row; height: 280px; }
-#dock-left { border-right: 1px solid #1e2534; }
-#dock-right { border-left: 1px solid #1e2534; }
-#dock-bottom { border-top: 1px solid #1e2534; }
-.dock.hidden, .splitter.hidden, .panel.hidden { display: none; }
-.panel { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.dock-col > .panel + .panel { border-top: 1px solid #1e2534; }
-.dock-row > .panel + .panel { border-left: 1px solid #1e2534; }
-.splitter { flex-shrink: 0; background: transparent; }
-.splitter.v { width: 4px; cursor: col-resize; }
-.splitter.h { height: 4px; cursor: row-resize; }
-.splitter:hover { background: #2b5cff55; }
+/* ---------- tiling: panes, dividers ---------- */
+/* --- tiling surface: panes are absolutely positioned, never reflowed --- */
+#tiles { position: relative; flex: 1; min-width: 0; min-height: 0; background: #0b0e14; overflow: hidden; }
+.pane {
+  position: absolute; display: flex; flex-direction: column; overflow: hidden;
+  background: #0e1320; border: 1px solid #1e2534; border-radius: 6px;
+}
+.pane.hidden { display: none; }
+.pane.focused { border-color: #2b5cff; }
+.pane.dead { opacity: 0.65; }
+.pane-head {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  height: 26px; padding: 0 6px 0 8px; cursor: grab;
+  background: #111726; border-bottom: 1px solid #1e2534;
+  font-size: 11px; color: #8b98b8; user-select: none;
+}
+.pane.focused .pane-head { background: #16203a; color: #dbe2f0; }
+.pane-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pane-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane.loading .pane-title { opacity: 0.55; }
+.pane-x { padding: 0 3px; cursor: pointer; color: #5c6a8c; }
+.pane-x:hover { color: #ff6b6b; }
+.pane-body { flex: 1; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+
+.divider { position: absolute; z-index: 15; }
+.divider.row { cursor: col-resize; }
+.divider.col { cursor: row-resize; }
+.divider:hover { background: #2b5cff55; }
+
+/* drop preview while dragging a pane by its title bar */
+.drop-hint {
+  position: absolute; z-index: 30; pointer-events: none;
+  background: #2b5cff22; border: 2px solid #2b5cff; border-radius: 6px;
+}
+.drop-hint.hidden { display: none; }
+.panel { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* toolbar primitives shared by the strip, tab bar and panel bars */
 button.plus {
   padding: 2px 8px;
@@ -114,17 +135,7 @@ button.toggle.on { background: #1a2338; border-color: #2a3654; color: #fff; }
 button.toggle.on .ico { color: #7fa0ff; }
 .ctx-item.checked { color: #fff; background: #1a2338; }
 .ctx-item.checked::after { content: ' ✓'; color: #7fa0ff; }
-.dock-menu-btn {
-  margin-left: auto;
-  padding: 1px 7px;
-  font-size: 13px;
-  color: #5c6a8c;
-  background: transparent;
-  border-color: transparent;
-}
-.dock-menu-btn:hover { color: #fff; background: #1a2338; border-color: #2a3654; }
-.sidebar-actions .dock-menu-btn { margin-left: 2px; }
-/* While dragging a splitter, <webview> guest views must not swallow the mouse. */
+/* While dragging a divider or a pane, <webview> guests must not swallow the mouse. */
 body.dragging webview, body.dragging iframe { pointer-events: none; }
 body.dragging { user-select: none; }
 
@@ -266,22 +277,11 @@ body.dragging { user-select: none; }
 .tree-children { margin-left: 12px; }
 
 /* ---------- tab bar ---------- */
-#center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#tabbar {
-  display: flex;
-  align-items: center;
-  height: 36px;
-  background: #0e1320;
-  border-bottom: 1px solid #1e2534;
-  padding: 0 8px;
-  gap: 6px;
-}
-#tabs { display: flex; gap: 3px; overflow-x: auto; scrollbar-width: none; }
-#tab-add-wrap { position: relative; flex: 1; display: flex; }
-#btn-add-tab { padding: 3px 9px; font-weight: 700; }
-#tab-add-menu {
+/* the + menus live on the workspace strip now */
+#add-web-wrap, #add-term-wrap { position: relative; display: flex; }
+#tab-add-menu, #term-menu {
   position: absolute;
-  top: 32px;
+  top: 30px;
   left: 0;
   background: #141b2c;
   border: 1px solid #2a3654;
@@ -293,12 +293,7 @@ body.dragging { user-select: none; }
   z-index: 60;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
-#tab-add-menu.hidden { display: none; }
-.tab .close { color: #5c6a8c; padding: 0 2px; margin-left: 2px; }
-.tab .close:hover { color: #ff6b6b; }
-.tab .n { color: #5c6a8c; font-size: 10px; }
-.term-tab.hidden { display: none; }
-#tabs::-webkit-scrollbar { display: none; }
+#tab-add-menu.hidden, #term-menu.hidden { display: none; }
 .tab {
   display: flex;
   align-items: center;
@@ -318,16 +313,13 @@ body.dragging { user-select: none; }
 @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
 
 /* ---------- webviews ---------- */
-#webviews { flex: 1; position: relative; background: #0b0e14; }
+/* a provider view fills its pane body; it is created there and never moved */
 webview.provider-view {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: none;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: flex; background: #fff;
 }
-webview.provider-view.active { display: flex; }
-#welcome {
+
+#welcome { position: absolute; inset: 0;
   position: absolute;
   inset: 0;
   display: flex;
@@ -401,9 +393,7 @@ webview.provider-view.active { display: flex; }
 .term-menu-item .avail.ok { background: #3dd68c; }
 .term-menu-item .avail.missing { background: #e5484d; }
 .term-menu-item .cmd { color: #5c6a8c; font-size: 11px; margin-left: auto; }
-#term-container { flex: 1; position: relative; min-height: 0; }
-.term-instance { position: absolute; inset: 0; padding: 4px 4px 0 8px; display: none; }
-.term-instance.active { display: block; }
+.pane-body .xterm { position: absolute; inset: 0; padding: 4px 4px 0 8px; }
 
 /* ---------- modals ---------- */
 .modal {

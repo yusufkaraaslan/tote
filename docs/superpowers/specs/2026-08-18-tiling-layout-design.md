@@ -116,6 +116,12 @@ Existing spaces have `layout` (`{files:{dock,visible}, terminal:{dock,visible},
 sizes}`). On first read, build the equivalent tree so nobody opens the app to a
 rearranged space:
 
+**Every open tab becomes a pane.** There are no hidden tabs in the new model, so
+placing only the active one would silently strand the rest. A space with eight
+tabs therefore opens with eight panes the first time — crowded, but nothing is
+lost and the user can close or zoom. This is a deliberate trade; the alternative
+(quietly dropping inactive tabs) is worse.
+
 - files docked left, visible → `row(files, rest)` with `ratio` from `sizes.left`
 - files docked right → `row(rest, files)`
 - terminal docked bottom, visible → `col(rest, term)` from `sizes.bottom`
@@ -174,7 +180,10 @@ swallowing `mousemove` mid-drag.
 
 Drag a pane's header onto another pane:
 
-- **centre** → swap the two panes (swap `ref`/`kind`, ids stay put)
+- **centre** → swap the two panes. Whole leaf nodes trade places, so a leaf id
+  keeps travelling with its own content and `focus` stays on the pane the user
+  dragged. (An earlier draft swapped `ref`/`kind` and left ids in place; that
+  would have left `focus` pointing at whatever content landed in that slot.)
 - **edge (left/right/top/bottom quarter)** → re-split the target in that
   direction and move the dragged pane in
 
@@ -235,10 +244,11 @@ one. But `rectsFor()` and the tree edits (split, remove, swap, move, resize
 clamping) are pure functions where the real bugs will live, and testing them by
 launching an Electron GUI is both slow and unreliable.
 
-Proposal, to be confirmed before implementing: a single dependency-free
-`node scripts/test-layout.js` that exercises the pure layout module and exits
-non-zero on failure — no framework, no devDependency, consistent with the
-project's no-bundler/no-tooling stance. Run manually; not wired into CI.
+Done: `scripts/test-layout.js`, dependency-free, wired to `npm test`. Exits
+non-zero on failure. No framework, no devDependency, consistent with the
+project's no-bundler/no-tooling stance. Not wired into CI. 54 tests covering
+`rectsFor`, `dividersFor`, the four tree edits, ratio clamping, geometric
+neighbour resolution and dock migration.
 
 Everything else is verified by running the app:
 

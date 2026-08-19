@@ -93,6 +93,7 @@ let win = null;
 let configStore;
 let workspace;
 let ptys;
+let swept = [];   // stale temp spaces removed at launch, reported once the UI is up
 
 const partitionFor = (providerId) => `persist:tote-${providerId}`;
 
@@ -309,6 +310,12 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  // The sweep already ran at startup; the renderer can only be told once it has
+  // a toast area to show it in.
+  win.webContents.once('did-finish-load', () => {
+    if (swept.length) win.webContents.send('workspace:swept', swept);
+  });
+
   // The shell page never navigates. Anything that tries is a file dropped onto
   // a spot that did not handle it -- Chromium's default is to open it in place,
   // which would replace the whole UI with the dropped image.
@@ -391,6 +398,60 @@ ipcMain.handle('workspaces:setPath', async (e, id) => {
   });
   if (res.canceled || !res.filePaths[0]) return null;
   workspace.updateSpace(id, { path: res.filePaths[0] });
+  if (id === workspace.activeId()) watchActive();
+  return wsState();
+});
+
+// --- IPC: temp (scratch) spaces --------------------------------------------
+// A temp space skips the folder picker and can be deleted, files included --
+// the one exception to "removing a space never touches the disk".
+
+ipcMain.handle('workspaces:tempName', () => workspace.suggestTempName());
+
+ipcMain.handle('workspaces:addTemp', (e, name) => {
+  const id = workspace.addTemp(name);
+  workspace.setActive(id);
+  watchActive();
+  return wsState();
+});
+
+// termLabels comes from the renderer because only it knows which PTY belongs to
+// which space. The confirm lives here: this is where the native dialog is, and
+// deleting files deserves one rather than the renderer's confirm().
+ipcMain.handle('workspaces:discard', async (e, id, termLabels) => {
+  const w = workspace.list().find((x) => x.id === id);
+  if (!w) throw new Error('Unknown workspace: ' + id);
+  if (!w.temp) throw new Error('Not a temp space: ' + w.name);
+  const { files, bytes } = workspace.measure(w.path);
+  const size = bytes < 1048576 ? Math.round(bytes / 1024) + ' KB'
+    : (bytes / 1048576).toFixed(1) + ' MB';
+  const kills = (termLabels || []).length
+    ? '\n\nRunning terminals that will be killed: ' + termLabels.join(', ')
+    : '';
+  const res = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Cancel', 'Delete'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Discard temp space',
+    message: 'Delete "' + w.name + '" and everything in it?',
+    detail: w.path + '\n' + files + ' file(s), ' + size + kills + '\n\nThis cannot be undone.',
+  });
+  if (res.response !== 1) return { canceled: true };
+  workspace.discardTemp(id);
+  watchActive();
+  return wsState();
+});
+
+ipcMain.handle('workspaces:promote', async (e, id) => {
+  const w = workspace.list().find((x) => x.id === id);
+  if (!w) throw new Error('Unknown workspace: ' + id);
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Keep "' + w.name + '" -- pick its permanent folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return null;
+  workspace.promote(id, res.filePaths[0]);
   if (id === workspace.activeId()) watchActive();
   return wsState();
 });
@@ -606,6 +667,9 @@ if (!gotLock) {
     adoptLoginShellPath();
     configStore = new ConfigStore(app);
     workspace = new WorkspaceManager(configStore);
+    // Stale temp spaces go at launch and only at launch, so nothing can vanish
+    // mid-session. The report is pushed once the window can show a toast.
+    swept = workspace.sweepTemp(configStore.getSettings().scratchDays ?? 7);
     ptys = new PtyManager();
     setupAllProviderSessions();
     detectApps();

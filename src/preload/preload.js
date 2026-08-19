@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld('tote', {
   setActiveWorkspace: (id) => ipcRenderer.invoke('workspaces:setActive', id),
   removeWorkspace: (id) => ipcRenderer.invoke('workspaces:remove', id),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspaces:rename', id, name),
+  // temp (scratch) spaces
+  wsTempName: () => ipcRenderer.invoke('workspaces:tempName'),
+  wsAddTemp: (name) => ipcRenderer.invoke('workspaces:addTemp', name),
+  wsDiscard: (id, termLabels) => ipcRenderer.invoke('workspaces:discard', id, termLabels),
+  wsPromote: (id) => ipcRenderer.invoke('workspaces:promote', id),
   setWorkspacePath: (id) => ipcRenderer.invoke('workspaces:setPath', id),
 
   // files (active workspace)
@@ -66,5 +71,6 @@ contextBridge.exposeInMainWorld('tote', {
   onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m) => cb(m.id, m.data)),
   onPtyExit: (cb) => ipcRenderer.on('pty:exit', (e, m) => cb(m.id, m.exitCode)),
   onWorkspaceChanged: (cb) => ipcRenderer.on('workspace:changed', () => cb()),
+  onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),
 });

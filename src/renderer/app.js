@@ -658,14 +658,34 @@ async function spawnTerm(profile) {
                   wsId: state.workspaces.active, alive: false };
   state.terms.set(id, entry);
 
-  // Shift+Enter must open a new line, not send the message. xterm emits a bare
-  // CR for Enter and Shift+Enter alike, so an agent TUI cannot tell them apart;
-  // ESC+CR is the sequence Claude Code and Codex read as "newline" (the same one
-  // other terminals are configured to send by their setup command).
+  // Keys Tote steals from the agent. A TUI owns every bare key, so both of these
+  // ride on Shift, which Claude Code and Codex leave alone:
+  //   Enter -- Shift+Enter must open a new line, not send the message. xterm emits
+  //     a bare CR for Enter and Shift+Enter alike, so an agent TUI cannot tell them
+  //     apart; ESC+CR is the sequence Claude Code and Codex read as "newline" (the
+  //     same one other terminals are configured to send by their setup command).
+  //   Arrows/Home/End -- scroll the scrollback. A bare Up/Down is the agent's prompt
+  //     history, so without this a long answer is only reachable with the wheel or
+  //     Shift+PageUp (Fn+Shift+Up on a laptop). Shift+PageUp/PageDown stay xterm's
+  //     own bindings. On the alternate screen (vim, less) there is no scrollback,
+  //     so the key belongs to the app.
+  const SCROLL = {
+    ArrowUp: () => term.scrollLines(-1),
+    ArrowDown: () => term.scrollLines(1),
+    Home: () => term.scrollToTop(),
+    End: () => term.scrollToBottom(),
+  };
   term.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown' || e.key !== 'Enter') return true;
+    if (e.type !== 'keydown') return true;
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
-    if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
+    if (e.key === 'Enter') {
+      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
+      return false;
+    }
+    const scroll = SCROLL[e.key];
+    if (!scroll || term.buffer.active.type === 'alternate') return true;
+    e.preventDefault();
+    scroll();
     return false;
   });
 

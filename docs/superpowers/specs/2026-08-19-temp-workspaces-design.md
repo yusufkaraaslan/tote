@@ -143,9 +143,11 @@ repo rule. All four channels follow it.
 | `sweepTemp(days, now)` | discard every expired temp space, return `[{name, path}]` removed |
 | `setActive(id)` | unchanged, plus: bump `lastUsed` when the target is temp |
 
-**IPC (`src/main/main.js`)** — `workspaces:addTemp` (name), `workspaces:discard`
-(id, after a `dialog.showMessageBox` confirm), `workspaces:promote` (id, folder
-picker), and a `workspace:swept` push to the renderer with the sweep report.
+**IPC (`src/main/main.js`)** — `workspaces:addTemp` (name),
+`workspaces:discard` (id, termLabels — measures, confirms via
+`dialog.showMessageBox`, then deletes; returns `{canceled: true}` or the new
+state), `workspaces:promote` (id, folder picker), and a `workspace:swept` push
+to the renderer with the sweep report.
 `workspaces:discard` and `workspaces:promote` call `watchActive()` after,
 matching every other handler that can change the active space.
 
@@ -161,9 +163,10 @@ workspace (keeps files on disk)`.
 
 ### Create
 
-1. `+ temp` → prompt prefilled with `scratch-<YYYY-MM-DD>-<n>`, where `n` is the
-   lowest integer with no existing folder or space of that name. Enter accepts;
-   any other name is taken as typed.
+1. `+ temp` → the repo's existing `askInput` modal (Electron has no
+   `window.prompt`; `renameWorkspace` already uses `askInput`), prefilled with
+   `scratch-<YYYY-MM-DD>-<n>`, where `n` is the lowest integer with no existing
+   folder or space of that name. Enter accepts; any other name is taken as typed.
 2. `addTemp` slugs it (`[^a-z0-9]+` → `-`), resolves collisions by suffixing
    `-2`, `-3`, …, creates `<scratch>/<slug>/inbox/`.
 3. The space is registered, activated, the watcher re-armed, and the strip
@@ -171,15 +174,22 @@ workspace (keeps files on disk)`.
 
 ### Discard
 
-1. Renderer asks main for a summary (file count, total size, names of terminals
-   owned by the space) and shows it in `dialog.showMessageBox` with a
-   destructive default of Cancel.
-2. On confirm the renderer tears the space down through the path that already
-   exists for space removal: close its panes, kill its PTYs, drop its
-   `views.json` entry.
-3. `workspaces:discard` → `discardTemp(id)` → guards → `rm -rf` → unregister →
-   active space falls back to the first in the list → `watchActive()`.
-4. Toast names what was deleted.
+1. The renderer calls `tote.wsDiscard(id, termLabels)`, passing the names of the
+   terminals it owns — only the renderer knows which PTY belongs to which space.
+2. Main runs the three guards, measures the folder (file count, total size), and
+   shows `dialog.showMessageBox` itself — the confirm belongs in main because
+   that is where the native dialog API lives, and a destructive delete deserves a
+   real dialog rather than the renderer's `confirm()` used by `remove()`. The
+   dialog names the path, the size, and every terminal about to be killed;
+   `defaultId`/`cancelId` both point at Cancel. Cancel returns `{canceled: true}`
+   and nothing has happened yet — no files touched, no panes closed.
+3. On confirm, main deletes (`rm -rf`), unregisters, falls the active space back
+   to the first in the list, calls `watchActive()`, and returns the new state.
+4. The renderer then tears the space down through the path that already exists
+   for space removal: close its panes, kill its PTYs, drop its `views.json`
+   entry. Teardown runs after deletion so a cancel can never leave a half-closed
+   space; killing a PTY whose `cwd` has just been removed is safe on POSIX.
+5. Toast names what was deleted.
 
 ### Promote
 

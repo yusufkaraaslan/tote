@@ -8,7 +8,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
-    "test": "node scripts/test-layout.js",
+    "test": "node scripts/test-layout.js && node scripts/test-scratch.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",

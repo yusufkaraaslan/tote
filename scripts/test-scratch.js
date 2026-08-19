@@ -77,5 +77,101 @@ describe('isExpired', () => {
   });
 });
 
+/* ---- WorkspaceManager against real folders in a throwaway home ---- */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { WorkspaceManager } = require('../src/main/workspace.js');   // named export, not default
+
+// The real ConfigStore reads JSON off disk on every call, so the fake hands out
+// a deep copy each time -- otherwise a test would pass on shared mutation that
+// the real store would have dropped.
+function harness() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tote-scratch-test-'));
+  const home = path.join(tmp, 'home');
+  const globalDir = path.join(home, 'tote', 'workspace');
+  fs.mkdirSync(globalDir, { recursive: true });
+  let ws = { active: 'global', list: [{ id: 'global', name: 'Global', path: globalDir }] };
+  let settings = { bridgeDownloads: false, scratchRoot: path.join(home, 'tote', 'scratch'), scratchDays: 7 };
+  const cfg = {
+    getWorkspaces: () => JSON.parse(JSON.stringify(ws)),
+    saveWorkspaces: (d) => { ws = JSON.parse(JSON.stringify(d)); },
+    getSettings: () => JSON.parse(JSON.stringify(settings)),
+    saveSettings: (d) => { settings = d; },
+  };
+  return {
+    tmp, home, cfg, wm: new WorkspaceManager(cfg), state: () => ws,
+    cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }),
+  };
+}
+
+describe('addTemp', () => {
+  test('creates the folder, its inbox, and a temp entry', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('API spike');
+      const entry = h.state().list.find((w) => w.id === id);
+      assert.strictEqual(entry.temp, true);
+      assert.strictEqual(entry.name, 'API spike');
+      assert.strictEqual(path.basename(entry.path), 'api-spike');
+      assert.ok(Number.isFinite(entry.lastUsed));
+      assert.ok(fs.existsSync(path.join(entry.path, 'inbox')));
+    } finally { h.cleanup(); }
+  });
+
+  test('never reuses an occupied folder', () => {
+    const h = harness();
+    try {
+      const a = h.wm.addTemp('spike');
+      const b = h.wm.addTemp('spike');
+      const paths = h.state().list.filter((w) => w.temp).map((w) => w.path);
+      assert.notStrictEqual(a, b);
+      assert.strictEqual(new Set(paths).size, 2);
+      assert.ok(paths.some((p) => path.basename(p) === 'spike-2'));
+    } finally { h.cleanup(); }
+  });
+
+  test('rejects a name with nothing usable in it', () => {
+    const h = harness();
+    try {
+      assert.throws(() => h.wm.addTemp('///'), /name/i);
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('suggestTempName', () => {
+  test('skips a name already registered', () => {
+    const h = harness();
+    try {
+      const first = h.wm.suggestTempName(new Date(2026, 7, 19));
+      h.wm.addTemp(first);
+      assert.strictEqual(h.wm.suggestTempName(new Date(2026, 7, 19)), 'scratch-2026-08-19-2');
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('setActive', () => {
+  test('stamps lastUsed on a temp space', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const before = h.state().list.find((w) => w.id === id).lastUsed - 60000;
+      const data = h.state();
+      data.list.find((w) => w.id === id).lastUsed = before;
+      h.cfg.saveWorkspaces(data);
+      h.wm.setActive(id);
+      assert.ok(h.state().list.find((w) => w.id === id).lastUsed > before);
+    } finally { h.cleanup(); }
+  });
+
+  test('leaves a normal space untouched', () => {
+    const h = harness();
+    try {
+      h.wm.setActive('global');
+      assert.strictEqual('lastUsed' in h.state().list.find((w) => w.id === 'global'), false);
+    } finally { h.cleanup(); }
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

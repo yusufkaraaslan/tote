@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
+const S = require('./scratch');
 
 const IGNORE = new Set(['node_modules', '.git', '.DS_Store', 'dist', 'out', '.cache']);
 const PARTIAL_EXT = new Set(['.crdownload', '.part', '.download', '.partial', '.tmp']);
@@ -68,8 +69,10 @@ class WorkspaceManager {
 
   setActive(id) {
     const data = this.cfg.getWorkspaces();
-    if (!data.list.some((w) => w.id === id)) throw new Error('Unknown workspace: ' + id);
+    const target = data.list.find((w) => w.id === id);
+    if (!target) throw new Error('Unknown workspace: ' + id);
     data.active = id;
+    if (target.temp) target.lastUsed = Date.now();   // what the sweep reads
     this.cfg.saveWorkspaces(data);
     fs.mkdirSync(this.inboxDir(), { recursive: true });
     return this.active();
@@ -83,6 +86,45 @@ class WorkspaceManager {
     data.list.push({ id, name, path: absPath });
     this.cfg.saveWorkspaces(data);
     fs.mkdirSync(path.join(absPath, 'inbox'), { recursive: true });
+    return id;
+  }
+
+  /* ----- temp (scratch) spaces ----- */
+
+  // Configurable so the tests can point it at a throwaway home; users get
+  // ~/tote/scratch, the sibling of the Global default.
+  scratchRoot() {
+    const configured = this.cfg.getSettings().scratchRoot;
+    return configured ? expandTilde(configured) : path.join(os.homedir(), 'tote', 'scratch');
+  }
+
+  // The name the create modal starts with: the lowest free number for today,
+  // counting both registered spaces and folders already in the scratch root.
+  suggestTempName(now = new Date()) {
+    const root = this.scratchRoot();
+    const onDisk = fs.existsSync(root) ? fs.readdirSync(root) : [];
+    const registered = this.cfg.getWorkspaces().list.map((w) => w.name);
+    return S.defaultName(now, [...onDisk, ...registered]);
+  }
+
+  // A temp space is a space with two extra fields: no folder picker, and it may
+  // later be discarded (files and all) or promoted into a normal space.
+  addTemp(name) {
+    const base = S.slug(name);
+    if (!base) throw new Error('Temp space name needs a letter or a number');
+    const root = this.scratchRoot();
+    fs.mkdirSync(root, { recursive: true });
+    const dir = S.uniqueDirName(base, (n) => fs.existsSync(path.join(root, n)));
+    const abs = path.join(root, dir);
+    const data = this.cfg.getWorkspaces();
+    // Two temp spaces can be created inside one millisecond -- a folder pick
+    // cannot -- so the timestamp alone is not a unique id here, and a duplicate
+    // id would have views.json and discardTemp addressing two spaces at once.
+    const taken = new Set(data.list.map((w) => w.id));
+    const id = S.uniqueDirName(dir + '-' + Date.now().toString(36), (n) => taken.has(n));
+    data.list.push({ id, name: String(name).trim(), path: abs, temp: true, lastUsed: Date.now() });
+    this.cfg.saveWorkspaces(data);
+    fs.mkdirSync(path.join(abs, 'inbox'), { recursive: true });
     return id;
   }
 

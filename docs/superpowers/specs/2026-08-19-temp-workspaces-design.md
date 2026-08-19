@@ -117,6 +117,12 @@ path earns the exception.
 }
 ```
 
+The scratch root is `settings.scratchRoot`, defaulting to `~/tote/scratch` when
+unset (implementation deviation from this spec's original fixed path: without it,
+testing the delete guard would mean creating and removing folders in the
+developer's real home directory). It stays unseeded in `config/settings.json` —
+only the tests set it.
+
 `<userData>/config/settings.json` gains one key:
 
 ```json
@@ -143,7 +149,8 @@ repo rule. All four channels follow it.
 | `sweepTemp(days, now)` | discard every expired temp space, return `[{name, path}]` removed |
 | `setActive(id)` | unchanged, plus: bump `lastUsed` when the target is temp |
 
-**IPC (`src/main/main.js`)** — `workspaces:addTemp` (name),
+**IPC (`src/main/main.js`)** — `workspaces:tempName` (the generated default the
+create modal starts from), `workspaces:addTemp` (name),
 `workspaces:discard` (id, termLabels — measures, confirms via
 `dialog.showMessageBox`, then deletes; returns `{canceled: true}` or the new
 state), `workspaces:promote` (id, folder picker), and a `workspace:swept` push

@@ -220,6 +220,41 @@ systems:
         type: unknown
     - name: killAll
       args: []
+  - id: scratch
+    name: scratch
+    kind: module
+    class_name: src/main/scratch.js
+    methods:
+    - name: slug
+      args:
+      - name: name
+        type: unknown
+    - name: defaultName
+      args:
+      - name: now
+        type: unknown
+      - name: taken
+        type: unknown
+    - name: uniqueDirName
+      args:
+      - name: base
+        type: unknown
+      - name: exists
+        type: unknown
+    - name: isInsideRoot
+      args:
+      - name: abs
+        type: unknown
+      - name: root
+        type: unknown
+    - name: isExpired
+      args:
+      - name: lastUsed
+        type: unknown
+      - name: days
+        type: unknown
+      - name: now
+        type: unknown
   - id: workspace
     name: workspace
     kind: module
@@ -240,6 +275,36 @@ systems:
       - name: name
         type: unknown
       - name: absPath
+        type: unknown
+    - name: scratchRoot
+      args: []
+    - name: suggestTempName
+      args:
+      - name: now
+        type: unknown
+    - name: addTemp
+      args:
+      - name: name
+        type: unknown
+    - name: measure
+      args:
+      - name: absPath
+        type: unknown
+    - name: discardTemp
+      args:
+      - name: id
+        type: unknown
+    - name: promote
+      args:
+      - name: id
+        type: unknown
+      - name: absPath
+        type: unknown
+    - name: sweepTemp
+      args:
+      - name: days
+        type: unknown
+      - name: now
         type: unknown
     - name: updateSpace
       args:

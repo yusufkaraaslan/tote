@@ -113,6 +113,11 @@ unregisters it, and changing its folder just re-points it.
   adds a line** instead of sending the message. **Shift+↑/↓** scrolls back through a long
   answer (Shift+Home/End jump to the ends) — a bare arrow stays the agent's own history key. **Drag an image onto an agent pane**
   and it arrives as a path the agent can read, the way a native terminal does it. Green/red dots show what's on your PATH.
+- **Temp spaces** — `+t` on the strip makes a throwaway space with no folder picker:
+  name it (or take the generated one), work, then **discard** it from the chip's
+  context menu and its files go with it. Changed your mind? **keep…** moves the
+  folder wherever you want and the space becomes permanent, tabs and layout intact.
+  Anything untouched for a week is swept at the next launch.
 - **Layout** — everything is a **pane** in a tiling layout: opening one splits the focused
   pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
   to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at

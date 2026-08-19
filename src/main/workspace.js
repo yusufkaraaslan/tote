@@ -18,6 +18,23 @@ const TEXT_EXT = new Set([
 ]);
 const MAX_READ_BYTES = 2 * 1024 * 1024;
 
+// Resolve symlinks as far down as the path actually exists, then re-append the
+// rest. A path that is not there yet -- a promotion target -- or not there any
+// more -- a scratch folder deleted by hand -- still has to be comparable with a
+// realpath'd root, and any ancestor can be a link (/var -> /private/var on
+// macOS, or a ~/tote pointed at another disk).
+function realpathDeepest(abs) {
+  let cur = path.resolve(abs);
+  const rest = [];
+  while (!fs.existsSync(cur)) {
+    const parent = path.dirname(cur);
+    if (parent === cur) return path.resolve(abs);   // nothing above exists
+    rest.unshift(path.basename(cur));
+    cur = parent;
+  }
+  return path.join(fs.realpathSync(cur), ...rest);
+}
+
 function expandTilde(p) {
   return p === '~' ? os.homedir() : p.startsWith('~' + path.sep) || p.startsWith('~/')
     ? path.join(os.homedir(), p.slice(2))
@@ -162,18 +179,10 @@ class WorkspaceManager {
     // A folder deleted by hand still has to unregister, so "missing" is fine --
     // but anything that exists is resolved first, or a symlink planted in the
     // scratch root would delete whatever it points at.
-    let target = path.resolve(expandTilde(raw.path));
-    if (fs.existsSync(target)) {
-      target = fs.realpathSync(target);
-    } else {
-      // Already deleted by hand: resolve the deepest existing ancestor instead.
-      // Comparing an unresolved path against a resolved root is wrong wherever
-      // a symlink sits above the scratch root -- /var -> /private/var on macOS,
-      // or a ~/tote pointed at another disk -- and would refuse a legitimate
-      // unregister.
-      const parent = path.dirname(target);
-      if (fs.existsSync(parent)) target = path.join(fs.realpathSync(parent), path.basename(target));
-    }
+    // A folder deleted by hand still has to unregister, and a symlink planted in
+    // the scratch root must not take its target down with it -- both are why
+    // this is resolved before it is compared.
+    const target = realpathDeepest(expandTilde(raw.path));
     if (!S.isInsideRoot(target, realRoot)) {
       throw new Error('Refusing to delete outside the scratch root: ' + target);
     }
@@ -183,6 +192,65 @@ class WorkspaceManager {
     if (data.active === id) data.active = data.list[0].id;
     this.cfg.saveWorkspaces(data);
     return this.active();
+  }
+
+  // Keep a temp space: move its folder out of the scratch root and drop the
+  // temp fields. The id never changes, so views.json -- tabs, groups, layout --
+  // survives untouched. Terminals keep the cwd they were spawned with, exactly
+  // as they do after workspaces:setPath.
+  promote(id, absPath) {
+    const data = this.cfg.getWorkspaces();
+    const raw = data.list.find((w) => w.id === id);
+    if (!raw) throw new Error('Unknown workspace: ' + id);
+    if (!raw.temp) throw new Error('Not a temp space: ' + (raw.name || id));
+
+    const from = path.resolve(expandTilde(raw.path));
+    const to = path.resolve(absPath);
+    // Guard on the resolved form, store what the user picked -- add() and
+    // updateSpace() both keep the picker's path verbatim and the strip shows it.
+    const toReal = realpathDeepest(absPath);
+    const realRoot = fs.realpathSync(this.scratchRoot());
+    if (toReal === realRoot || S.isInsideRoot(toReal, realRoot)) {
+      throw new Error('Pick a folder outside the scratch root, or the sweep would take it later');
+    }
+    if (fs.existsSync(to) && fs.readdirSync(to).length) {
+      throw new Error('Folder is not empty: ' + to);
+    }
+
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.rmSync(to, { recursive: true, force: true });   // the picker's empty dir
+    try {
+      fs.renameSync(from, to);
+    } catch (err) {
+      if (err.code !== 'EXDEV') throw err;             // another volume
+      fs.cpSync(from, to, { recursive: true });
+      fs.rmSync(from, { recursive: true, force: true });
+    }
+
+    raw.path = to;
+    delete raw.temp;
+    delete raw.lastUsed;
+    this.cfg.saveWorkspaces(data);
+    return { ...raw, path: to };
+  }
+
+  // Launch-time only: a space in use can never vanish under the user, whatever
+  // the clock says. Returns what it removed so the renderer can report it.
+  sweepTemp(days, now = Date.now()) {
+    const removed = [];
+    for (const w of this.cfg.getWorkspaces().list.filter((x) => x.temp)) {
+      if (!S.isExpired(w.lastUsed, days, now)) continue;
+      const abs = expandTilde(w.path);
+      try {
+        this.discardTemp(w.id);
+        removed.push({ name: w.name, path: abs });
+      } catch (err) {
+        // Guard refused, folder busy, or it is the last space left: leave it
+        // registered and say so rather than failing the launch.
+        console.warn('[tote] sweep skipped "' + w.name + '":', err.message);
+      }
+    }
+    return removed;
   }
 
   // Rename a space and/or point it at another folder. Files are never moved.

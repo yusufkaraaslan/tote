@@ -274,5 +274,102 @@ describe('measure', () => {
   });
 });
 
+describe('promote', () => {
+  test('moves the folder, keeps the id, and clears the temp fields', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const from = h.state().list.find((w) => w.id === id).path;
+      fs.writeFileSync(path.join(from, 'work.txt'), 'keep me');
+      const to = path.join(h.tmp, 'projects', 'spike');
+      h.wm.promote(id, to);
+      const entry = h.state().list.find((w) => w.id === id);
+      assert.strictEqual(entry.path, to);
+      assert.strictEqual('temp' in entry, false);
+      assert.strictEqual('lastUsed' in entry, false);
+      assert.strictEqual(fs.readFileSync(path.join(to, 'work.txt'), 'utf8'), 'keep me');
+      assert.strictEqual(fs.existsSync(from), false);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a target inside the scratch root', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const inside = path.join(h.wm.scratchRoot(), 'kept');
+      assert.throws(() => h.wm.promote(id, inside), /scratch root/i);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a non-empty target', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const to = path.join(h.tmp, 'busy');
+      fs.mkdirSync(to, { recursive: true });
+      fs.writeFileSync(path.join(to, 'existing.txt'), 'x');
+      assert.throws(() => h.wm.promote(id, to), /not empty/i);
+    } finally { h.cleanup(); }
+  });
+
+  test('accepts the empty folder a picker just created', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const to = path.join(h.tmp, 'fresh');
+      fs.mkdirSync(to, { recursive: true });
+      h.wm.promote(id, to);
+      assert.strictEqual(h.state().list.find((w) => w.id === id).path, to);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a normal space', () => {
+    const h = harness();
+    try {
+      assert.throws(() => h.wm.promote('global', path.join(h.tmp, 'x')), /temp/i);
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('sweepTemp', () => {
+  const day = 86400000;
+  test('removes only the spaces past the threshold', () => {
+    const h = harness();
+    try {
+      const stale = h.wm.addTemp('old');
+      const fresh = h.wm.addTemp('new');
+      const data = h.state();
+      data.list.find((w) => w.id === stale).lastUsed = Date.now() - 30 * day;
+      h.cfg.saveWorkspaces(data);
+      const removed = h.wm.sweepTemp(7, Date.now());
+      assert.strictEqual(removed.length, 1);
+      assert.strictEqual(removed[0].name, 'old');
+      assert.strictEqual(h.state().list.some((w) => w.id === stale), false);
+      assert.strictEqual(h.state().list.some((w) => w.id === fresh), true);
+    } finally { h.cleanup(); }
+  });
+
+  test('never touches a normal space, however old', () => {
+    const h = harness();
+    try {
+      const removed = h.wm.sweepTemp(1, Date.now() + 900 * day);
+      assert.deepStrictEqual(removed, []);
+      assert.strictEqual(h.state().list.some((w) => w.id === 'global'), true);
+    } finally { h.cleanup(); }
+  });
+
+  test('days <= 0 disables it', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('old');
+      const data = h.state();
+      data.list.find((w) => w.id === id).lastUsed = Date.now() - 900 * day;
+      h.cfg.saveWorkspaces(data);
+      assert.deepStrictEqual(h.wm.sweepTemp(0, Date.now()), []);
+      assert.strictEqual(h.state().list.some((w) => w.id === id), true);
+    } finally { h.cleanup(); }
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -240,7 +240,7 @@ Append to `scripts/test-scratch.js`, above the final `console.log`:
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const WorkspaceManager = require('../src/main/workspace.js');
+const { WorkspaceManager } = require('../src/main/workspace.js');   // named export, not default
 
 // The real ConfigStore reads JSON off disk on every call, so the fake hands out
 // a deep copy each time -- otherwise a test would pass on shared mutation that
@@ -333,7 +333,7 @@ describe('setActive', () => {
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `node scripts/test-scratch.js`
-Expected: the `addTemp`/`suggestTempName` tests fail with `h.wm.addTemp is not a function`. (If `require('../src/main/workspace.js')` itself throws, check the file's export line — it ends with `module.exports = WorkspaceManager;`.)
+Expected: the `addTemp`/`suggestTempName` tests fail with `h.wm.addTemp is not a function`. Note `workspace.js` exports `{ WorkspaceManager, originApp }`, so the destructured require above is required — a default-style require yields an object with no constructor and fails with `WorkspaceManager is not a constructor`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1051,7 +1051,9 @@ Register the sweep report beside the other `tote.on*` listeners:
 
 ```js
 tote.onWorkspacesSwept((list) => {
-  toast('Swept ' + list.length + ' stale temp space(s): ' + list.map((w) => w.name).join(', '), 'info');
+  // Only 'error' and 'success' are styled in styles.css; an unknown kind would
+  // render as a bare toast with a stray class.
+  toast('Swept ' + list.length + ' stale temp space(s): ' + list.map((w) => w.name).join(', '), 'success');
 });
 ```
 

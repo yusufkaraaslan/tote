@@ -173,5 +173,106 @@ describe('setActive', () => {
   });
 });
 
+describe('discardTemp', () => {
+  test('deletes the folder and unregisters the space', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const dir = h.state().list.find((w) => w.id === id).path;
+      fs.writeFileSync(path.join(dir, 'note.txt'), 'bye');
+      h.wm.discardTemp(id);
+      assert.strictEqual(fs.existsSync(dir), false);
+      assert.strictEqual(h.state().list.some((w) => w.id === id), false);
+    } finally { h.cleanup(); }
+  });
+
+  test('falls the active space back when the discarded one was active', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      h.wm.setActive(id);
+      h.wm.discardTemp(id);
+      assert.strictEqual(h.state().active, 'global');
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a normal space and leaves its files alone', () => {
+    const h = harness();
+    try {
+      const dir = h.state().list.find((w) => w.id === 'global').path;
+      assert.throws(() => h.wm.discardTemp('global'), /temp/i);
+      assert.strictEqual(fs.existsSync(dir), true);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a temp entry whose path was edited to point outside the root', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const outside = path.join(h.tmp, 'precious');
+      fs.mkdirSync(outside, { recursive: true });
+      fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
+      const data = h.state();
+      data.list.find((w) => w.id === id).path = outside;   // hand-edited JSON
+      h.cfg.saveWorkspaces(data);
+      assert.throws(() => h.wm.discardTemp(id), /scratch root/i);
+      assert.strictEqual(fs.existsSync(path.join(outside, 'keep.txt')), true);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses a symlink inside the root that points outside it', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const entry = h.state().list.find((w) => w.id === id);
+      const outside = path.join(h.tmp, 'precious2');
+      fs.mkdirSync(outside, { recursive: true });
+      fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
+      fs.rmSync(entry.path, { recursive: true, force: true });
+      fs.symlinkSync(outside, entry.path);
+      assert.throws(() => h.wm.discardTemp(id), /scratch root/i);
+      assert.strictEqual(fs.existsSync(path.join(outside, 'keep.txt')), true);
+    } finally { h.cleanup(); }
+  });
+
+  test('refuses to remove the last remaining space', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const data = h.state();
+      data.list = data.list.filter((w) => w.id === id);
+      data.active = id;
+      h.cfg.saveWorkspaces(data);
+      assert.throws(() => h.wm.discardTemp(id), /at least one/i);
+    } finally { h.cleanup(); }
+  });
+
+  test('unregisters cleanly when the folder is already gone', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      fs.rmSync(h.state().list.find((w) => w.id === id).path, { recursive: true, force: true });
+      h.wm.discardTemp(id);
+      assert.strictEqual(h.state().list.some((w) => w.id === id), false);
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('measure', () => {
+  test('counts files and bytes below a folder', () => {
+    const h = harness();
+    try {
+      const id = h.wm.addTemp('spike');
+      const dir = h.state().list.find((w) => w.id === id).path;
+      fs.writeFileSync(path.join(dir, 'a.txt'), '12345');
+      fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'sub', 'b.txt'), '123');
+      const { files, bytes } = h.wm.measure(dir);
+      assert.strictEqual(files, 2);
+      assert.strictEqual(bytes, 8);
+    } finally { h.cleanup(); }
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

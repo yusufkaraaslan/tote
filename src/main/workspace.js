@@ -128,6 +128,63 @@ class WorkspaceManager {
     return id;
   }
 
+  // File count and byte total for the discard dialog. Symlinks are counted but
+  // never followed -- a link into the home folder must not inflate the number.
+  measure(absPath) {
+    let files = 0, bytes = 0;
+    const walk = (dir) => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else { files++; try { bytes += fs.lstatSync(p).size; } catch {} }
+      }
+    };
+    walk(absPath);
+    return { files, bytes };
+  }
+
+  // The ONLY code in Tote that deletes user files. Three guards, all here so a
+  // future caller cannot skip one: the space must be temp, its real path must
+  // sit strictly inside the real scratch root, and it must not be the last
+  // space. remove() keeps its own contract -- it never touches the disk.
+  discardTemp(id) {
+    const data = this.cfg.getWorkspaces();
+    const raw = data.list.find((w) => w.id === id);
+    if (!raw) throw new Error('Unknown workspace: ' + id);
+    if (!raw.temp) throw new Error('Not a temp space: ' + (raw.name || id));
+    if (data.list.length <= 1) throw new Error('Keep at least one workspace');
+
+    const root = this.scratchRoot();
+    fs.mkdirSync(root, { recursive: true });
+    const realRoot = fs.realpathSync(root);
+    // A folder deleted by hand still has to unregister, so "missing" is fine --
+    // but anything that exists is resolved first, or a symlink planted in the
+    // scratch root would delete whatever it points at.
+    let target = path.resolve(expandTilde(raw.path));
+    if (fs.existsSync(target)) {
+      target = fs.realpathSync(target);
+    } else {
+      // Already deleted by hand: resolve the deepest existing ancestor instead.
+      // Comparing an unresolved path against a resolved root is wrong wherever
+      // a symlink sits above the scratch root -- /var -> /private/var on macOS,
+      // or a ~/tote pointed at another disk -- and would refuse a legitimate
+      // unregister.
+      const parent = path.dirname(target);
+      if (fs.existsSync(parent)) target = path.join(fs.realpathSync(parent), path.basename(target));
+    }
+    if (!S.isInsideRoot(target, realRoot)) {
+      throw new Error('Refusing to delete outside the scratch root: ' + target);
+    }
+
+    fs.rmSync(target, { recursive: true, force: true });
+    data.list = data.list.filter((w) => w.id !== id);
+    if (data.active === id) data.active = data.list[0].id;
+    this.cfg.saveWorkspaces(data);
+    return this.active();
+  }
+
   // Rename a space and/or point it at another folder. Files are never moved.
   updateSpace(id, { name, path: absPath } = {}) {
     const data = this.cfg.getWorkspaces();

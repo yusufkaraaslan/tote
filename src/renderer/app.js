@@ -64,12 +64,13 @@ function renderWorkspaceSwitcher() {
   bar.innerHTML = '';
   for (const w of state.workspaces.list) {
     const tab = document.createElement('div');
-    tab.className = 'ws-tab' + (w.id === state.workspaces.active ? ' active' : '');
+    tab.className = 'ws-tab' + (w.id === state.workspaces.active ? ' active' : '')
+      + (w.temp ? ' temp' : '');
     const glyph = document.createElement('span');
     glyph.className = 'glyph';
-    glyph.textContent = w.id === 'global' ? '◈' : '◇';
+    glyph.textContent = w.temp ? '◌' : w.id === 'global' ? '◈' : '◇';
     tab.append(glyph, document.createTextNode(w.name));
-    tab.title = w.path;
+    tab.title = (w.temp ? 'temp space — discarding deletes its files\n' : '') + w.path;
     tab.onclick = () => switchWorkspace(w.id);
     tab.oncontextmenu = (e) => {
       e.preventDefault();
@@ -80,7 +81,12 @@ function renderWorkspaceSwitcher() {
       menu.appendChild(ctxItem('copy path', () => navigator.clipboard.writeText(w.path)));
       menu.appendChild(ctxItem('rename…', () => renameWorkspace(w)));
       menu.appendChild(ctxItem('change folder…', () => changeWorkspaceFolder(w)));
-      menu.appendChild(ctxItem('remove workspace (keeps files on disk)', () => removeWorkspace(w), true));
+      if (w.temp) {
+        menu.appendChild(ctxItem('keep… (make permanent)', () => promoteWorkspace(w)));
+        menu.appendChild(ctxItem('discard… (deletes its files)', () => discardWorkspace(w), true));
+      } else {
+        menu.appendChild(ctxItem('remove workspace (keeps files on disk)', () => removeWorkspace(w), true));
+      }
       menu.style.left = e.clientX + 'px';
       menu.style.top = e.clientY + 'px';
       menu.classList.remove('hidden');
@@ -170,6 +176,72 @@ async function addWorkspace() {
 }
 
 $('#btn-add-ws').onclick = addWorkspace;
+
+// A temp space asks for a name only -- never a folder -- and starts from a
+// generated one, so Enter is the whole interaction.
+async function addTempWorkspace() {
+  const suggested = await tote.wsTempName();
+  const name = await askInput('New temp space (its files go when you discard it)', suggested);
+  if (!name) return false;
+  try {
+    state.workspaces = await tote.wsAddTemp(name);
+    renderWorkspaceSwitcher();
+    showWorkspaceViews();
+    await refreshTree();
+    toast('Temp space "' + name + '" is active. Discard it when you are done.', 'success');
+    return true;
+  } catch (e) {
+    toast(e.message, 'error');
+    return false;
+  }
+}
+
+$('#btn-add-temp').onclick = addTempWorkspace;
+
+// Main measures the folder, names the terminals it will kill, and confirms.
+// Panes come down only after the delete succeeded, so a cancel leaves nothing
+// half-closed.
+async function discardWorkspace(ws) {
+  const labels = [...state.terms.values()].filter((t) => t.wsId === ws.id).map((t) => t.name);
+  try {
+    const res = await tote.wsDiscard(ws.id, labels);
+    if (!res || res.canceled) return;
+    state.workspaces = res;
+    for (const [id, t] of [...state.terms]) if (t.wsId === ws.id) closeTerm(id);
+    for (const [tabId, en] of [...state.tabs]) if (en.wsId === ws.id) destroyTabWebview(tabId);
+    delete state.views[ws.id];
+    delete state.activeTermByWs[ws.id];
+    saveViews();
+    renderWorkspaceSwitcher();
+    showWorkspaceViews();
+    await refreshTree();
+    toast('Discarded "' + ws.name + '" and deleted its files.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// Keep the work: main moves the folder and the space keeps its id, so tabs,
+// groups and layout come along. Running terminals keep their old cwd.
+async function promoteWorkspace(ws) {
+  try {
+    const res = await tote.wsPromote(ws.id);
+    if (!res) return; // canceled
+    state.workspaces = res;
+    renderWorkspaceSwitcher();
+    await refreshTree();
+    const kept = activeWorkspaceById(ws.id);
+    toast('Kept "' + ws.name + '" at ' + kept.path + '. Open terminals still sit in the old folder.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// Only 'error' and 'success' are styled, so an unknown toast kind would render
+// as a bare box with a stray class.
+tote.onWorkspacesSwept((list) => {
+  toast('Swept ' + list.length + ' stale temp space(s): ' + list.map((w) => w.name).join(', '), 'success');
+});
 
 /* ---------------- web tabs (per workspace) ----------------
  * A workspace owns a list of tab instances (several of the same provider are

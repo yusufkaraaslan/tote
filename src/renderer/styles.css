@@ -210,6 +210,10 @@ body.dragging { user-select: none; }
 }
 #apps-menu.hidden { display: none; }
 
+/* A temp space is a different kind of thing: discarding it deletes its files. */
+.ws-tab.temp { border: 1px dashed #6b5a2b; }
+.ws-tab.temp .glyph { color: #d9a441; }
+
 /* workspace tag on terminal tabs */
 .term-tab .ws-tag {
   font-size: 10px;

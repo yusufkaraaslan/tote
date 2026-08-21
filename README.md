@@ -156,7 +156,7 @@ Design rules:
 2. **Providers, profiles, workspaces and apps are data, not code.** Add yours in Settings.
 3. **Native apps can't be embedded** — they're launched and bridged, never swallowed.
    App-exclusive perks (discounts, voice, Sora, Claude Projects) stay reachable that way.
-4. **Vendor clouds stay siloed.** Chat history inside kimi.com stays there; Tote
+4. **Vendor clouds stay siloed.** Chat history inside kimi.ai stays there; Tote
    unifies the file layer, not the account layer.
 
 ## Roadmap

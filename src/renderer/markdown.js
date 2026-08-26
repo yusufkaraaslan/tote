@@ -274,7 +274,8 @@
         while (k < lines.length && BLANK.test(lines[k])) k++;
         const next = k < lines.length ? lines[k] : null;
         const nm = next == null ? null : matchItem(next);
-        if (next == null || !((nm && nm.indent <= base) || indentOf(next) >= contentIndent)) break;
+        const sibling = nm && nm.indent <= base && nm.ordered === first.ordered;
+        if (next == null || !(sibling || indentOf(next) >= contentIndent)) break;
         if (cur) cur.push('');
         i = k;
         continue;
@@ -283,7 +284,10 @@
       const ind = indentOf(line);
       const m = matchItem(line);
 
-      if (m && ind <= base) {           // the next item of this list
+      if (m && ind <= base) {           // a sibling item -- or a different list
+        // Switching marker type ends this list and starts another, so a
+        // numbered list under a bulleted one does not inherit its bullets.
+        if (m.ordered !== first.ordered) break;
         push();
         contentIndent = m.contentIndent;
         cur = [m.text];

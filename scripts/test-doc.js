@@ -151,6 +151,24 @@ describe('parse: lists', () => {
   test('inline markup inside an item is parsed', () => {
     assert.strictEqual(M.parse('- **b**')[0].items[0].spans[0].type, 'strong');
   });
+  test('a change of marker type starts a new list', () => {
+    const bs = M.parse('- a\n1. b');
+    assert.strictEqual(bs.length, 2);
+    assert.strictEqual(bs[0].ordered, false);
+    assert.strictEqual(bs[1].ordered, true);
+  });
+  test('a blank line does not merge a bullet list into an ordered one', () => {
+    const bs = M.parse('- a\n\n1. b\n2. c');
+    assert.strictEqual(bs.length, 2);
+    assert.strictEqual(bs[0].items.length, 1);
+    assert.strictEqual(bs[1].items.length, 2);
+    assert.strictEqual(bs[1].ordered, true);
+  });
+  test('a blank line between items of the same type keeps one list', () => {
+    const b = M.parse('- a\n\n- b');
+    assert.strictEqual(b.length, 1);
+    assert.strictEqual(b[0].items.length, 2);
+  });
   test('a hyphen rule is not a list', () => {
     assert.strictEqual(M.parse('- - -')[0].type, 'hr');
   });

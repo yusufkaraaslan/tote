@@ -327,6 +327,9 @@ function closeTabInstance(tabId) {
 function showWorkspaceViews() {
   applyTiles();
   renderGroupBar();
+  // The watcher only ever binds the ACTIVE space's root, so doc panes in a
+  // space that was in the background catch up the moment it comes forward.
+  recheckDocs();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -862,14 +865,130 @@ async function saveDoc(id) {
   if (!doc || !st || st.savedText == null) return;
   try {
     await tote.writeFile(doc.path, st.text);
+    const wasGone = st.gone;
     st.savedText = st.text;
     st.stale = false;
+    st.gone = false;
     updateDocHead(id);
-    if (docHasModes(id) && doc.mode === 'src') setDocMode(id, 'view');
+    hideStale(id);
+    if (wasGone) renderDocBody(id);
+    else if (docHasModes(id) && doc.mode === 'src') setDocMode(id, 'view');
     toast('Saved ' + doc.path, 'success');
   } catch (e) {
     toast(e.message, 'error');   // the pane stays dirty
   }
+}
+
+/* ----- external change -----
+ * The watcher ping carries no path, so every open doc re-reads its own file.
+ * A save needs no suppression flag: afterwards the disk matches savedText, so
+ * the tick it causes is a no-op. */
+
+async function recheckDocs() {
+  for (const doc of wsDocs()) {
+    const st = docState(doc.id);
+    if (!st || st.path !== doc.path) continue;   // never mounted, or mid-retarget
+
+    let res;
+    try {
+      res = await tote.readDoc(doc.path);
+    } catch {
+      markDocGone(doc.id);
+      continue;
+    }
+    if (st.gone) { state.docs.delete(doc.id); loadDoc(doc.id); continue; }  // it came back
+
+    if (res.text == null) {                       // image, pdf, or an error state
+      if (res.mtimeMs === st.mtimeMs && res.size === st.size) continue;
+      state.docs.delete(doc.id);
+      loadDoc(doc.id);
+      continue;
+    }
+    if (res.text === st.savedText) { hideStale(doc.id); continue; }  // disk is unchanged
+
+    if (isDirty(doc.id)) { showStale(doc.id); continue; }
+
+    const top = docScrollTop(doc.id);
+    Object.assign(st, {
+      text: res.text, savedText: res.text, dataUrl: res.dataUrl || null,
+      mtimeMs: res.mtimeMs, size: res.size, error: res.error || null,
+    });
+    renderDocBody(doc.id);
+    docScrollTo(doc.id, top);
+  }
+}
+
+const docScroller = (id) => {
+  const p = docPane(id);
+  return p ? p.body.querySelector('.doc-view, .doc-src, .doc-image') : null;
+};
+const docScrollTop = (id) => { const el = docScroller(id); return el ? el.scrollTop : 0; };
+const docScrollTo = (id, top) => { const el = docScroller(id); if (el && top) el.scrollTop = top; };
+const docLeafOf = (id) =>
+  T.leaves(tiles().tree).find((l) => l.kind === 'doc' && l.ref === id) || null;
+
+// Unsaved edits plus a changed file on disk is the one case that must not be
+// resolved silently in either direction.
+function showStale(id) {
+  const p = docPane(id), st = docState(id);
+  if (!p || !st || st.stale) return;            // "keep mine" already answered this
+  if (p.body.querySelector('.doc-stale')) return;
+
+  const bar = document.createElement('div');
+  bar.className = 'doc-stale';
+  const msg = document.createElement('span');
+  msg.textContent = '⚠ changed on disk';
+  const reload = document.createElement('button');
+  reload.textContent = 'reload';
+  reload.onclick = () => { state.docs.delete(id); loadDoc(id); };
+  const keep = document.createElement('button');
+  keep.textContent = 'keep mine';
+  // Not just dismissing the bar: the next save is now allowed to overwrite the
+  // newer file without asking again, which is what clicking this means.
+  keep.onclick = () => { st.stale = true; hideStale(id); };
+  bar.append(msg, reload, keep);
+  p.body.insertBefore(bar, p.body.firstChild);
+  p.body.classList.add('has-stale');
+}
+
+function hideStale(id) {
+  const p = docPane(id);
+  if (!p) return;
+  const bar = p.body.querySelector('.doc-stale');
+  if (bar) bar.remove();
+  p.body.classList.remove('has-stale');
+}
+
+function markDocGone(id) {
+  const st = docState(id), doc = docOf(id), p = docPane(id);
+  if (!st || !doc || !p || st.gone) return;
+  st.gone = true;
+  p.body.textContent = '';
+  p.body.classList.remove('has-stale');
+  p.ctrls.textContent = '';
+  p.body.appendChild(docGoneEl(id));
+}
+
+function docGoneEl(id) {
+  const doc = docOf(id), st = docState(id);
+  const box = document.createElement('div');
+  box.className = 'doc-error';
+  const msg = document.createElement('div');
+  msg.textContent = doc.path + ' is no longer on disk.';
+  const row = document.createElement('div');
+  row.className = 'doc-error-row';
+  if (st.savedText != null) {
+    const write = document.createElement('button');
+    write.textContent = isDirty(id) ? 'write my version back' : 'write it back';
+    write.onclick = () => saveDoc(id);
+    row.appendChild(write);
+  }
+  const close = document.createElement('button');
+  close.textContent = 'close pane';
+  close.onclick = () => { const leaf = docLeafOf(id); if (leaf) closePane(leaf.id); };
+  row.append(close);
+  box.append(msg, row);
+  return box;
 }
 
 // Forget a doc instance. The pane element and the tree leaf are handled by
@@ -2218,7 +2337,7 @@ $('#btn-run-wizard').onclick = () => {
 };
 
 /* ---------------- events from main ---------------- */
-tote.onWorkspaceChanged(() => refreshTree());
+tote.onWorkspaceChanged(() => { refreshTree(); recheckDocs(); });
 
 tote.onDownloadDone((m) => {
   if (m.state === 'completed') {

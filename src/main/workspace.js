@@ -379,7 +379,12 @@ class WorkspaceManager {
   }
 
   writeText(rel, content) {
-    fs.writeFileSync(this.resolveSafe(rel), content, 'utf8');
+    const abs = this.resolveSafe(rel);
+    // A doc pane can be asked to write its buffer back after the file -- or the
+    // folder holding it -- was deleted underneath it, so recreate the parent
+    // the way createFile does rather than failing with ENOENT.
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, 'utf8');
   }
 
   // Everything a doc pane needs to show one file, in one shape. One channel

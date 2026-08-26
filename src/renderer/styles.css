@@ -515,6 +515,24 @@ webview.provider-view {
 .doc-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .doc-pdf { position: absolute; inset: 0; width: 100%; height: 100%; background: #0b101c; }
 
+/* unsaved edits + a changed file on disk: the one case that needs an answer */
+.doc-stale {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  height: 26px; padding: 0 10px; box-sizing: border-box;
+  background: #33290f; border-bottom: 1px solid #4a3a12;
+  color: #e8d9a8; font-size: 11px;
+}
+.doc-stale span { flex: 1; }
+.doc-stale button {
+  background: #221a08; border: 1px solid #5c4a1a; color: #e8d9a8;
+  border-radius: 4px; padding: 2px 9px; font-size: 10px; cursor: pointer;
+}
+.doc-stale button:hover { border-color: #a8862c; color: #fff3d6; }
+.pane-body.has-stale .doc-src,
+.pane-body.has-stale .doc-view,
+.pane-body.has-stale .doc-image { top: 26px; }
+
 .doc-error {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
@@ -525,6 +543,7 @@ webview.provider-view {
   border-radius: 5px; padding: 5px 12px; font-size: 11px; cursor: pointer;
 }
 .doc-error button:hover { border-color: #3d63b8; }
+.doc-error-row { display: flex; gap: 8px; }
 
 /* ---------- modals ---------- */
 .modal {

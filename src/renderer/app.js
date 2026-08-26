@@ -602,7 +602,43 @@ function renderDocBody(id) {
     p.body.appendChild(docMarkdownEl(id));
     return;
   }
+  if (st.kind === 'image' && doc.mode !== 'src') {
+    p.body.appendChild(docImageEl(id));
+    return;
+  }
+  if (st.kind === 'pdf') {
+    p.body.appendChild(docPdfEl(id));
+    return;
+  }
   p.body.appendChild(docSourceEl(id));
+}
+
+function docImageEl(id) {
+  const wrap = document.createElement('div');
+  wrap.className = 'doc-image';
+  const img = document.createElement('img');
+  img.src = docState(id).dataUrl || '';
+  img.alt = docOf(id).path;
+  wrap.appendChild(img);
+  return wrap;
+}
+
+// Electron renders a PDF with Chromium's own viewer. A webview is out of
+// process, so the host CSP does not apply to it and the file needs no copy --
+// readDoc hands over a file:// URL rather than 25 MB of base64.
+function docPdfEl(id) {
+  const wv = document.createElement('webview');
+  wv.className = 'doc-pdf';
+  wv.setAttribute('plugins', '');          // the PDF viewer is one
+  wv.setAttribute('src', docState(id).fileUrl || '');
+  wv.addEventListener('did-fail-load', (e) => {
+    if (e.errorCode === -3 || !e.isMainFrame) return;   // -3 = ABORTED, normal
+    const p = docPane(id), doc = docOf(id);
+    if (!p || !doc) return;
+    p.body.textContent = '';
+    p.body.appendChild(docErrorEl(doc.path, 'This PDF could not be shown in a pane.'));
+  });
+  return wv;
 }
 
 // Two kinds have both a rendered and an editable face: markdown, and SVG --

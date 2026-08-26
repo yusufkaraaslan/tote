@@ -201,5 +201,37 @@ describe('parse: tables', () => {
   });
 });
 
+const { docKind } = require('../src/main/workspace.js');
+
+describe('docKind', () => {
+  test('markdown is its own kind', () => {
+    assert.strictEqual(docKind('a.md'), 'md');
+    assert.strictEqual(docKind('a.markdown'), 'md');
+  });
+  test('the rest of TEXT_EXT is text', () => {
+    for (const n of ['a.js', 'a.json', 'a.py', 'a.yml', 'a.log', '.gitignore'])
+      assert.strictEqual(docKind(n), 'text');
+  });
+  test('images are image', () => {
+    for (const n of ['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp', 'a.ico'])
+      assert.strictEqual(docKind(n), 'image');
+  });
+  test('svg is an image even though it is also text', () => {
+    assert.strictEqual(docKind('a.svg'), 'image');
+  });
+  test('pdf is pdf', () => {
+    assert.strictEqual(docKind('a.pdf'), 'pdf');
+  });
+  test('anything else is binary', () => {
+    for (const n of ['a.zip', 'a.mp4', 'noextension']) assert.strictEqual(docKind(n), 'binary');
+  });
+  test('the extension match is case-insensitive', () => {
+    assert.strictEqual(docKind('README.MD'), 'md');
+  });
+  test('a path, not just a bare name, classifies by its extension', () => {
+    assert.strictEqual(docKind('docs/notes/a.md'), 'md');
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

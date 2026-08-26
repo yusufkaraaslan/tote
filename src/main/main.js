@@ -461,6 +461,7 @@ ipcMain.handle('workspaces:promote', async (e, id) => {
 ipcMain.handle('workspace:getRoot', () => workspace.getRoot());
 ipcMain.handle('workspace:tree', () => workspace.tree());
 ipcMain.handle('workspace:read', (e, rel) => workspace.readText(rel));
+ipcMain.handle('workspace:readDoc', (e, rel) => workspace.readDoc(rel));
 ipcMain.handle('workspace:write', (e, rel, content) => {
   workspace.writeText(rel, content);
   return true;

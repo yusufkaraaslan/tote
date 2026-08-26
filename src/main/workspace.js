@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
+const { pathToFileURL } = require('url');
 const S = require('./scratch');
 
 const IGNORE = new Set(['node_modules', '.git', '.DS_Store', 'dist', 'out', '.cache']);
@@ -17,6 +18,35 @@ const TEXT_EXT = new Set([
   '.tscn', '.tres', '.godot', '.log', '.gitignore', '.editorconfig',
 ]);
 const MAX_READ_BYTES = 2 * 1024 * 1024;
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg']);
+const MD_EXT = new Set(['.md', '.markdown']);
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+const MIME = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.svg': 'image/svg+xml',
+};
+
+// A dotfile is all suffix: path.extname('.gitignore') is '', so TEXT_EXT's
+// dotfile entries could never match through extname alone.
+function extOf(name) {
+  const base = path.basename(String(name));
+  const ext = path.extname(base);
+  return (ext || (base.startsWith('.') ? base : '')).toLowerCase();
+}
+
+// How a file is shown in a doc pane. SVG is deliberately an image even though
+// it is also in TEXT_EXT: readDoc fills in `text` as well, which is what gives
+// it both a rendered and an editable mode.
+function docKind(name) {
+  const ext = extOf(name);
+  if (MD_EXT.has(ext)) return 'md';
+  if (IMAGE_EXT.has(ext)) return 'image';
+  if (ext === '.pdf') return 'pdf';
+  if (TEXT_EXT.has(ext)) return 'text';
+  return 'binary';
+}
+
+const mb = (n) => (n / (1024 * 1024)).toFixed(1) + ' MB';
 
 // Resolve symlinks as far down as the path actually exists, then re-append the
 // rest. A path that is not there yet -- a promotion target -- or not there any
@@ -303,7 +333,7 @@ class WorkspaceManager {
   }
 
   isTextFile(name) {
-    return TEXT_EXT.has(path.extname(name).toLowerCase());
+    return TEXT_EXT.has(extOf(name));
   }
 
   tree(depth = 5) {
@@ -349,6 +379,42 @@ class WorkspaceManager {
 
   writeText(rel, content) {
     fs.writeFileSync(this.resolveSafe(rel), content, 'utf8');
+  }
+
+  // Everything a doc pane needs to show one file, in one shape. One channel
+  // rather than four keeps resolveSafe and the size caps in a single place,
+  // and gives the pane's reload path one thing to compare against.
+  // `error` means "cannot be shown"; `kind` is still set, so the pane can say
+  // what it would have shown and offer to open it externally.
+  readDoc(rel) {
+    const abs = this.resolveSafe(rel);
+    const kind = docKind(rel);
+    const stat = fs.statSync(abs);
+    if (stat.isDirectory()) throw new Error('Not a file: ' + rel);
+    const base = { kind: kind, mtimeMs: stat.mtimeMs, size: stat.size };
+    if (kind === 'binary') return base;
+    if (kind === 'pdf') return Object.assign(base, { fileUrl: pathToFileURL(abs).href });
+
+    if (kind === 'image') {
+      if (stat.size > MAX_IMAGE_BYTES) {
+        return Object.assign(base, { error: mb(stat.size) + ', larger than the 25 MB view limit' });
+      }
+      const buf = fs.readFileSync(abs);
+      const ext = extOf(rel);
+      const out = Object.assign(base, {
+        dataUrl: 'data:' + (MIME[ext] || 'application/octet-stream') + ';base64,' + buf.toString('base64'),
+      });
+      // SVG is text too, which is what gives it an editable source mode.
+      if (ext === '.svg' && !buf.includes(0)) out.text = buf.toString('utf8');
+      return out;
+    }
+
+    if (stat.size > MAX_READ_BYTES) {
+      return Object.assign(base, { error: mb(stat.size) + ', larger than the 2 MB view limit' });
+    }
+    const buf = fs.readFileSync(abs);
+    if (buf.includes(0)) return Object.assign(base, { error: 'Binary file — open it externally instead' });
+    return Object.assign(base, { text: buf.toString('utf8') });
   }
 
   createFile(rel) {
@@ -427,4 +493,4 @@ class WorkspaceManager {
   }
 }
 
-module.exports = { WorkspaceManager, originApp };
+module.exports = { WorkspaceManager, originApp, docKind };

@@ -357,7 +357,8 @@ class WorkspaceManager {
             children: d > 0 ? walk(childAbs, childRel, d - 1) : [],
           });
         } else if (e.isFile()) {
-          out.push({ name: e.name, path: childRel, type: 'file', text: this.isTextFile(e.name) });
+          out.push({ name: e.name, path: childRel, type: 'file',
+            text: this.isTextFile(e.name), kind: docKind(e.name) });
         }
       }
       out.sort((a, b) =>

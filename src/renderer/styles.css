@@ -437,6 +437,30 @@ webview.provider-view {
 .term-menu-item .cmd { color: #5c6a8c; font-size: 11px; margin-left: auto; }
 .pane-body .xterm { position: absolute; inset: 0; padding: 4px 4px 0 8px; }
 
+/* ---------- doc panes ---------- */
+.doc-src {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  box-sizing: border-box; resize: none; border: 0; outline: none;
+  padding: 8px 10px;
+  background: #0b101c; color: #dbe2f0;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.55; tab-size: 2;
+  user-select: text; white-space: pre;
+}
+.pane.doc-dirty .pane-head { background: #241f10; }
+.pane.doc-dirty.focused .pane-head { background: #33290f; }
+
+.doc-error {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 20px; text-align: center; color: #8b98b8; font-size: 12px;
+}
+.doc-error button {
+  background: #1b2437; border: 1px solid #2a3550; color: #dbe2f0;
+  border-radius: 5px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+}
+.doc-error button:hover { border-color: #3d63b8; }
+
 /* ---------- modals ---------- */
 .modal {
   position: fixed;
@@ -460,15 +484,6 @@ webview.provider-view {
 }
 .modal-title { font-weight: 600; color: #fff; font-size: 14px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.editor-card { width: min(860px, 90vw); height: min(620px, 85vh); }
-#editor-text {
-  flex: 1;
-  resize: none;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.55;
-  user-select: text;
-}
 .settings-card { width: min(620px, 92vw); max-height: 85vh; overflow: auto; }
 .settings-card h3 { margin: 6px 0 0; color: #9aa7c0; font-size: 12px; letter-spacing: 0.05em; }
 .settings-row {

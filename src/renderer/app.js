@@ -17,6 +17,8 @@ const state = {
   activeTermByWs: {}, // wsId -> termId last active there
   cliAvail: new Map(), // profileId -> boolean
   expanded: new Set(['inbox']),
+  docs: new Map(), // docId -> { path, kind, text, savedText, dataUrl, fileUrl, mtimeMs, size, error, stale }
+  docOrder: [], // doc leaf ids, least recently focused first -- which pane a click retargets
 };
 
 /* ---------------- toasts ---------------- */
@@ -383,8 +385,9 @@ function renderNodes(nodes) {
         renderTree();
       };
     } else {
-      icon.textContent = n.text ? '≡' : '•';
-      row.onclick = () => openFile(n);
+      icon.textContent = n.kind === 'image' ? '▣' : n.kind === 'pdf' ? '❐'
+        : n.kind === 'binary' ? '•' : '≡';
+      row.onclick = (e) => openFile(n, e);
     }
     row.oncontextmenu = (e) => {
       e.preventDefault();
@@ -435,6 +438,9 @@ function showContextMenu(x, y, node) {
 
   if (node.type === 'file') {
     menu.appendChild(ctxItem('Open', () => openFile(node)));
+    if (node.kind !== 'binary') {
+      menu.appendChild(ctxItem('Open in new pane', () => openDoc(node.path, { newPane: true })));
+    }
     menu.appendChild(ctxItem('Open externally', () => tote.openPath(node.path)));
     menu.appendChild(ctxItem(REVEAL_LABEL, () => tote.revealPath(node.path)));
     menu.appendChild(ctxItem('Send to active tab (experimental)', () => sendToTab(node.path)));
@@ -477,36 +483,180 @@ function showContextMenu(x, y, node) {
   menu.style.top = Math.min(y, innerHeight - menu.offsetHeight - 8) + 'px';
 }
 
-/* ---------------- files ---------------- */
-let editorPath = null;
+/* ---------------- doc panes ---------------- */
+/* A file is a pane, not a modal. The leaf kind is 'doc' and its ref is an
+ * INSTANCE id, never a path: clicking another file retargets the pane you are
+ * already looking at, so the tree is never edited, focus does not churn and the
+ * split ratio you dragged survives. Instances live per space in views.json
+ * beside `tabs`; only { id, path, mode } is persisted -- an unsaved buffer
+ * never reaches disk.
+ *
+ * Which kind a file is (text, md, image, pdf, binary) is decided in main, so
+ * the tree node and readDoc can never disagree about it. */
 
-async function openFile(node) {
-  if (!node.text) {
-    tote.openPath(node.path);
-    return;
+function wsDocs(wsId = state.workspaces.active) {
+  const V = wsViews(wsId);
+  if (!V.docs) V.docs = [];
+  return V.docs;
+}
+const docOf = (id) => wsDocs().find((d) => d.id === id);
+const docPane = (id) => panes.get('doc:' + id);
+const docState = (id) => state.docs.get(id);
+// Only a doc that carries text can be dirty; an image or a PDF never is.
+function isDirty(id) {
+  const st = state.docs.get(id);
+  return !!(st && st.savedText != null && st.text !== st.savedText);
+}
+
+// A file the pane cannot show goes to the system app, as it always has.
+async function openFile(node, e) {
+  if (!node || node.type !== 'file') return;
+  if (node.kind === 'binary') { tote.openPath(node.path); return; }
+  await openDoc(node.path, { newPane: !!(e && (e.metaKey || e.ctrlKey)) });
+}
+
+// The single entry point for showing a file in a pane.
+async function openDoc(rel, { newPane = false } = {}) {
+  const S = tiles();
+  const open = T.leaves(S.tree).filter((l) => l.kind === 'doc');
+  const same = open.find((l) => (docOf(l.ref) || {}).path === rel);
+  if (same) { focusPane(same.id); return; }
+
+  const target = newPane ? null : (open.find((l) => l.id === S.focus) || lastDocLeaf(open));
+  if (target) return retargetDoc(target, rel);
+
+  const doc = { id: newId('d'), path: rel, mode: 'view' };
+  wsDocs().push(doc);
+  const leaf = openPane(T.leaf(newLeafId(), 'doc', doc.id));  // -> mountLeaf -> loadDoc
+  noteDocFocus(leaf.id);
+}
+
+// The most recently focused doc pane still in this tree: the one a plain click
+// retargets when focus is somewhere else entirely, like a terminal.
+function lastDocLeaf(open) {
+  for (let i = state.docOrder.length - 1; i >= 0; i--) {
+    const hit = open.find((l) => l.id === state.docOrder[i]);
+    if (hit) return hit;
   }
+  return open[0] || null;
+}
+
+function noteDocFocus(leafId) {
+  state.docOrder = state.docOrder.filter((x) => x !== leafId);
+  state.docOrder.push(leafId);
+}
+
+// Point an existing pane at another file. The pane element stays exactly where
+// it is -- this is the whole reason a doc ref is an instance and not a path.
+async function retargetDoc(leaf, rel) {
+  const doc = docOf(leaf.ref);
+  if (!doc) return;
+  if (isDirty(doc.id) && !confirm('"' + doc.path + '" has unsaved changes.\nDiscard them?')) return;
+  doc.path = rel;
+  doc.mode = 'view';
+  state.docs.delete(doc.id);
+  focusPane(leaf.id);
+  noteDocFocus(leaf.id);
+  await loadDoc(doc.id);
+  saveViews();
+}
+
+async function loadDoc(id) {
+  const doc = docOf(id);
+  const p = docPane(id);
+  if (!doc || !p) return;
+  p.title.textContent = doc.path;
+  p.el.title = doc.path;
+
+  let res;
   try {
-    const content = await tote.readFile(node.path);
-    editorPath = node.path;
-    $('#editor-title').textContent = node.path;
-    $('#editor-text').value = content;
-    $('#editor-modal').classList.remove('hidden');
+    res = await tote.readDoc(doc.path);
+  } catch (err) {
+    res = { kind: 'text', error: err.message || String(err) };
+  }
+  state.docs.set(id, {
+    path: doc.path,
+    kind: res.kind,
+    text: res.text == null ? '' : res.text,
+    savedText: res.text == null ? null : res.text,
+    dataUrl: res.dataUrl || null,
+    fileUrl: res.fileUrl || null,
+    mtimeMs: res.mtimeMs,
+    size: res.size,
+    error: res.error || null,
+    stale: false,
+  });
+  renderDocBody(id);
+}
+
+// Rebuild the pane's BODY. The pane element itself is never touched, never
+// replaced and never reparented.
+function renderDocBody(id) {
+  const doc = docOf(id), st = docState(id), p = docPane(id);
+  if (!doc || !st || !p) return;
+  p.body.textContent = '';
+  updateDocHead(id);
+  if (st.error) { p.body.appendChild(docErrorEl(doc.path, st.error)); return; }
+  p.body.appendChild(docSourceEl(id));
+}
+
+function docSourceEl(id) {
+  const st = docState(id);
+  const ta = document.createElement('textarea');
+  ta.className = 'doc-src';
+  ta.spellcheck = false;
+  ta.value = st.text;
+  ta.addEventListener('input', () => { st.text = ta.value; updateDocHead(id); });
+  return ta;
+}
+
+function docErrorEl(rel, message) {
+  const box = document.createElement('div');
+  box.className = 'doc-error';
+  const msg = document.createElement('div');
+  msg.textContent = message;
+  const btn = document.createElement('button');
+  btn.textContent = 'open externally';
+  btn.onclick = () => tote.openPath(rel);
+  box.append(msg, btn);
+  return box;
+}
+
+// The dot in the pane head is the unsaved marker; the title stays the path.
+function updateDocHead(id) {
+  const p = docPane(id);
+  if (!p) return;
+  const dirty = isDirty(id);
+  p.dot.style.display = dirty ? '' : 'none';
+  p.dot.style.background = '#e0a33e';
+  p.dot.title = dirty ? 'unsaved changes' : '';
+  p.el.classList.toggle('doc-dirty', dirty);
+}
+
+async function saveDoc(id) {
+  const doc = docOf(id), st = docState(id);
+  if (!doc || !st || st.savedText == null) return;
+  try {
+    await tote.writeFile(doc.path, st.text);
+    st.savedText = st.text;
+    st.stale = false;
+    updateDocHead(id);
+    toast('Saved ' + doc.path, 'success');
   } catch (e) {
-    toast(e.message + ' — opening externally.', 'error');
-    tote.openPath(node.path);
+    toast(e.message, 'error');   // the pane stays dirty
   }
 }
 
-$('#editor-save').onclick = async () => {
-  try {
-    await tote.writeFile(editorPath, $('#editor-text').value);
-    $('#editor-modal').classList.add('hidden');
-    toast('Saved ' + editorPath, 'success');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-};
-$('#editor-cancel').onclick = () => $('#editor-modal').classList.add('hidden');
+// Forget a doc instance. The pane element and the tree leaf are handled by
+// closePane, which is the only caller -- the same contract closeTabInstance has.
+function closeDocInstance(id) {
+  const list = wsDocs();
+  const i = list.findIndex((d) => d.id === id);
+  if (i >= 0) list.splice(i, 1);
+  state.docs.delete(id);
+}
+
+/* ---------------- files ---------------- */
 
 async function newFile(baseDir = '.') {
   const name = await askInput('New file name (in ' + baseDir + ')');
@@ -703,10 +853,7 @@ function acceptFileDrop(el, onPaths) {
 
 async function spawnTerm(profile) {
   const id = ++state.termSeq;
-  const wsName = (activeWorkspace() && activeWorkspace().name) || '?';
-
   const pane = paneShell('term:' + id, profile.name);
-  pane.el.title = wsName + ' · cwd: ' + (activeWorkspace() ? activeWorkspace().path : '');
 
   const term = new Terminal({
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
@@ -734,8 +881,9 @@ async function spawnTerm(profile) {
   // ride on Shift, which Claude Code and Codex leave alone:
   //   Enter -- Shift+Enter must open a new line, not send the message. xterm emits
   //     a bare CR for Enter and Shift+Enter alike, so an agent TUI cannot tell them
-  //     apart; ESC+CR is the sequence Claude Code and Codex read as "newline" (the
-  //     same one other terminals are configured to send by their setup command).
+  //     apart; we send LF (0x0a) instead -- the byte Ctrl+J produces, which is the
+  //     newline every agent TUI accepts without a per-terminal setup step. ESC+CR
+  //     was tried first and Claude Code now reads it as "escape, then send".
   //   Arrows/Home/End -- scroll the scrollback. A bare Up/Down is the agent's prompt
   //     history, so without this a long answer is only reachable with the wheel or
   //     Shift+PageUp (Fn+Shift+Up on a laptop). Shift+PageUp/PageDown stay xterm's
@@ -751,7 +899,7 @@ async function spawnTerm(profile) {
     if (e.type !== 'keydown') return true;
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
     if (e.key === 'Enter') {
-      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
+      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\n');
       return false;
     }
     const scroll = SCROLL[e.key];
@@ -779,7 +927,6 @@ async function spawnTerm(profile) {
     const res = await tote.ptySpawn(profile.id, term.cols || 80, term.rows || 24);
     entry.ptyId = res.id;
     entry.alive = true;
-    pane.el.title = res.workspace + ' · cwd: ' + res.cwd;
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + res.cwd + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
     term.onData((d) => tote.ptyWrite(res.id, d));
@@ -985,6 +1132,13 @@ function mountLeaf(lf) {
     ensureWebview(tab, provider, p.body);
     return p;
   }
+  if (lf.kind === 'doc') {
+    const doc = (wsViews().docs || []).find((d) => d.id === lf.ref);
+    if (!doc) return null;                       // stale leaf from a previous run
+    const p = paneShell(key, doc.path);
+    if (!state.docs.has(doc.id)) loadDoc(doc.id);  // first showing: read from disk
+    return p;
+  }
   if (lf.kind === 'term') {
     // A terminal belongs to the space that spawned it, the way a web leaf must
     // name a tab of this space. Anything else -- a dead ref, or a leaf pointing
@@ -1059,6 +1213,7 @@ function focusPane(leafId) {
     const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
     if (t) t.term.focus();
   }
+  if (lf && lf.kind === 'doc') noteDocFocus(leafId);
   saveViews();
 }
 
@@ -1137,12 +1292,17 @@ function closePane(leafId) {
   const S = tiles();
   const lf = T.findLeaf(S.tree, leafId);
   if (!lf) return;
+  if (lf.kind === 'doc' && isDirty(lf.ref)) {
+    const doc = docOf(lf.ref);
+    if (!confirm('"' + (doc ? doc.path : '') + '" has unsaved changes.\nClose anyway?')) return;
+  }
   if (lf.kind === 'files') rememberFilesRatio(leafId);
   S.tree = T.removeLeaf(S.tree, leafId);
   if (S.zoom === leafId) S.zoom = null;
   // tear down the instance behind the pane
   if (lf.kind === 'web') { destroyPaneEl(paneKey(lf)); closeTabInstance(lf.ref); }
   else if (lf.kind === 'term') { killTermByRef(lf.ref); destroyPaneEl(paneKey(lf)); }
+  else if (lf.kind === 'doc') { destroyPaneEl(paneKey(lf)); closeDocInstance(lf.ref); }
   else { const p = panes.get('files'); if (p) p.el.classList.add('hidden'); }
   applyTiles();
   renderGroupBar();

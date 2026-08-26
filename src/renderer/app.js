@@ -1874,7 +1874,22 @@ $('#btn-files').onclick = () => {
 const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
 const ARROW = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 
+// The focused pane's doc, if it is one -- what Cmd+S and MOD+E act on.
+function focusedDoc() {
+  const S = tiles();
+  const lf = S.focus ? T.findLeaf(S.tree, S.focus) : null;
+  if (!lf || lf.kind !== 'doc') return null;
+  const doc = docOf(lf.ref);
+  return doc && state.docs.has(doc.id) ? doc : null;
+}
+
 addEventListener('keydown', (e) => {
+  // Plain Cmd/Ctrl+S. A new modifier shape in this listener -- MOD is Cmd+Alt
+  // for pane keys -- but nothing else in Tote has anything to save.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
+    const doc = focusedDoc();
+    if (doc) { e.preventDefault(); saveDoc(doc.id); return; }
+  }
   if (e.ctrlKey && !e.altKey && e.key === '`') {
     e.preventDefault();
     const S = tiles();
@@ -1907,6 +1922,14 @@ addEventListener('keydown', (e) => {
     const g = groups()[+e.key - 1];
     if (g) switchGroup(g.id);
     return;
+  }
+  if (e.key === 'e' || e.key === 'E') {        // flip a markdown or SVG pane
+    const doc = focusedDoc();
+    if (doc && docHasModes(doc.id)) {
+      e.preventDefault();
+      setDocMode(doc.id, doc.mode === 'src' ? 'view' : 'src');
+      return;
+    }
   }
   if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }

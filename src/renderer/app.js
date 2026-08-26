@@ -571,12 +571,16 @@ async function loadDoc(id) {
   p.title.textContent = doc.path;
   p.el.title = doc.path;
 
+  const wanted = doc.path;
   let res;
   try {
-    res = await tote.readDoc(doc.path);
+    res = await tote.readDoc(wanted);
   } catch (err) {
     res = { kind: 'text', error: err.message || String(err) };
   }
+  // Two fast clicks start two reads. Whichever returns second must not win if
+  // the pane has already been pointed somewhere else.
+  if (!docOf(id) || docOf(id).path !== wanted) return;
   state.docs.set(id, {
     path: doc.path,
     kind: res.kind,
@@ -598,6 +602,7 @@ function renderDocBody(id) {
   const doc = docOf(id), st = docState(id), p = docPane(id);
   if (!doc || !st || !p) return;
   p.body.textContent = '';
+  p.body.classList.remove('has-stale');   // the bar's element went with textContent
   renderDocControls(id);
   updateDocHead(id);
   if (st.error) { p.body.appendChild(docErrorEl(doc.path, st.error)); return; }

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('tote', {
   getRoot: () => ipcRenderer.invoke('workspace:getRoot'),
   tree: () => ipcRenderer.invoke('workspace:tree'),
   readFile: (rel) => ipcRenderer.invoke('workspace:read', rel),
+  readDoc: (rel) => ipcRenderer.invoke('workspace:readDoc', rel),
   writeFile: (rel, content) => ipcRenderer.invoke('workspace:write', rel, content),
   createFile: (rel) => ipcRenderer.invoke('workspace:createFile', rel),
   createFolder: (rel) => ipcRenderer.invoke('workspace:createFolder', rel),

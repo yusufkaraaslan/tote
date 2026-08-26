@@ -17,6 +17,8 @@ const state = {
   activeTermByWs: {}, // wsId -> termId last active there
   cliAvail: new Map(), // profileId -> boolean
   expanded: new Set(['inbox']),
+  docs: new Map(), // docId -> { path, kind, text, savedText, dataUrl, fileUrl, mtimeMs, size, error, stale }
+  docOrder: [], // doc leaf ids, least recently focused first -- which pane a click retargets
 };
 
 /* ---------------- toasts ---------------- */
@@ -325,6 +327,9 @@ function closeTabInstance(tabId) {
 function showWorkspaceViews() {
   applyTiles();
   renderGroupBar();
+  // The watcher only ever binds the ACTIVE space's root, so doc panes in a
+  // space that was in the background catch up the moment it comes forward.
+  recheckDocs();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -383,8 +388,9 @@ function renderNodes(nodes) {
         renderTree();
       };
     } else {
-      icon.textContent = n.text ? '≡' : '•';
-      row.onclick = () => openFile(n);
+      icon.textContent = n.kind === 'image' ? '▣' : n.kind === 'pdf' ? '❐'
+        : n.kind === 'binary' ? '•' : '≡';
+      row.onclick = (e) => openFile(n, e);
     }
     row.oncontextmenu = (e) => {
       e.preventDefault();
@@ -435,6 +441,9 @@ function showContextMenu(x, y, node) {
 
   if (node.type === 'file') {
     menu.appendChild(ctxItem('Open', () => openFile(node)));
+    if (node.kind !== 'binary') {
+      menu.appendChild(ctxItem('Open in new pane', () => openDoc(node.path, { newPane: true })));
+    }
     menu.appendChild(ctxItem('Open externally', () => tote.openPath(node.path)));
     menu.appendChild(ctxItem(REVEAL_LABEL, () => tote.revealPath(node.path)));
     menu.appendChild(ctxItem('Send to active tab (experimental)', () => sendToTab(node.path)));
@@ -477,36 +486,526 @@ function showContextMenu(x, y, node) {
   menu.style.top = Math.min(y, innerHeight - menu.offsetHeight - 8) + 'px';
 }
 
-/* ---------------- files ---------------- */
-let editorPath = null;
+/* ---------------- doc panes ---------------- */
+/* A file is a pane, not a modal. The leaf kind is 'doc' and its ref is an
+ * INSTANCE id, never a path: clicking another file retargets the pane you are
+ * already looking at, so the tree is never edited, focus does not churn and the
+ * split ratio you dragged survives. Instances live per space in views.json
+ * beside `tabs`; only { id, path, mode } is persisted -- an unsaved buffer
+ * never reaches disk.
+ *
+ * Which kind a file is (text, md, image, pdf, binary) is decided in main, so
+ * the tree node and readDoc can never disagree about it. */
 
-async function openFile(node) {
-  if (!node.text) {
-    tote.openPath(node.path);
+function wsDocs(wsId = state.workspaces.active) {
+  const V = wsViews(wsId);
+  if (!V.docs) V.docs = [];
+  return V.docs;
+}
+const docOf = (id) => wsDocs().find((d) => d.id === id);
+const docPane = (id) => panes.get('doc:' + id);
+const docState = (id) => state.docs.get(id);
+// Only a doc that carries text can be dirty; an image or a PDF never is.
+function isDirty(id) {
+  const st = state.docs.get(id);
+  return !!(st && st.savedText != null && st.text !== st.savedText);
+}
+
+// A file the pane cannot show goes to the system app, as it always has.
+async function openFile(node, e) {
+  if (!node || node.type !== 'file') return;
+  if (node.kind === 'binary') { tote.openPath(node.path); return; }
+  await openDoc(node.path, { newPane: !!(e && (e.metaKey || e.ctrlKey)) });
+}
+
+// The single entry point for showing a file in a pane.
+async function openDoc(rel, { newPane = false } = {}) {
+  const S = tiles();
+  const open = T.leaves(S.tree).filter((l) => l.kind === 'doc');
+  const same = open.find((l) => (docOf(l.ref) || {}).path === rel);
+  if (same) { focusPane(same.id); return; }
+
+  const target = newPane ? null : (open.find((l) => l.id === S.focus) || lastDocLeaf(open));
+  if (target) return retargetDoc(target, rel);
+
+  const doc = { id: newId('d'), path: rel, mode: 'view' };
+  wsDocs().push(doc);
+  const leaf = openPane(T.leaf(newLeafId(), 'doc', doc.id));  // -> mountLeaf -> loadDoc
+  noteDocFocus(leaf.id);
+}
+
+// The most recently focused doc pane still in this tree: the one a plain click
+// retargets when focus is somewhere else entirely, like a terminal.
+function lastDocLeaf(open) {
+  for (let i = state.docOrder.length - 1; i >= 0; i--) {
+    const hit = open.find((l) => l.id === state.docOrder[i]);
+    if (hit) return hit;
+  }
+  return open[0] || null;
+}
+
+function noteDocFocus(leafId) {
+  state.docOrder = state.docOrder.filter((x) => x !== leafId);
+  state.docOrder.push(leafId);
+}
+
+// Point an existing pane at another file. The pane element stays exactly where
+// it is -- this is the whole reason a doc ref is an instance and not a path.
+async function retargetDoc(leaf, rel) {
+  const doc = docOf(leaf.ref);
+  if (!doc) return;
+  if (isDirty(doc.id) && !confirm('"' + doc.path + '" has unsaved changes.\nDiscard them?')) return;
+  doc.path = rel;
+  doc.mode = 'view';
+  state.docs.delete(doc.id);
+  focusPane(leaf.id);
+  noteDocFocus(leaf.id);
+  await loadDoc(doc.id);
+  saveViews();
+}
+
+async function loadDoc(id) {
+  const doc = docOf(id);
+  const p = docPane(id);
+  if (!doc || !p) return;
+  p.title.textContent = doc.path;
+  p.el.title = doc.path;
+
+  const wanted = doc.path;
+  let res;
+  try {
+    res = await tote.readDoc(wanted);
+  } catch (err) {
+    res = { kind: 'text', error: err.message || String(err) };
+  }
+  // Two fast clicks start two reads. Whichever returns second must not win if
+  // the pane has already been pointed somewhere else.
+  if (!docOf(id) || docOf(id).path !== wanted) return;
+  state.docs.set(id, {
+    path: doc.path,
+    kind: res.kind,
+    text: res.text == null ? '' : res.text,
+    savedText: res.text == null ? null : res.text,
+    dataUrl: res.dataUrl || null,
+    fileUrl: res.fileUrl || null,
+    mtimeMs: res.mtimeMs,
+    size: res.size,
+    error: res.error || null,
+    stale: false,
+  });
+  renderDocBody(id);
+}
+
+// Rebuild the pane's BODY. The pane element itself is never touched, never
+// replaced and never reparented.
+function renderDocBody(id) {
+  const doc = docOf(id), st = docState(id), p = docPane(id);
+  if (!doc || !st || !p) return;
+  p.body.textContent = '';
+  p.body.classList.remove('has-stale');   // the bar's element went with textContent
+  renderDocControls(id);
+  updateDocHead(id);
+  if (st.error) { p.body.appendChild(docErrorEl(doc.path, st.error)); return; }
+  if (st.kind === 'md' && doc.mode !== 'src') {
+    p.body.appendChild(docMarkdownEl(id));
     return;
   }
-  try {
-    const content = await tote.readFile(node.path);
-    editorPath = node.path;
-    $('#editor-title').textContent = node.path;
-    $('#editor-text').value = content;
-    $('#editor-modal').classList.remove('hidden');
-  } catch (e) {
-    toast(e.message + ' — opening externally.', 'error');
-    tote.openPath(node.path);
+  if (st.kind === 'image' && doc.mode !== 'src') {
+    p.body.appendChild(docImageEl(id));
+    return;
+  }
+  if (st.kind === 'pdf') {
+    p.body.appendChild(docPdfEl(id));
+    return;
+  }
+  p.body.appendChild(docSourceEl(id));
+}
+
+function docImageEl(id) {
+  const wrap = document.createElement('div');
+  wrap.className = 'doc-image';
+  const img = document.createElement('img');
+  img.src = docState(id).dataUrl || '';
+  img.alt = docOf(id).path;
+  wrap.appendChild(img);
+  return wrap;
+}
+
+// Electron renders a PDF with Chromium's own viewer. A webview is out of
+// process, so the host CSP does not apply to it and the file needs no copy --
+// readDoc hands over a file:// URL rather than 25 MB of base64.
+function docPdfEl(id) {
+  const wv = document.createElement('webview');
+  wv.className = 'doc-pdf';
+  wv.setAttribute('plugins', '');          // the PDF viewer is one
+  wv.setAttribute('src', docState(id).fileUrl || '');
+  wv.addEventListener('did-fail-load', (e) => {
+    if (e.errorCode === -3 || !e.isMainFrame) return;   // -3 = ABORTED, normal
+    const p = docPane(id), doc = docOf(id);
+    if (!p || !doc) return;
+    p.body.textContent = '';
+    p.body.appendChild(docErrorEl(doc.path, 'This PDF could not be shown in a pane.'));
+  });
+  return wv;
+}
+
+// Two kinds have both a rendered and an editable face: markdown, and SVG --
+// which readDoc hands back as an image that also carries its own source.
+const docHasModes = (id) => {
+  const st = docState(id);
+  return !!st && (st.kind === 'md' || (st.kind === 'image' && st.savedText != null));
+};
+
+function renderDocControls(id) {
+  const p = docPane(id), doc = docOf(id);
+  if (!p) return;
+  p.ctrls.textContent = '';
+  if (!doc || !docHasModes(id) || docState(id).error) return;
+  for (const m of ['src', 'view']) {
+    const b = document.createElement('span');
+    b.className = 'pane-mode' + (doc.mode === m ? ' on' : '');
+    b.textContent = m;
+    b.onclick = (e) => { e.stopPropagation(); setDocMode(id, m); };
+    p.ctrls.appendChild(b);
   }
 }
 
-$('#editor-save').onclick = async () => {
-  try {
-    await tote.writeFile(editorPath, $('#editor-text').value);
-    $('#editor-modal').classList.add('hidden');
-    toast('Saved ' + editorPath, 'success');
-  } catch (e) {
-    toast(e.message, 'error');
+function setDocMode(id, mode) {
+  const doc = docOf(id);
+  if (!doc || !docHasModes(id) || doc.mode === mode) return;
+  doc.mode = mode;
+  renderDocBody(id);
+  saveViews();
+}
+
+function docMarkdownEl(id) {
+  const box = document.createElement('div');
+  box.className = 'doc-view';
+  box.appendChild(renderBlocks(Markdown.parse(docState(id).text), docOf(id).path));
+  return box;
+}
+
+/* ----- markdown tokens -> DOM -----
+ * createElement only. Nothing here ever assigns innerHTML, which is what makes
+ * the parser's "raw HTML stays literal text" rule actually hold in the page. */
+
+function renderBlocks(blocks, rel) {
+  const frag = document.createDocumentFragment();
+  for (const b of blocks) frag.appendChild(blockEl(b, rel));
+  return frag;
+}
+
+function blockEl(b, rel) {
+  if (b.type === 'heading') {
+    const h = document.createElement('h' + b.level);
+    h.appendChild(renderSpans(b.spans, rel));
+    return h;
   }
+  if (b.type === 'paragraph') {
+    const p = document.createElement('p');
+    p.appendChild(renderSpans(b.spans, rel));
+    return p;
+  }
+  if (b.type === 'hr') return document.createElement('hr');
+  if (b.type === 'code') {
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (b.lang) code.dataset.lang = b.lang;
+    code.textContent = b.text;
+    pre.appendChild(code);
+    return pre;
+  }
+  if (b.type === 'quote') {
+    const q = document.createElement('blockquote');
+    q.appendChild(renderBlocks(b.blocks, rel));
+    return q;
+  }
+  if (b.type === 'list') {
+    const list = document.createElement(b.ordered ? 'ol' : 'ul');
+    if (b.ordered && b.start !== 1) list.start = b.start;
+    for (const item of b.items) {
+      const li = document.createElement('li');
+      if (item.checked !== null) {
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = item.checked;
+        box.disabled = true;               // a rendered doc is not a form
+        li.className = 'task';
+        li.appendChild(box);
+      }
+      li.appendChild(renderSpans(item.spans, rel));
+      if (item.blocks) li.appendChild(renderBlocks(item.blocks, rel));
+      list.appendChild(li);
+    }
+    return list;
+  }
+  if (b.type === 'table') {
+    const wrap = document.createElement('div');
+    wrap.className = 'doc-table';         // its own scroller: the pane must not scroll sideways
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const hrow = document.createElement('tr');
+    b.head.forEach((cell, i) => hrow.appendChild(cellEl('th', cell, b.align[i], rel)));
+    thead.appendChild(hrow);
+    const tbody = document.createElement('tbody');
+    for (const row of b.rows) {
+      const tr = document.createElement('tr');
+      row.forEach((cell, i) => tr.appendChild(cellEl('td', cell, b.align[i], rel)));
+      tbody.appendChild(tr);
+    }
+    table.append(thead, tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+  return document.createTextNode('');
+}
+
+function cellEl(tag, spans, align, rel) {
+  const el = document.createElement(tag);
+  if (align) el.style.textAlign = align;
+  el.appendChild(renderSpans(spans, rel));
+  return el;
+}
+
+function renderSpans(spans, rel) {
+  const frag = document.createDocumentFragment();
+  for (const sp of spans || []) {
+    if (sp.type === 'text') { frag.appendChild(document.createTextNode(sp.text)); continue; }
+    if (sp.type === 'code') {
+      const c = document.createElement('code');
+      c.textContent = sp.text;
+      frag.appendChild(c);
+      continue;
+    }
+    if (sp.type === 'image') { frag.appendChild(mdImageEl(sp, rel)); continue; }
+    if (sp.type === 'link') { frag.appendChild(mdLinkEl(sp, rel)); continue; }
+    const el = document.createElement(sp.type === 'strong' ? 'strong' : sp.type === 'em' ? 'em' : 's');
+    el.appendChild(renderSpans(sp.spans, rel));
+    frag.appendChild(el);
+  }
+  return frag;
+}
+
+// The parser already rejected every scheme but http(s) and mailto, so a link is
+// either external or a path inside this space -- which opens in a pane.
+function mdLinkEl(sp, rel) {
+  const a = document.createElement('a');
+  a.href = '#';
+  a.title = sp.href;
+  a.appendChild(renderSpans(sp.spans, rel));
+  a.onclick = (e) => {
+    e.preventDefault();
+    if (/^(https?:|mailto:)/i.test(sp.href)) { tote.openExternal(sp.href); return; }
+    const target = resolveRel(rel, sp.href.split('#')[0]);
+    if (target) openDoc(target);
+  };
+  return a;
+}
+
+// A relative image is fetched through readDoc, so resolveSafe still guards it
+// and the CSP needs no file: relaxation. http(s) sources load directly.
+function mdImageEl(sp, rel) {
+  const img = document.createElement('img');
+  img.className = 'doc-md-img';
+  img.alt = sp.alt || '';
+  if (/^https?:/i.test(sp.src)) { img.src = sp.src; return img; }
+  const target = resolveRel(rel, sp.src);
+  if (target) {
+    tote.readDoc(target)
+      .then((d) => { if (d && d.dataUrl) img.src = d.dataUrl; })
+      .catch(() => {});
+  }
+  return img;
+}
+
+// Join a link against the doc's own folder, keeping the result relative to the
+// space root. resolveSafe in main is still the guard; this only builds the
+// string it will check, and returns null rather than asking about an escape.
+function resolveRel(fromRel, href) {
+  if (!href) return null;
+  const out = href.startsWith('/') ? [] : String(fromRel).split('/').slice(0, -1);
+  for (const seg of href.replace(/^\//, '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') { if (!out.length) return null; out.pop(); }
+    else out.push(seg);
+  }
+  return out.length ? out.join('/') : null;
+}
+
+function docSourceEl(id) {
+  const st = docState(id);
+  const ta = document.createElement('textarea');
+  ta.className = 'doc-src';
+  ta.spellcheck = false;
+  ta.value = st.text;
+  ta.addEventListener('input', () => { st.text = ta.value; updateDocHead(id); });
+  return ta;
+}
+
+function docErrorEl(rel, message) {
+  const box = document.createElement('div');
+  box.className = 'doc-error';
+  const msg = document.createElement('div');
+  msg.textContent = message;
+  const btn = document.createElement('button');
+  btn.textContent = 'open externally';
+  btn.onclick = () => tote.openPath(rel);
+  box.append(msg, btn);
+  return box;
+}
+
+// The dot in the pane head is the unsaved marker; the title stays the path.
+function updateDocHead(id) {
+  const p = docPane(id);
+  if (!p) return;
+  const dirty = isDirty(id);
+  p.dot.style.display = dirty ? '' : 'none';
+  p.dot.style.background = '#e0a33e';
+  p.dot.title = dirty ? 'unsaved changes' : '';
+  p.el.classList.toggle('doc-dirty', dirty);
+}
+
+async function saveDoc(id) {
+  const doc = docOf(id), st = docState(id);
+  if (!doc || !st || st.savedText == null) return;
+  try {
+    await tote.writeFile(doc.path, st.text);
+    const wasGone = st.gone;
+    st.savedText = st.text;
+    st.stale = false;
+    st.gone = false;
+    updateDocHead(id);
+    hideStale(id);
+    if (wasGone) renderDocBody(id);
+    else if (docHasModes(id) && doc.mode === 'src') setDocMode(id, 'view');
+    toast('Saved ' + doc.path, 'success');
+  } catch (e) {
+    toast(e.message, 'error');   // the pane stays dirty
+  }
+}
+
+/* ----- external change -----
+ * The watcher ping carries no path, so every open doc re-reads its own file.
+ * A save needs no suppression flag: afterwards the disk matches savedText, so
+ * the tick it causes is a no-op. */
+
+async function recheckDocs() {
+  for (const doc of wsDocs()) {
+    const st = docState(doc.id);
+    if (!st || st.path !== doc.path) continue;   // never mounted, or mid-retarget
+
+    let res;
+    try {
+      res = await tote.readDoc(doc.path);
+    } catch {
+      markDocGone(doc.id);
+      continue;
+    }
+    if (st.gone) { state.docs.delete(doc.id); loadDoc(doc.id); continue; }  // it came back
+
+    if (res.text == null) {                       // image, pdf, or an error state
+      if (res.mtimeMs === st.mtimeMs && res.size === st.size) continue;
+      state.docs.delete(doc.id);
+      loadDoc(doc.id);
+      continue;
+    }
+    if (res.text === st.savedText) { hideStale(doc.id); continue; }  // disk is unchanged
+
+    if (isDirty(doc.id)) { showStale(doc.id); continue; }
+
+    const top = docScrollTop(doc.id);
+    Object.assign(st, {
+      text: res.text, savedText: res.text, dataUrl: res.dataUrl || null,
+      mtimeMs: res.mtimeMs, size: res.size, error: res.error || null,
+    });
+    renderDocBody(doc.id);
+    docScrollTo(doc.id, top);
+  }
+}
+
+const docScroller = (id) => {
+  const p = docPane(id);
+  return p ? p.body.querySelector('.doc-view, .doc-src, .doc-image') : null;
 };
-$('#editor-cancel').onclick = () => $('#editor-modal').classList.add('hidden');
+const docScrollTop = (id) => { const el = docScroller(id); return el ? el.scrollTop : 0; };
+const docScrollTo = (id, top) => { const el = docScroller(id); if (el && top) el.scrollTop = top; };
+const docLeafOf = (id) =>
+  T.leaves(tiles().tree).find((l) => l.kind === 'doc' && l.ref === id) || null;
+
+// Unsaved edits plus a changed file on disk is the one case that must not be
+// resolved silently in either direction.
+function showStale(id) {
+  const p = docPane(id), st = docState(id);
+  if (!p || !st || st.stale) return;            // "keep mine" already answered this
+  if (p.body.querySelector('.doc-stale')) return;
+
+  const bar = document.createElement('div');
+  bar.className = 'doc-stale';
+  const msg = document.createElement('span');
+  msg.textContent = '⚠ changed on disk';
+  const reload = document.createElement('button');
+  reload.textContent = 'reload';
+  reload.onclick = () => { state.docs.delete(id); loadDoc(id); };
+  const keep = document.createElement('button');
+  keep.textContent = 'keep mine';
+  // Not just dismissing the bar: the next save is now allowed to overwrite the
+  // newer file without asking again, which is what clicking this means.
+  keep.onclick = () => { st.stale = true; hideStale(id); };
+  bar.append(msg, reload, keep);
+  p.body.insertBefore(bar, p.body.firstChild);
+  p.body.classList.add('has-stale');
+}
+
+function hideStale(id) {
+  const p = docPane(id);
+  if (!p) return;
+  const bar = p.body.querySelector('.doc-stale');
+  if (bar) bar.remove();
+  p.body.classList.remove('has-stale');
+}
+
+function markDocGone(id) {
+  const st = docState(id), doc = docOf(id), p = docPane(id);
+  if (!st || !doc || !p || st.gone) return;
+  st.gone = true;
+  p.body.textContent = '';
+  p.body.classList.remove('has-stale');
+  p.ctrls.textContent = '';
+  p.body.appendChild(docGoneEl(id));
+}
+
+function docGoneEl(id) {
+  const doc = docOf(id), st = docState(id);
+  const box = document.createElement('div');
+  box.className = 'doc-error';
+  const msg = document.createElement('div');
+  msg.textContent = doc.path + ' is no longer on disk.';
+  const row = document.createElement('div');
+  row.className = 'doc-error-row';
+  if (st.savedText != null) {
+    const write = document.createElement('button');
+    write.textContent = isDirty(id) ? 'write my version back' : 'write it back';
+    write.onclick = () => saveDoc(id);
+    row.appendChild(write);
+  }
+  const close = document.createElement('button');
+  close.textContent = 'close pane';
+  close.onclick = () => { const leaf = docLeafOf(id); if (leaf) closePane(leaf.id); };
+  row.append(close);
+  box.append(msg, row);
+  return box;
+}
+
+// Forget a doc instance. The pane element and the tree leaf are handled by
+// closePane, which is the only caller -- the same contract closeTabInstance has.
+function closeDocInstance(id) {
+  const list = wsDocs();
+  const i = list.findIndex((d) => d.id === id);
+  if (i >= 0) list.splice(i, 1);
+  state.docs.delete(id);
+}
+
+/* ---------------- files ---------------- */
 
 async function newFile(baseDir = '.') {
   const name = await askInput('New file name (in ' + baseDir + ')');
@@ -703,10 +1202,7 @@ function acceptFileDrop(el, onPaths) {
 
 async function spawnTerm(profile) {
   const id = ++state.termSeq;
-  const wsName = (activeWorkspace() && activeWorkspace().name) || '?';
-
   const pane = paneShell('term:' + id, profile.name);
-  pane.el.title = wsName + ' · cwd: ' + (activeWorkspace() ? activeWorkspace().path : '');
 
   const term = new Terminal({
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
@@ -734,8 +1230,9 @@ async function spawnTerm(profile) {
   // ride on Shift, which Claude Code and Codex leave alone:
   //   Enter -- Shift+Enter must open a new line, not send the message. xterm emits
   //     a bare CR for Enter and Shift+Enter alike, so an agent TUI cannot tell them
-  //     apart; ESC+CR is the sequence Claude Code and Codex read as "newline" (the
-  //     same one other terminals are configured to send by their setup command).
+  //     apart; we send LF (0x0a) instead -- the byte Ctrl+J produces, which is the
+  //     newline every agent TUI accepts without a per-terminal setup step. ESC+CR
+  //     was tried first and Claude Code now reads it as "escape, then send".
   //   Arrows/Home/End -- scroll the scrollback. A bare Up/Down is the agent's prompt
   //     history, so without this a long answer is only reachable with the wheel or
   //     Shift+PageUp (Fn+Shift+Up on a laptop). Shift+PageUp/PageDown stay xterm's
@@ -751,7 +1248,7 @@ async function spawnTerm(profile) {
     if (e.type !== 'keydown') return true;
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
     if (e.key === 'Enter') {
-      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b\r');
+      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\n');
       return false;
     }
     const scroll = SCROLL[e.key];
@@ -779,7 +1276,6 @@ async function spawnTerm(profile) {
     const res = await tote.ptySpawn(profile.id, term.cols || 80, term.rows || 24);
     entry.ptyId = res.id;
     entry.alive = true;
-    pane.el.title = res.workspace + ' · cwd: ' + res.cwd;
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + res.cwd + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
     term.onData((d) => tote.ptyWrite(res.id, d));
@@ -944,23 +1440,25 @@ function paneShell(key, titleText, dotColor) {
   const title = document.createElement('span');
   title.className = 'pane-title';
   title.textContent = titleText;
+  const ctrls = document.createElement('span');
+  ctrls.className = 'pane-ctrls';       // per-kind head controls; empty for most panes
   const x = document.createElement('span');
   x.className = 'pane-x';
   x.textContent = '✕';
   x.title = 'Close pane';
-  head.append(dot, title, x);
+  head.append(dot, title, ctrls, x);
   const body = document.createElement('div');
   body.className = 'pane-body';
   el.append(head, body);
   $('#tiles').appendChild(el);
 
-  p = { el, head, body, title, dot, key };
+  p = { el, head, body, title, dot, ctrls, key };
   panes.set(key, p);
 
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
   x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
   head.addEventListener('mousedown', (e) => {
-    if (e.target === x) return;
+    if (e.target === x || (e.target.closest && e.target.closest('.pane-ctrls'))) return;
     startPaneDrag(e, el);
   });
   return p;
@@ -983,6 +1481,13 @@ function mountLeaf(lf) {
     if (!provider) return null;
     const p = paneShell(key, provider.name, provider.color);
     ensureWebview(tab, provider, p.body);
+    return p;
+  }
+  if (lf.kind === 'doc') {
+    const doc = (wsViews().docs || []).find((d) => d.id === lf.ref);
+    if (!doc) return null;                       // stale leaf from a previous run
+    const p = paneShell(key, doc.path);
+    if (!state.docs.has(doc.id)) loadDoc(doc.id);  // first showing: read from disk
     return p;
   }
   if (lf.kind === 'term') {
@@ -1059,6 +1564,7 @@ function focusPane(leafId) {
     const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
     if (t) t.term.focus();
   }
+  if (lf && lf.kind === 'doc') noteDocFocus(leafId);
   saveViews();
 }
 
@@ -1137,12 +1643,17 @@ function closePane(leafId) {
   const S = tiles();
   const lf = T.findLeaf(S.tree, leafId);
   if (!lf) return;
+  if (lf.kind === 'doc' && isDirty(lf.ref)) {
+    const doc = docOf(lf.ref);
+    if (!confirm('"' + (doc ? doc.path : '') + '" has unsaved changes.\nClose anyway?')) return;
+  }
   if (lf.kind === 'files') rememberFilesRatio(leafId);
   S.tree = T.removeLeaf(S.tree, leafId);
   if (S.zoom === leafId) S.zoom = null;
   // tear down the instance behind the pane
   if (lf.kind === 'web') { destroyPaneEl(paneKey(lf)); closeTabInstance(lf.ref); }
   else if (lf.kind === 'term') { killTermByRef(lf.ref); destroyPaneEl(paneKey(lf)); }
+  else if (lf.kind === 'doc') { destroyPaneEl(paneKey(lf)); closeDocInstance(lf.ref); }
   else { const p = panes.get('files'); if (p) p.el.classList.add('hidden'); }
   applyTiles();
   renderGroupBar();
@@ -1368,7 +1879,22 @@ $('#btn-files').onclick = () => {
 const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
 const ARROW = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 
+// The focused pane's doc, if it is one -- what Cmd+S and MOD+E act on.
+function focusedDoc() {
+  const S = tiles();
+  const lf = S.focus ? T.findLeaf(S.tree, S.focus) : null;
+  if (!lf || lf.kind !== 'doc') return null;
+  const doc = docOf(lf.ref);
+  return doc && state.docs.has(doc.id) ? doc : null;
+}
+
 addEventListener('keydown', (e) => {
+  // Plain Cmd/Ctrl+S. A new modifier shape in this listener -- MOD is Cmd+Alt
+  // for pane keys -- but nothing else in Tote has anything to save.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
+    const doc = focusedDoc();
+    if (doc) { e.preventDefault(); saveDoc(doc.id); return; }
+  }
   if (e.ctrlKey && !e.altKey && e.key === '`') {
     e.preventDefault();
     const S = tiles();
@@ -1401,6 +1927,14 @@ addEventListener('keydown', (e) => {
     const g = groups()[+e.key - 1];
     if (g) switchGroup(g.id);
     return;
+  }
+  if (e.key === 'e' || e.key === 'E') {        // flip a markdown or SVG pane
+    const doc = focusedDoc();
+    if (doc && docHasModes(doc.id)) {
+      e.preventDefault();
+      setDocMode(doc.id, doc.mode === 'src' ? 'view' : 'src');
+      return;
+    }
   }
   if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
@@ -1831,7 +2365,7 @@ $('#btn-run-wizard').onclick = () => {
 };
 
 /* ---------------- events from main ---------------- */
-tote.onWorkspaceChanged(() => refreshTree());
+tote.onWorkspaceChanged(() => { refreshTree(); recheckDocs(); });
 
 tote.onDownloadDone((m) => {
   if (m.state === 'completed') {

@@ -374,6 +374,18 @@ systems:
         type: unknown
     - name: unwatchDownloads
       args: []
+    - name: readDoc
+      args:
+      - name: rel
+        type: unknown
+    - name: docKind
+      args:
+      - name: name
+        type: unknown
+    - name: extOf
+      args:
+      - name: name
+        type: unknown
 - id: preload
   name: Preload
   components:
@@ -655,9 +667,6 @@ systems:
       saveViewsTimer:
         type: const
         default: 'null'
-      editorPath:
-        type: const
-        default: 'null'
       Fit:
         type: const
         default: window.FitAddon && window.FitAddon.FitAddon
@@ -887,6 +896,234 @@ systems:
     - name: newId
       args:
       - name: prefix
+        type: unknown
+    - name: openDoc
+      args:
+      - name: rel
+        type: unknown
+      - name: opts
+        type: unknown
+    - name: retargetDoc
+      args:
+      - name: leaf
+        type: unknown
+      - name: rel
+        type: unknown
+    - name: loadDoc
+      args:
+      - name: id
+        type: unknown
+    - name: renderDocBody
+      args:
+      - name: id
+        type: unknown
+    - name: setDocMode
+      args:
+      - name: id
+        type: unknown
+      - name: mode
+        type: unknown
+    - name: saveDoc
+      args:
+      - name: id
+        type: unknown
+    - name: recheckDocs
+      args: []
+    - name: renderBlocks
+      args:
+      - name: blocks
+        type: unknown
+      - name: rel
+        type: unknown
+    - name: renderSpans
+      args:
+      - name: spans
+        type: unknown
+      - name: rel
+        type: unknown
+    - name: resolveRel
+      args:
+      - name: fromRel
+        type: unknown
+      - name: href
+        type: unknown
+    - name: closeDocInstance
+      args:
+      - name: id
+        type: unknown
+  - id: layout
+    name: layout
+    kind: module
+    class_name: src/renderer/layout.js
+    methods:
+    - name: leaf
+      args:
+      - name: id
+        type: unknown
+      - name: kind
+        type: unknown
+      - name: ref
+        type: unknown
+    - name: split
+      args:
+      - name: dir
+        type: unknown
+      - name: a
+        type: unknown
+      - name: b
+        type: unknown
+      - name: ratio
+        type: unknown
+    - name: rectsFor
+      args:
+      - name: tree
+        type: unknown
+      - name: host
+        type: unknown
+      - name: opts
+        type: unknown
+    - name: leaves
+      args:
+      - name: tree
+        type: unknown
+    - name: findLeaf
+      args:
+      - name: tree
+        type: unknown
+      - name: id
+        type: unknown
+    - name: dirFor
+      args:
+      - name: rect
+        type: unknown
+    - name: splitLeaf
+      args:
+      - name: tree
+        type: unknown
+      - name: targetId
+        type: unknown
+      - name: node
+        type: unknown
+      - name: dir
+        type: unknown
+    - name: insertRoot
+      args:
+      - name: tree
+        type: unknown
+      - name: node
+        type: unknown
+      - name: edge
+        type: unknown
+      - name: ratio
+        type: unknown
+    - name: removeLeaf
+      args:
+      - name: tree
+        type: unknown
+      - name: id
+        type: unknown
+    - name: dividersFor
+      args:
+      - name: tree
+        type: unknown
+      - name: host
+        type: unknown
+      - name: opts
+        type: unknown
+    - name: setRatio
+      args:
+      - name: tree
+        type: unknown
+      - name: path
+        type: unknown
+      - name: ratio
+        type: unknown
+    - name: clampRatio
+      args:
+      - name: host
+        type: unknown
+      - name: dir
+        type: unknown
+      - name: raw
+        type: unknown
+      - name: min
+        type: unknown
+    - name: swapLeaves
+      args:
+      - name: tree
+        type: unknown
+      - name: a
+        type: unknown
+      - name: b
+        type: unknown
+    - name: moveLeaf
+      args:
+      - name: tree
+        type: unknown
+      - name: id
+        type: unknown
+      - name: targetId
+        type: unknown
+      - name: edge
+        type: unknown
+    - name: neighbour
+      args:
+      - name: rects
+        type: unknown
+      - name: fromId
+        type: unknown
+      - name: dir
+        type: unknown
+    - name: migrate
+      args:
+      - name: views
+        type: unknown
+      - name: newLeafId
+        type: unknown
+      - name: host
+        type: unknown
+  - id: markdown
+    name: markdown
+    kind: module
+    class_name: src/renderer/markdown.js
+    methods:
+    - name: parse
+      args:
+      - name: text
+        type: unknown
+    - name: inline
+      args:
+      - name: src
+        type: unknown
+    - name: safeHref
+      args:
+      - name: h
+        type: unknown
+    - name: parseBlocks
+      args:
+      - name: lines
+        type: unknown
+    - name: parseList
+      args:
+      - name: lines
+        type: unknown
+      - name: i
+        type: unknown
+    - name: parseTable
+      args:
+      - name: lines
+        type: unknown
+      - name: i
+        type: unknown
+    - name: matchItem
+      args:
+      - name: line
+        type: unknown
+    - name: linkAt
+      args:
+      - name: src
+        type: unknown
+      - name: start
         type: unknown
 - id: scripts
   name: Scripts

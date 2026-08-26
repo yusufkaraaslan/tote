@@ -461,6 +461,7 @@ ipcMain.handle('workspaces:promote', async (e, id) => {
 ipcMain.handle('workspace:getRoot', () => workspace.getRoot());
 ipcMain.handle('workspace:tree', () => workspace.tree());
 ipcMain.handle('workspace:read', (e, rel) => workspace.readText(rel));
+ipcMain.handle('workspace:readDoc', (e, rel) => workspace.readDoc(rel));
 ipcMain.handle('workspace:write', (e, rel, content) => {
   workspace.writeText(rel, content);
   return true;
@@ -646,7 +647,9 @@ ipcMain.handle('cli:check', (e, command) => {
 // --- IPC: misc ---------------------------------------------------------------------------------------
 
 ipcMain.on('app:openExternal', (e, url) => {
-  if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  // mailto: is here for links in a rendered doc -- the markdown parser allows
+  // that scheme, so dropping it here would make those links silently dead.
+  if (/^(https?:\/\/|mailto:)/i.test(url)) shell.openExternal(url);
 });
 
 // --- lifecycle -----------------------------------------------------------------------------------------

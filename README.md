@@ -125,9 +125,15 @@ unregisters it, and changing its folder just re-points it.
 - **Groups** — each space holds several layouts, like desktops on your OS: switch with the
   chips under the workspace strip or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
   groups keep running in the background.
-- **Workspace pane** — tree, inline text editor, right-click new/rename/trash/
+- **Workspace pane** — tree, right-click new/rename/trash/
   open-externally/reveal-in-Finder/copy-path, and **Send to active tab (experimental)**
   which injects a file into the current chat's upload control.
+- **File panes** — click a file and it opens as a pane, beside the agent that is writing it.
+  Text and code are editable (**Cmd/Ctrl+S** to save), markdown renders with a `src`/`view`
+  toggle (**+E**), images and PDFs are viewable, and anything else still opens in the system
+  app. A click reuses the file pane you already have; **Cmd/Ctrl-click** opens a second one
+  for side-by-side. When an agent rewrites a file under you, a clean pane just updates —
+  a pane with unsaved edits asks first.
 - **Settings** — manage workspaces (add / rename / change folder / remove), add/remove
   providers, CLI profiles, native apps; toggle the Downloads bridge. Everything is plain JSON in `<userData>/config/` (**open config folder**).
 

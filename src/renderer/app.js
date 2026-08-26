@@ -595,9 +595,197 @@ function renderDocBody(id) {
   const doc = docOf(id), st = docState(id), p = docPane(id);
   if (!doc || !st || !p) return;
   p.body.textContent = '';
+  renderDocControls(id);
   updateDocHead(id);
   if (st.error) { p.body.appendChild(docErrorEl(doc.path, st.error)); return; }
+  if (st.kind === 'md' && doc.mode !== 'src') {
+    p.body.appendChild(docMarkdownEl(id));
+    return;
+  }
   p.body.appendChild(docSourceEl(id));
+}
+
+// Two kinds have both a rendered and an editable face: markdown, and SVG --
+// which readDoc hands back as an image that also carries its own source.
+const docHasModes = (id) => {
+  const st = docState(id);
+  return !!st && (st.kind === 'md' || (st.kind === 'image' && st.savedText != null));
+};
+
+function renderDocControls(id) {
+  const p = docPane(id), doc = docOf(id);
+  if (!p) return;
+  p.ctrls.textContent = '';
+  if (!doc || !docHasModes(id) || docState(id).error) return;
+  for (const m of ['src', 'view']) {
+    const b = document.createElement('span');
+    b.className = 'pane-mode' + (doc.mode === m ? ' on' : '');
+    b.textContent = m;
+    b.onclick = (e) => { e.stopPropagation(); setDocMode(id, m); };
+    p.ctrls.appendChild(b);
+  }
+}
+
+function setDocMode(id, mode) {
+  const doc = docOf(id);
+  if (!doc || !docHasModes(id) || doc.mode === mode) return;
+  doc.mode = mode;
+  renderDocBody(id);
+  saveViews();
+}
+
+function docMarkdownEl(id) {
+  const box = document.createElement('div');
+  box.className = 'doc-view';
+  box.appendChild(renderBlocks(Markdown.parse(docState(id).text), docOf(id).path));
+  return box;
+}
+
+/* ----- markdown tokens -> DOM -----
+ * createElement only. Nothing here ever assigns innerHTML, which is what makes
+ * the parser's "raw HTML stays literal text" rule actually hold in the page. */
+
+function renderBlocks(blocks, rel) {
+  const frag = document.createDocumentFragment();
+  for (const b of blocks) frag.appendChild(blockEl(b, rel));
+  return frag;
+}
+
+function blockEl(b, rel) {
+  if (b.type === 'heading') {
+    const h = document.createElement('h' + b.level);
+    h.appendChild(renderSpans(b.spans, rel));
+    return h;
+  }
+  if (b.type === 'paragraph') {
+    const p = document.createElement('p');
+    p.appendChild(renderSpans(b.spans, rel));
+    return p;
+  }
+  if (b.type === 'hr') return document.createElement('hr');
+  if (b.type === 'code') {
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (b.lang) code.dataset.lang = b.lang;
+    code.textContent = b.text;
+    pre.appendChild(code);
+    return pre;
+  }
+  if (b.type === 'quote') {
+    const q = document.createElement('blockquote');
+    q.appendChild(renderBlocks(b.blocks, rel));
+    return q;
+  }
+  if (b.type === 'list') {
+    const list = document.createElement(b.ordered ? 'ol' : 'ul');
+    if (b.ordered && b.start !== 1) list.start = b.start;
+    for (const item of b.items) {
+      const li = document.createElement('li');
+      if (item.checked !== null) {
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = item.checked;
+        box.disabled = true;               // a rendered doc is not a form
+        li.className = 'task';
+        li.appendChild(box);
+      }
+      li.appendChild(renderSpans(item.spans, rel));
+      if (item.blocks) li.appendChild(renderBlocks(item.blocks, rel));
+      list.appendChild(li);
+    }
+    return list;
+  }
+  if (b.type === 'table') {
+    const wrap = document.createElement('div');
+    wrap.className = 'doc-table';         // its own scroller: the pane must not scroll sideways
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const hrow = document.createElement('tr');
+    b.head.forEach((cell, i) => hrow.appendChild(cellEl('th', cell, b.align[i], rel)));
+    thead.appendChild(hrow);
+    const tbody = document.createElement('tbody');
+    for (const row of b.rows) {
+      const tr = document.createElement('tr');
+      row.forEach((cell, i) => tr.appendChild(cellEl('td', cell, b.align[i], rel)));
+      tbody.appendChild(tr);
+    }
+    table.append(thead, tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+  return document.createTextNode('');
+}
+
+function cellEl(tag, spans, align, rel) {
+  const el = document.createElement(tag);
+  if (align) el.style.textAlign = align;
+  el.appendChild(renderSpans(spans, rel));
+  return el;
+}
+
+function renderSpans(spans, rel) {
+  const frag = document.createDocumentFragment();
+  for (const sp of spans || []) {
+    if (sp.type === 'text') { frag.appendChild(document.createTextNode(sp.text)); continue; }
+    if (sp.type === 'code') {
+      const c = document.createElement('code');
+      c.textContent = sp.text;
+      frag.appendChild(c);
+      continue;
+    }
+    if (sp.type === 'image') { frag.appendChild(mdImageEl(sp, rel)); continue; }
+    if (sp.type === 'link') { frag.appendChild(mdLinkEl(sp, rel)); continue; }
+    const el = document.createElement(sp.type === 'strong' ? 'strong' : sp.type === 'em' ? 'em' : 's');
+    el.appendChild(renderSpans(sp.spans, rel));
+    frag.appendChild(el);
+  }
+  return frag;
+}
+
+// The parser already rejected every scheme but http(s) and mailto, so a link is
+// either external or a path inside this space -- which opens in a pane.
+function mdLinkEl(sp, rel) {
+  const a = document.createElement('a');
+  a.href = '#';
+  a.title = sp.href;
+  a.appendChild(renderSpans(sp.spans, rel));
+  a.onclick = (e) => {
+    e.preventDefault();
+    if (/^(https?:|mailto:)/i.test(sp.href)) { tote.openExternal(sp.href); return; }
+    const target = resolveRel(rel, sp.href.split('#')[0]);
+    if (target) openDoc(target);
+  };
+  return a;
+}
+
+// A relative image is fetched through readDoc, so resolveSafe still guards it
+// and the CSP needs no file: relaxation. http(s) sources load directly.
+function mdImageEl(sp, rel) {
+  const img = document.createElement('img');
+  img.className = 'doc-md-img';
+  img.alt = sp.alt || '';
+  if (/^https?:/i.test(sp.src)) { img.src = sp.src; return img; }
+  const target = resolveRel(rel, sp.src);
+  if (target) {
+    tote.readDoc(target)
+      .then((d) => { if (d && d.dataUrl) img.src = d.dataUrl; })
+      .catch(() => {});
+  }
+  return img;
+}
+
+// Join a link against the doc's own folder, keeping the result relative to the
+// space root. resolveSafe in main is still the guard; this only builds the
+// string it will check, and returns null rather than asking about an escape.
+function resolveRel(fromRel, href) {
+  if (!href) return null;
+  const out = href.startsWith('/') ? [] : String(fromRel).split('/').slice(0, -1);
+  for (const seg of href.replace(/^\//, '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') { if (!out.length) return null; out.pop(); }
+    else out.push(seg);
+  }
+  return out.length ? out.join('/') : null;
 }
 
 function docSourceEl(id) {
@@ -641,6 +829,7 @@ async function saveDoc(id) {
     st.savedText = st.text;
     st.stale = false;
     updateDocHead(id);
+    if (docHasModes(id) && doc.mode === 'src') setDocMode(id, 'view');
     toast('Saved ' + doc.path, 'success');
   } catch (e) {
     toast(e.message, 'error');   // the pane stays dirty
@@ -1091,23 +1280,25 @@ function paneShell(key, titleText, dotColor) {
   const title = document.createElement('span');
   title.className = 'pane-title';
   title.textContent = titleText;
+  const ctrls = document.createElement('span');
+  ctrls.className = 'pane-ctrls';       // per-kind head controls; empty for most panes
   const x = document.createElement('span');
   x.className = 'pane-x';
   x.textContent = '✕';
   x.title = 'Close pane';
-  head.append(dot, title, x);
+  head.append(dot, title, ctrls, x);
   const body = document.createElement('div');
   body.className = 'pane-body';
   el.append(head, body);
   $('#tiles').appendChild(el);
 
-  p = { el, head, body, title, dot, key };
+  p = { el, head, body, title, dot, ctrls, key };
   panes.set(key, p);
 
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
   x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
   head.addEventListener('mousedown', (e) => {
-    if (e.target === x) return;
+    if (e.target === x || (e.target.closest && e.target.closest('.pane-ctrls'))) return;
     startPaneDrag(e, el);
   });
   return p;

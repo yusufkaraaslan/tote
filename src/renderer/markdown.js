@@ -28,6 +28,11 @@
   const RE_FENCE = /^ {0,3}(```+|~~~+)\s*([^`]*)$/;
   const RE_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
   const RE_HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+  const RE_BULLET = /^( *)([-*+])([ \t]+)(.*)$/;
+  const RE_ORDERED = /^( *)(\d{1,9})[.)]([ \t]+)(.*)$/;
+  const RE_QUOTE = /^ {0,3}> ?(.*)$/;
+  const RE_TASK = /^\[([ xX])\][ \t]+(.*)$/;
+  const RE_DELIM = /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
   const BLANK = /^[ \t]*$/;
 
   const ESCAPABLE = '\\`*_~[]()!#+-.>|';
@@ -158,7 +163,28 @@
   }
 
   const startsBlock = (line) =>
-    BLANK.test(line) || RE_FENCE.test(line) || RE_HEADING.test(line) || RE_HR.test(line);
+    BLANK.test(line) || RE_FENCE.test(line) || RE_HEADING.test(line) || RE_HR.test(line)
+    || RE_QUOTE.test(line) || !!matchItem(line);
+
+  const indentOf = (line) => /^ */.exec(line)[0].length;
+
+  // A list marker, with the column its content starts at -- continuation lines
+  // are dedented by that, which is what makes nesting work. An hr is checked
+  // first: `- - -` is a rule, not a one-item list.
+  function matchItem(line) {
+    if (RE_HR.test(line)) return null;
+    const b = RE_BULLET.exec(line);
+    if (b) {
+      return { indent: b[1].length, ordered: false, num: 1, text: b[4],
+        contentIndent: b[1].length + 1 + b[3].length };
+    }
+    const o = RE_ORDERED.exec(line);
+    if (o) {
+      return { indent: o[1].length, ordered: true, num: parseInt(o[2], 10), text: o[4],
+        contentIndent: o[1].length + o[2].length + 1 + o[3].length };
+    }
+    return null;
+  }
 
   function parseBlocks(lines) {
     const out = [];
@@ -193,12 +219,154 @@
 
       if (RE_HR.test(line)) { out.push({ type: 'hr' }); i++; continue; }
 
+      if (tableAt(lines, i)) {
+        const t = parseTable(lines, i);
+        out.push(t.block);
+        i = t.next;
+        continue;
+      }
+
+      if (RE_QUOTE.test(line)) {
+        const body = [];
+        while (i < lines.length && RE_QUOTE.test(lines[i])) {
+          body.push(RE_QUOTE.exec(lines[i])[1]);
+          i++;
+        }
+        out.push({ type: 'quote', blocks: parseBlocks(body) });
+        continue;
+      }
+
+      if (matchItem(line)) {
+        const l = parseList(lines, i);
+        out.push(l.block);
+        i = l.next;
+        continue;
+      }
+
       const para = [];
-      while (i < lines.length && !startsBlock(lines[i])) { para.push(lines[i].trim()); i++; }
+      while (i < lines.length && !startsBlock(lines[i]) && !tableAt(lines, i)) {
+        para.push(lines[i].trim());
+        i++;
+      }
       out.push({ type: 'paragraph', spans: inline(para.join('\n')) });
     }
 
     return out;
+  }
+
+  /* ----- lists ----- */
+
+  function parseList(lines, i) {
+    const first = matchItem(lines[i]);
+    const base = first.indent;
+    const items = [];
+    let cur = null;
+    let contentIndent = first.contentIndent;
+    const push = () => { if (cur) items.push(buildItem(cur)); cur = null; };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // A blank line keeps the list open only if what follows still belongs to
+      // it -- that is the difference between a loose list and a list that ended.
+      if (BLANK.test(line)) {
+        let k = i;
+        while (k < lines.length && BLANK.test(lines[k])) k++;
+        const next = k < lines.length ? lines[k] : null;
+        const nm = next == null ? null : matchItem(next);
+        if (next == null || !((nm && nm.indent <= base) || indentOf(next) >= contentIndent)) break;
+        if (cur) cur.push('');
+        i = k;
+        continue;
+      }
+
+      const ind = indentOf(line);
+      const m = matchItem(line);
+
+      if (m && ind <= base) {           // the next item of this list
+        push();
+        contentIndent = m.contentIndent;
+        cur = [m.text];
+        i++;
+        continue;
+      }
+      if (cur && ind >= contentIndent) { // nested blocks, or an indented continuation
+        cur.push(line.slice(contentIndent));
+        i++;
+        continue;
+      }
+      if (!cur || startsBlock(line)) break;
+      cur.push(line.trim());             // lazy continuation
+      i++;
+    }
+
+    push();
+    return { block: { type: 'list', ordered: first.ordered, start: first.num, items: items }, next: i };
+  }
+
+  // An item's own text runs until the first line that starts a block; the rest
+  // becomes nested blocks, so `- a` followed by an indented `- b` is one item
+  // holding a list rather than two siblings.
+  function buildItem(raw) {
+    let head = raw[0];
+    let checked = null;
+    const task = RE_TASK.exec(head);
+    if (task) { checked = task[1].toLowerCase() === 'x'; head = task[2]; }
+
+    const text = [head];
+    let k = 1;
+    while (k < raw.length && !startsBlock(raw[k])) { text.push(raw[k].trim()); k++; }
+    const rest = raw.slice(k);
+
+    return {
+      spans: inline(text.join('\n')),
+      checked: checked,
+      blocks: rest.some((l) => !BLANK.test(l)) ? parseBlocks(rest) : null,
+    };
+  }
+
+  /* ----- tables ----- */
+
+  // A table needs a delimiter row with the same cell count as its header, so a
+  // paragraph line containing a pipe followed by `---` stays a paragraph + rule.
+  function tableAt(lines, i) {
+    if (i + 1 >= lines.length || lines[i].indexOf('|') < 0) return false;
+    if (!RE_DELIM.test(lines[i + 1]) || lines[i + 1].indexOf('-') < 0) return false;
+    return splitRow(lines[i]).length === splitRow(lines[i + 1]).length;
+  }
+
+  function parseTable(lines, i) {
+    const head = splitRow(lines[i]);
+    const align = splitRow(lines[i + 1]).map((c) =>
+      /^:.*:$/.test(c) ? 'center' : c.startsWith(':') ? 'left' : c.endsWith(':') ? 'right' : null);
+    const rows = [];
+    let j = i + 2;
+    while (j < lines.length && !BLANK.test(lines[j]) && lines[j].indexOf('|') >= 0) {
+      const cells = splitRow(lines[j]);
+      // Pad rather than drop: a short row must not shift a column left.
+      while (cells.length < head.length) cells.push('');
+      rows.push(cells.slice(0, head.length).map(inline));
+      j++;
+    }
+    return {
+      block: { type: 'table', align: align, head: head.map(inline), rows: rows },
+      next: j,
+    };
+  }
+
+  function splitRow(line) {
+    const s = line.trim();
+    const cells = [];
+    let cur = '';
+    for (let j = 0; j < s.length; j++) {
+      if (s[j] === '\\' && s[j + 1] === '|') { cur += '|'; j++; continue; }
+      if (s[j] === '|') { cells.push(cur); cur = ''; continue; }
+      cur += s[j];
+    }
+    cells.push(cur);
+    if (cells.length > 1 && !cells[0].trim()) cells.shift();
+    if (cells.length > 1 && !cells[cells.length - 1].trim()) cells.pop();
+    return cells.map((c) => c.trim());
   }
 
   return { parse: parse, inline: inline, safeHref: safeHref };

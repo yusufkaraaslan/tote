@@ -111,5 +111,95 @@ describe('parse: html is never markup', () => {
   });
 });
 
+describe('parse: lists', () => {
+  test('a dash list becomes one unordered block', () => {
+    const b = M.parse('- a\n- b')[0];
+    assert.strictEqual(b.type, 'list');
+    assert.strictEqual(b.ordered, false);
+    assert.strictEqual(b.items.length, 2);
+    assert.deepStrictEqual(b.items[0].spans, [txt('a')]);
+  });
+  test('*, - and + all start a list', () => {
+    for (const m of ['*', '-', '+']) assert.strictEqual(M.parse(m + ' x')[0].type, 'list');
+  });
+  test('an ordered list keeps its start number', () => {
+    const b = M.parse('3. a\n4. b')[0];
+    assert.strictEqual(b.ordered, true);
+    assert.strictEqual(b.start, 3);
+  });
+  test('an indented item nests as blocks on its parent', () => {
+    const b = M.parse('- a\n  - b')[0];
+    assert.strictEqual(b.items.length, 1);
+    assert.strictEqual(b.items[0].blocks[0].type, 'list');
+    assert.deepStrictEqual(b.items[0].blocks[0].items[0].spans, [txt('b')]);
+  });
+  test('a task list records checked state', () => {
+    const b = M.parse('- [x] done\n- [ ] todo')[0];
+    assert.strictEqual(b.items[0].checked, true);
+    assert.deepStrictEqual(b.items[0].spans, [txt('done')]);
+    assert.strictEqual(b.items[1].checked, false);
+  });
+  test('a plain item has checked null', () => {
+    assert.strictEqual(M.parse('- a')[0].items[0].checked, null);
+  });
+  test('a lazy continuation line joins the item', () => {
+    assert.deepStrictEqual(M.parse('- a\n  more')[0].items[0].spans, [txt('a\nmore')]);
+  });
+  test('a blank line ends the list', () => {
+    assert.strictEqual(M.parse('- a\n\npara').length, 2);
+  });
+  test('inline markup inside an item is parsed', () => {
+    assert.strictEqual(M.parse('- **b**')[0].items[0].spans[0].type, 'strong');
+  });
+  test('a hyphen rule is not a list', () => {
+    assert.strictEqual(M.parse('- - -')[0].type, 'hr');
+  });
+});
+
+describe('parse: blockquotes', () => {
+  test('> lines become a quote holding blocks', () => {
+    const b = M.parse('> hi')[0];
+    assert.strictEqual(b.type, 'quote');
+    assert.deepStrictEqual(b.blocks[0].spans, [txt('hi')]);
+  });
+  test('a quote can hold a heading and a list', () => {
+    const b = M.parse('> # h\n> - a')[0];
+    assert.strictEqual(b.blocks[0].type, 'heading');
+    assert.strictEqual(b.blocks[1].type, 'list');
+  });
+  test('nested quotes nest', () => {
+    assert.strictEqual(M.parse('> > deep')[0].blocks[0].type, 'quote');
+  });
+});
+
+describe('parse: tables', () => {
+  test('a header plus delimiter plus rows', () => {
+    const b = M.parse('| a | b |\n| --- | --- |\n| 1 | 2 |')[0];
+    assert.strictEqual(b.type, 'table');
+    assert.deepStrictEqual(b.head[0], [txt('a')]);
+    assert.strictEqual(b.rows.length, 1);
+    assert.deepStrictEqual(b.rows[0][1], [txt('2')]);
+  });
+  test('the delimiter row sets alignment', () => {
+    const b = M.parse('| a | b | c |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |')[0];
+    assert.deepStrictEqual(b.align, ['left', 'center', 'right']);
+  });
+  test('a missing cell is an empty cell, not a dropped column', () => {
+    const b = M.parse('| a | b |\n| --- | --- |\n| 1 |')[0];
+    assert.strictEqual(b.rows[0].length, 2);
+    assert.deepStrictEqual(b.rows[0][1], []);
+  });
+  test('leading and trailing pipes are optional', () => {
+    assert.strictEqual(M.parse('a | b\n--- | ---\n1 | 2')[0].type, 'table');
+  });
+  test('a header with no delimiter row stays a paragraph', () => {
+    assert.strictEqual(M.parse('| a | b |\nnope')[0].type, 'paragraph');
+  });
+  test('an escaped pipe does not split a cell', () => {
+    const b = M.parse('| a | b |\n| --- | --- |\n| x \\| y | 2 |')[0];
+    assert.deepStrictEqual(b.rows[0][0], [txt('x | y')]);
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

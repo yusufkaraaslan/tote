@@ -19,6 +19,7 @@ const state = {
   expanded: new Set(['inbox']),
   docs: new Map(), // docId -> { path, kind, text, savedText, dataUrl, fileUrl, mtimeMs, size, error, stale }
   docOrder: [], // doc leaf ids, least recently focused first -- which pane a click retargets
+  wsDrag: null, // id of the workspace tab being dragged along the strip
 };
 
 /* ---------------- toasts ---------------- */
@@ -93,11 +94,78 @@ function renderWorkspaceSwitcher() {
       menu.style.top = e.clientY + 'px';
       menu.classList.remove('hidden');
     };
+    tab.draggable = true;
+    tab.ondragstart = (e) => {
+      state.wsDrag = w.id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', w.id); // Chromium refuses a payload-less drag
+      tab.classList.add('dragging-tab');
+      document.body.classList.add('dragging'); // else a webview swallows the drag
+    };
+    tab.ondragend = () => {
+      tab.classList.remove('dragging-tab');
+      document.body.classList.remove('dragging');
+      clearWsDropMark();
+      state.wsDrag = null;
+    };
+    tab.ondragover = (e) => {
+      if (!state.wsDrag || state.wsDrag === w.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const r = tab.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      clearWsDropMark();
+      tab.classList.add(after ? 'drop-after' : 'drop-before');
+    };
+    tab.ondragleave = () => tab.classList.remove('drop-before', 'drop-after');
+    tab.ondrop = (e) => {
+      if (!state.wsDrag) return;
+      e.preventDefault();
+      const after = tab.classList.contains('drop-after');
+      const src = state.wsDrag;
+      clearWsDropMark();
+      if (src !== w.id) moveWorkspace(src, w.id, after);
+    };
     bar.appendChild(tab);
   }
+  // Empty strip space past the last tab: drop there means "move to the end".
+  bar.ondragover = (e) => {
+    if (!state.wsDrag || e.target !== bar) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearWsDropMark();
+  };
+  bar.ondrop = (e) => {
+    if (!state.wsDrag || e.target !== bar) return;
+    e.preventDefault();
+    moveWorkspace(state.wsDrag, null, true);
+  };
   const ws = activeWorkspace();
   $('#workspace-root').textContent = ws ? ws.path : '';
   $('#workspace-root').title = ws ? ws.path : '';
+}
+
+function clearWsDropMark() {
+  for (const el of document.querySelectorAll('.ws-tab.drop-before, .ws-tab.drop-after')) {
+    el.classList.remove('drop-before', 'drop-after');
+  }
+}
+
+// Reorder the strip. targetId null means "to the end"; `after` picks the side
+// of the target the dragged tab lands on. The order is persisted in
+// workspaces.json, so it survives a restart; nothing else about a space moves.
+async function moveWorkspace(srcId, targetId, after) {
+  const current = state.workspaces.list.map((w) => w.id);
+  const ids = current.filter((id) => id !== srcId);
+  const at = targetId == null ? ids.length : ids.indexOf(targetId) + (after ? 1 : 0);
+  ids.splice(at < 0 ? ids.length : at, 0, srcId);
+  if (ids.join('\u0000') === current.join('\u0000')) return;
+  try {
+    state.workspaces = await tote.reorderWorkspaces(ids);
+    renderWorkspaceSwitcher();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 async function switchWorkspace(id) {

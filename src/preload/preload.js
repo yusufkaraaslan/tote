@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('tote', {
   setActiveWorkspace: (id) => ipcRenderer.invoke('workspaces:setActive', id),
   removeWorkspace: (id) => ipcRenderer.invoke('workspaces:remove', id),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspaces:rename', id, name),
+  reorderWorkspaces: (ids) => ipcRenderer.invoke('workspaces:reorder', ids),
   // temp (scratch) spaces
   wsTempName: () => ipcRenderer.invoke('workspaces:tempName'),
   wsAddTemp: (name) => ipcRenderer.invoke('workspaces:addTemp', name),

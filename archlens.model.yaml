@@ -81,6 +81,8 @@ systems:
       args:
       - name: ptys
         type: unknown
+    - name: fixNpmPrefix
+      args: []
     - name: claudeStatus
       args: []
     - name: bindClaudeToWorkspace
@@ -869,6 +871,12 @@ systems:
       args: []
     - name: ensureWizTerm
       args: []
+    - name: wizRunOnce
+      args:
+      - name: term
+        type: unknown
+      - name: cmdline
+        type: unknown
     - name: runWizardInstall
       args:
       - name: profile
@@ -1124,6 +1132,27 @@ systems:
       - name: src
         type: unknown
       - name: start
+        type: unknown
+  - id: npmfix
+    name: npmfix
+    kind: module
+    class_name: src/renderer/npmfix.js
+    methods:
+    - name: stripAnsi
+      args:
+      - name: s
+        type: unknown
+    - name: blockedScripts
+      args:
+      - name: out
+        type: unknown
+    - name: eacces
+      args:
+      - name: out
+        type: unknown
+    - name: prefixPlan
+      args:
+      - name: opts
         type: unknown
 - id: scripts
   name: Scripts

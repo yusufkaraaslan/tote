@@ -5,13 +5,18 @@
   "description": "One window for all your LLMs - web apps, native apps and CLI agents organized around workspaces.",
   "main": "src/main/main.js",
   "license": "MIT",
+  "author": {
+    "name": "yusyus",
+    "email": "yusufkaraaslan.yk@gmail.com"
+  },
   "scripts": {
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
-    "test": "node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js",
+    "test": "node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
+    "dist:pacman": "electron-builder --linux pacman",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
   },
@@ -29,7 +34,8 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "pacman"
       ],
       "category": "Utility",
       "synopsis": "One window for all your LLMs"
@@ -64,5 +70,9 @@
   "devDependencies": {
     "electron": "^37.0.0",
     "electron-builder": "^25.0.0"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true,
+    "node-pty@1.1.0": true
   }
 }

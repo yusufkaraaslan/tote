@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('tote', {
 
   // setup wizard / connections
   systemCheck: () => ipcRenderer.invoke('setup:systemCheck'),
+  fixNpmPrefix: () => ipcRenderer.invoke('setup:fixNpmPrefix'),
   claudeStatus: () => ipcRenderer.invoke('conn:claudeStatus'),
   bindClaude: () => ipcRenderer.invoke('conn:bindClaude'),
   mcpSnippet: () => ipcRenderer.invoke('conn:mcpSnippet'),

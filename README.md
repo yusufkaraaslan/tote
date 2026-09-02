@@ -58,6 +58,9 @@ npm install && npm start
 2. **CLI agents** — one-click installs with live terminal output:
    `claude` (@anthropic-ai/claude-code), `kimi` (@moonshot-ai/kimi-code),
    `codex` (@openai/codex), `gemini` (@google/gemini-cli), `opencode` (opencode-ai).
+   Installs self-heal the two common npm traps: blocked install scripts
+   (npm ≥ 12) are re-run with `--allow-scripts`, and a root-owned global
+   prefix (distro npm) is pointed at `~/.local` when that's safe.
    (DeepSeek Harness has no interactive CLI — use its local Web UI tab instead.)
 3. **Connections** — binds Claude Desktop to the active workspace via MCP
    (with config backup) and gives you a copy-paste MCP snippet for
@@ -79,7 +82,8 @@ web tab for **reload** / **close**.
 
 ```bash
 npm run dist        # current platform → dist/
-npm run dist:linux  # AppImage + .deb
+npm run dist:linux  # AppImage + .deb + .pacman
+npm run dist:pacman # .pacman only (Arch/Manjaro: sudo pacman -U dist/tote-*.pacman)
 npm run dist:mac    # .dmg (must build on macOS)
 npm run dist:win    # NSIS setup .exe (desktop + start-menu shortcuts)
 ```
@@ -153,6 +157,7 @@ src/preload/       contextBridge API (renderer has no node access)
 src/renderer/
   app.js           vanilla JS UI: spaces, groups, panes, tree, editor, xterm, wizard, settings
   layout.js        pure tiling engine (tree edits + geometry), tested by `npm test`
+  npmfix.js        pure npm-output detectors for self-healing wizard installs
 ```
 
 Design rules:

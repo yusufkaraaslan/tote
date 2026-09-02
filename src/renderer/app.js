@@ -1318,7 +1318,12 @@ tote.onPtyData((ptyId, data) => {
       return;
     }
   }
-  if (wizTerm && ptyId === wizTermPty) wizTerm.write(data);
+  if (wizTerm && ptyId === wizTermPty) {
+    wizTerm.write(data);
+    // Buffer for the post-exit npm diagnostics; warnings sit at the tail, so
+    // keeping only the newest chunk is safe if an install gets chatty.
+    wizBuf = (wizBuf + data).slice(-131072);
+  }
 });
 
 tote.onPtyExit((ptyId, code) => {
@@ -2148,6 +2153,7 @@ let wizStep = 0;
 let wizTerm = null; // xterm instance used for installs
 let wizTermPty = null; // pty id currently attached to wizTerm
 let wizOnExit = null; // callback for the running install
+let wizBuf = ''; // output of the current install run, for npm diagnostics
 
 function openWizard() {
   renderWizardStep();
@@ -2247,29 +2253,70 @@ function ensureWizTerm() {
 }
 let wizTermFit = null;
 
+// One install run in the wizard terminal; resolves with the run's output when
+// the process exits, so the caller can look at what npm said.
+function wizRunOnce(term, cmdline) {
+  return new Promise((resolve, reject) => {
+    term.writeln('\x1b[36m$ ' + cmdline + '\x1b[0m');
+    tote.ptyRun(cmdline).then(({ id }) => {
+      wizBuf = '';
+      wizTermPty = id;
+      wizOnExit = (ptyId) => {
+        if (ptyId !== id) return;
+        wizOnExit = null;
+        wizTermPty = null;
+        resolve(wizBuf);
+      };
+    }, reject);
+  });
+}
+
+// Self-healing install: run the profile's install command, and when npm hits
+// one of the two failures we can mend, mend it and re-run — each mend at most
+// once, so the loop is bounded at three runs. Both detectors are npm-specific,
+// so non-npm installers pass straight through.
 async function runWizardInstall(profile, btn) {
   const term = ensureWizTerm();
+  const note = (msg) => term.writeln('\x1b[33m' + msg + '\x1b[0m');
   btn.disabled = true;
   btn.textContent = 'installing…';
-  term.writeln('\x1b[36m$ ' + profile.install + '\x1b[0m');
   try {
-    const { id } = await tote.ptyRun(profile.install);
-    wizTermPty = id;
-    wizOnExit = async (ptyId) => {
-      if (ptyId !== id) return;
-      wizOnExit = null;
-      wizTermPty = null;
-      term.writeln('\x1b[90m[install process finished]\x1b[0m');
-      const ok = await tote.checkCommand(profile.command);
-      btn.textContent = ok ? 'installed' : 'install';
-      btn.disabled = ok;
-      if (!ok) term.writeln('\x1b[33m"' + profile.command + '" still not on PATH — check output above.\x1b[0m');
-    };
+    let cmd = profile.install;
+    let triedPrefix = false;
+    let triedScripts = false;
+    for (;;) {
+      const out = await wizRunOnce(term, cmd);
+      // A root-owned global prefix (distro npm) fails before anything installs.
+      if (!triedPrefix && NpmFix.eacces(out)) {
+        triedPrefix = true;
+        const fix = await tote.fixNpmPrefix();
+        if (fix.fixed) {
+          note("npm's global folder isn't writable — set npm's prefix to " + fix.prefix + ' (in ~/.npmrc) and retrying.');
+          continue;
+        }
+        note("npm's global folder isn't writable (" + fix.reason + ').');
+        note('Fix once with: npm config set prefix ~/.local — then install again.');
+        break;
+      }
+      // npm >= 12 blocks dependency install scripts, which silently skips
+      // native builds; it names the exact flag that allows them.
+      const pkgs = triedScripts ? null : NpmFix.blockedScripts(out);
+      if (pkgs) {
+        triedScripts = true;
+        note('npm blocked install scripts for ' + pkgs + ' — re-running with them allowed.');
+        cmd = profile.install + ' --allow-scripts=' + pkgs;
+        continue;
+      }
+      break;
+    }
   } catch (e) {
     term.writeln('\x1b[31m' + e.message + '\x1b[0m');
-    btn.disabled = false;
-    btn.textContent = 'install';
   }
+  term.writeln('\x1b[90m[install process finished]\x1b[0m');
+  const ok = await tote.checkCommand(profile.command);
+  btn.textContent = ok ? 'installed' : 'install';
+  btn.disabled = ok;
+  if (!ok) term.writeln('\x1b[33m"' + profile.command + '" still not on PATH — check output above.\x1b[0m');
 }
 
 async function renderWzConnections() {

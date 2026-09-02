@@ -5,6 +5,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { prefixPlan } = require('../renderer/npmfix.js');
 
 function cmdVersion(cmd) {
   try {
@@ -37,6 +38,52 @@ function systemCheck(ptys) {
     homeWritable,
     platform: process.platform,
   };
+}
+
+// The wizard calls this when an `npm i -g` died with EACCES: a distro npm
+// (pacman, apt) has its global prefix under /usr, which no regular user can
+// write. The decision of whether ~/.local is a safe replacement is pure and
+// lives in npmfix.js (covered by test-npmfix.js); this half only gathers the
+// facts and, if the plan says fix, appends the prefix line to ~/.npmrc — the
+// same file `npm config set prefix` writes.
+function fixNpmPrefix() {
+  let prefix;
+  try {
+    prefix = execSync('npm prefix -g', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      shell: process.platform === 'win32' ? undefined : '/bin/sh',
+      timeout: 8000,
+    })
+      .toString()
+      .trim();
+  } catch {
+    return { fixed: false, reason: 'npm not found' };
+  }
+  // The write target of a global install; probe the deepest dir that exists.
+  let target = path.join(prefix, 'lib', 'node_modules');
+  while (!fs.existsSync(target) && path.dirname(target) !== target) target = path.dirname(target);
+  let writable = true;
+  try {
+    fs.accessSync(target, fs.constants.W_OK);
+  } catch {
+    writable = false;
+  }
+  const npmrcPath = path.join(os.homedir(), '.npmrc');
+  let npmrc = null;
+  try {
+    npmrc = fs.readFileSync(npmrcPath, 'utf8');
+  } catch {}
+  const plan = prefixPlan({
+    platform: process.platform,
+    writable,
+    npmrc,
+    pathEnv: process.env.PATH,
+    home: os.homedir(),
+  });
+  if (!plan.fix) return { fixed: false, reason: plan.reason };
+  const lead = npmrc && !npmrc.endsWith('\n') ? '\n' : '';
+  fs.appendFileSync(npmrcPath, `${lead}prefix=${plan.prefix}\n`);
+  return { fixed: true, prefix: plan.prefix };
 }
 
 /* ----- Claude Desktop binding ----- */
@@ -103,4 +150,4 @@ function mcpSnippet(rootPath) {
   );
 }
 
-module.exports = { systemCheck, claudeStatus, bindClaudeToWorkspace, mcpSnippet };
+module.exports = { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet };

@@ -10,7 +10,7 @@ const { spawn, execSync, execFileSync } = require('child_process');
 const { ConfigStore } = require('./config');
 const { WorkspaceManager, originApp } = require('./workspace');
 const { PtyManager } = require('./ptyManager');
-const { systemCheck, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
+const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
 
 // LLM sites (Cloudflare-fronted ones especially) reject UAs that don't match
 // the real engine. Use Electron's own UA with the Electron/Tote tokens
@@ -550,6 +550,10 @@ ipcMain.handle('apps:launch', (e, id) => {
 // --- IPC: setup wizard / connections -------------------------------------------------------------
 
 ipcMain.handle('setup:systemCheck', () => systemCheck(ptys));
+
+// Wizard self-heal: after an `npm i -g` fails with EACCES, point npm's global
+// prefix at ~/.local when that is safe (guards live in installer/npmfix).
+ipcMain.handle('setup:fixNpmPrefix', () => fixNpmPrefix());
 
 ipcMain.handle('conn:claudeStatus', () => claudeStatus());
 

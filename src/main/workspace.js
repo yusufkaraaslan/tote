@@ -301,6 +301,25 @@ class WorkspaceManager {
     return { ...w, path: expandTilde(w.path) };
   }
 
+  // New strip order. `ids` is the order the renderer just dragged into; any
+  // space it does not name (registered or swept since it read the list) keeps
+  // its relative position at the end, so a stale list can never drop a space.
+  reorder(ids) {
+    const data = this.cfg.getWorkspaces();
+    const pending = new Map(data.list.map((w) => [w.id, w]));
+    const next = [];
+    for (const id of ids || []) {
+      const w = pending.get(id);
+      if (!w) continue;
+      pending.delete(id);
+      next.push(w);
+    }
+    for (const w of data.list) if (pending.has(w.id)) next.push(w);
+    data.list = next;
+    this.cfg.saveWorkspaces(data);
+    return this.list();
+  }
+
   // Unregisters the space. Files on disk are never touched.
   remove(id) {
     const data = this.cfg.getWorkspaces();

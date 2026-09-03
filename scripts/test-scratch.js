@@ -371,5 +371,60 @@ describe('sweepTemp', () => {
   });
 });
 
+describe('reorder', () => {
+  const three = (h) => {
+    const a = h.wm.addTemp('a'), b = h.wm.addTemp('b');
+    return ['global', a, b];
+  };
+
+  test('applies the given order', () => {
+    const h = harness();
+    try {
+      const [g, a, b] = three(h);
+      h.wm.reorder([b, g, a]);
+      assert.deepStrictEqual(h.state().list.map((w) => w.id), [b, g, a]);
+    } finally { h.cleanup(); }
+  });
+
+  test('keeps a space the caller did not name, at the end', () => {
+    const h = harness();
+    try {
+      const [g, a, b] = three(h);
+      h.wm.reorder([b, g]);
+      assert.deepStrictEqual(h.state().list.map((w) => w.id), [b, g, a]);
+    } finally { h.cleanup(); }
+  });
+
+  test('ignores unknown and duplicate ids', () => {
+    const h = harness();
+    try {
+      const [g, a, b] = three(h);
+      h.wm.reorder([b, 'gone', b, a, g]);
+      assert.deepStrictEqual(h.state().list.map((w) => w.id), [b, a, g]);
+    } finally { h.cleanup(); }
+  });
+
+  test('leaves the active space and every entry field alone', () => {
+    const h = harness();
+    try {
+      const [g, a, b] = three(h);
+      const before = h.state().list.find((w) => w.id === a);
+      h.wm.reorder([b, a, g]);
+      assert.strictEqual(h.state().active, g);
+      assert.deepStrictEqual(h.state().list.find((w) => w.id === a), before);
+    } finally { h.cleanup(); }
+  });
+
+  test('a missing or empty list is a no-op', () => {
+    const h = harness();
+    try {
+      const ids = three(h);
+      h.wm.reorder();
+      h.wm.reorder([]);
+      assert.deepStrictEqual(h.state().list.map((w) => w.id), ids);
+    } finally { h.cleanup(); }
+  });
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

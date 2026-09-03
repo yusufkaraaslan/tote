@@ -314,6 +314,10 @@ systems:
         type: unknown
       - name: arg1
         type: unknown
+    - name: reorder
+      args:
+      - name: ids
+        type: unknown
     - name: remove
       args:
       - name: id
@@ -405,6 +409,8 @@ systems:
     - name: workspaces:remove
       args: []
     - name: workspaces:rename
+      args: []
+    - name: workspaces:reorder
       args: []
     - name: workspaces:setPath
       args: []
@@ -713,6 +719,16 @@ systems:
       args: []
     - name: renderWorkspaceSwitcher
       args: []
+    - name: clearWsDropMark
+      args: []
+    - name: moveWorkspace
+      args:
+      - name: srcId
+        type: unknown
+      - name: targetId
+        type: unknown
+      - name: after
+        type: unknown
     - name: switchWorkspace
       args:
       - name: id

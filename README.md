@@ -92,7 +92,8 @@ The NSIS installer is non-one-click, so users can choose the install directory.
 
 First run creates the **Global** space at `~/tote/workspace`. Add project spaces
 with **+ space** on the top strip (name + any folder on disk — point it at an
-existing project if you like). Right-click a space tab to open its folder, copy the
+existing project if you like). **Drag a space tab** along the strip to reorder it —
+the order is remembered. Right-click a space tab to open its folder, copy the
 path, rename it, point it at a different folder, or remove it — the same controls live under
 **settings → Workspaces**. Tote never deletes or moves files: removing a space only
 unregisters it, and changing its folder just re-points it.

@@ -381,6 +381,12 @@ ipcMain.handle('workspaces:remove', (e, id) => {
   return wsState();
 });
 
+// Strip order only -- the active space and every watcher stay as they are.
+ipcMain.handle('workspaces:reorder', (e, ids) => {
+  workspace.reorder(ids);
+  return wsState();
+});
+
 ipcMain.handle('workspaces:rename', (e, id, name) => {
   workspace.updateSpace(id, { name });
   return wsState();

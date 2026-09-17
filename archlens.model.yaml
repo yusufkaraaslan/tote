@@ -1216,6 +1216,10 @@ systems:
       args: []
     - name: renderTermMenu
       args: []
+    - name: repairViewport
+      args:
+      - name: term
+        type: unknown
     - name: spawnTerm
       args:
       - name: profile

@@ -1453,8 +1453,10 @@ const Fit = window.FitAddon && window.FitAddon.FitAddon;
 let ptyResizeTimer = null;
 function refitTerms() {
   for (const t of state.terms.values()) {
-    if (!t.fit || !t.pane || t.pane.el.classList.contains('hidden')) continue;
-    try { t.fit.fit(); } catch {}
+    if (!t.pane) continue;
+    if (t.pane.el.classList.contains('hidden')) { t.wasHidden = true; continue; }
+    if (t.fit) { try { t.fit.fit(); } catch {} }
+    if (t.wasHidden) { t.wasHidden = false; repairViewport(t.term); }
   }
   clearTimeout(ptyResizeTimer);
   ptyResizeTimer = setTimeout(() => {
@@ -1463,6 +1465,30 @@ function refitTerms() {
       try { tote.ptyResize(t.ptyId, t.term.cols, t.term.rows); } catch {}
     }
   }, 150);
+}
+
+/* A terminal whose pane is hidden -- another group, another space -- keeps
+ * receiving output, and that is where xterm's viewport silently breaks. It
+ * sizes its scroll area as `round(rowHeight * bufferLength) + (viewportHeight
+ * - canvasHeight)`, and a `display: none` pane measures **zero** height, so
+ * every write while hidden re-records a scroll area one whole viewport too
+ * short. The bad value is cached, and coming back into view changes neither
+ * the buffer length nor the cell height -- the two things `syncScrollArea`
+ * watches -- so nothing recomputes it. `fit()` does not either: the dimensions
+ * did not change, so there is no resize to react to.
+ *
+ * What the user sees is two bugs that are really one. Dragging to the bottom
+ * lands short of it (a 500-line buffer measured this way stops ~21 lines up),
+ * and once the viewport is short of the bottom xterm stops following new
+ * output -- so text streams into a view frozen on old content until a
+ * keystroke, which scrolls to the bottom on user input and fixes it by luck.
+ *
+ * Forcing the re-measure on show is the whole repair; it moves no scroll
+ * position, so a pane deliberately left scrolled up stays where it was.
+ * `_core` is private, hence the guard -- if a future xterm renames it the
+ * terminal is no worse off than it is today. */
+function repairViewport(term) {
+  try { term._core.viewport.syncScrollArea(true); } catch {}
 }
 
 // Kill the PTY behind a term pane. The pane element and the leaf are closePane's

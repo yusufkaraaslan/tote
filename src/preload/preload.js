@@ -85,4 +85,5 @@ contextBridge.exposeInMainWorld('tote', {
   onRemoteState: (cb) => ipcRenderer.on('remote:state', (e, info) => cb(info)),
   onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),
+  onWindowFocus: (cb) => ipcRenderer.on('win:focus', () => cb()),
 });

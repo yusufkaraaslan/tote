@@ -380,6 +380,13 @@ function createWindow() {
     win = null;
   });
 
+  // Re-activation is the renderer's cue to put keyboard focus back inside the
+  // focused pane. The main process is the authority on window activation: the
+  // renderer's own `focus` event is ambiguous once a webview guest is involved.
+  win.on('focus', () => {
+    if (win) win.webContents.send('win:focus');
+  });
+
   // The sweep already ran at startup; the renderer can only be told once it has
   // a toast area to show it in.
   win.webContents.once('did-finish-load', () => {

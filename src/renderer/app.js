@@ -582,6 +582,13 @@ function ensureWebview(tab, provider, container) {
     if (en) en.wv = null; // pane stays; the next applyTiles recreates the webview
     toast(provider.name + ' pane crashed - it will reload.', 'error');
   });
+  // A click inside the guest never reaches the pane's mousedown, so this is
+  // how the logical focus follows it. Guarded, because focusPane on a web leaf
+  // re-focuses this very element.
+  wv.addEventListener('focus', () => {
+    const leaf = wv.closest('.pane') && wv.closest('.pane').dataset.leaf;
+    if (leaf && tiles().focus !== leaf) focusPane(leaf);
+  });
   (container || $('#tiles')).appendChild(wv);
   entry = { wv, providerId: provider.id, wsId: state.workspaces.active };
   state.tabs.set(tab.id, entry);
@@ -611,6 +618,7 @@ function showWorkspaceViews() {
   // The watcher only ever binds the ACTIVE space's root, so doc panes in a
   // space that was in the background catch up the moment it comes forward.
   recheckDocs();
+  focusActivePaneContent();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -1565,14 +1573,27 @@ function createTermPane(title) {
   //     Shift+PageUp (Fn+Shift+Up on a laptop). Shift+PageUp/PageDown stay xterm's
   //     own bindings. On the alternate screen (vim, less) there is no scrollback,
   //     so the key belongs to the app.
+  // And one key xterm steals from the agent, which we hand back:
+  //   Alt+Up/Down -- on every platform but macOS xterm rewrites ESC[1;3A/B
+  //     (Alt+arrow) into ESC[1;5A/B (Ctrl+arrow), a readline hack in its
+  //     Keyboard.ts. Codex binds Alt+Up to "answer the queued questions", so on
+  //     Linux and Windows that prompt could never be opened. We write the standard
+  //     sequence ourselves, on every platform so the bytes never depend on the OS.
   const SCROLL = {
     ArrowUp: () => term.scrollLines(-1),
     ArrowDown: () => term.scrollLines(1),
     Home: () => term.scrollToTop(),
     End: () => term.scrollToBottom(),
   };
+  const ALT_ARROW = { ArrowUp: 'A', ArrowDown: 'B' };
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true;
+    if (e.altKey && !e.ctrlKey && !e.metaKey && ALT_ARROW[e.key]) {
+      // xterm modifier code: 1 + Shift(1) + Alt(2)
+      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b[1;' + (e.shiftKey ? 4 : 3) + ALT_ARROW[e.key]);
+      e.preventDefault();
+      return false;
+    }
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
     if (e.key === 'Enter') {
       if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\n');
@@ -1913,14 +1934,12 @@ function renderDividers(S, host) {
 
 function focusPane(leafId) {
   const S = tiles();
-  if (!leafId || S.focus === leafId) return;
+  if (!leafId) return;
+  const lf = T.findLeaf(S.tree, leafId);
+  if (S.focus === leafId) { focusPaneContent(lf); return; }   // already ours: just make the keyboard agree
   S.focus = leafId;
   for (const p of panes.values()) p.el.classList.toggle('focused', p.el.dataset.leaf === leafId);
-  const lf = T.findLeaf(S.tree, leafId);
-  if (lf && lf.kind === 'term') {
-    const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
-    if (t) t.term.focus();
-  }
+  focusPaneContent(lf);
   if (lf && lf.kind === 'doc') noteDocFocus(leafId);
   saveViews();
 }
@@ -2214,12 +2233,35 @@ function closeGroup(id) {
   saveViews();
 }
 
+// Put keyboard focus INSIDE the focused pane. The `focused` class is only a
+// border: a pane that is hidden by a space switch (display:none) drops its DOM
+// focus, a click on the workspace strip lands focus on body, and a window that
+// was blurred hands Electron's webview host back its focus but not the guest
+// page inside it -- the next keystroke goes nowhere until the user clicks a
+// second time. So this runs after every space or group switch and on every
+// window activation, and focusPane applies it even when the leaf is unchanged.
+function focusPaneContent(lf) {
+  if (!lf) return;
+  if (lf.kind === 'term') {
+    const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
+    if (t) t.term.focus();
+  } else if (lf.kind === 'web') {
+    const en = state.tabs.get(lf.ref);
+    if (!en || !en.wv) return;
+    // When the host element already IS the active element, focus() is a DOM
+    // no-op and the guest stays unfocused; blurring first makes it real.
+    if (document.activeElement === en.wv) en.wv.blur();
+    en.wv.focus();
+  } else if (lf.kind === 'doc') {
+    const p = panes.get(paneKey(lf));
+    const ta = p && p.body.querySelector('textarea.doc-src');
+    if (ta) ta.focus();
+  }
+}
+
 function focusActivePaneContent() {
   const S = tiles();
-  const lf = S.focus && T.findLeaf(S.tree, S.focus);
-  if (!lf || lf.kind !== 'term') return;
-  const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
-  if (t) t.term.focus();
+  focusPaneContent(S.focus && T.findLeaf(S.tree, S.focus));
 }
 
 $('#btn-add-group').onclick = addGroup;
@@ -2765,6 +2807,7 @@ $('#btn-run-wizard').onclick = () => {
 
 /* ---------------- events from main ---------------- */
 tote.onWorkspaceChanged(() => { refreshTree(); recheckDocs(); });
+tote.onWindowFocus(focusActivePaneContent);
 tote.onRemoteState(onRemoteState);
 
 tote.onDownloadDone((m) => {

@@ -58,13 +58,21 @@ done
 
 # Is the bundle we are about to replace running right now, whoever started it?
 # This, not INSIDE, is what decides whether the swap can happen immediately.
-TARGET_PID=$(pgrep -f "^$TARGET/Contents/MacOS/Tote$" 2>/dev/null | head -1)
+#
+# `-a` is load-bearing, and its absence was a silent hole for exactly the case
+# this script exists for: pgrep excludes itself AND ALL ITS ANCESTORS by
+# default, so an upgrade run from a terminal docked inside Tote could never see
+# that Tote -- TARGET_PID came back empty, the deferral was skipped, and a live
+# bundle got renamed out from under the running app. Verified on pid 1449:
+# invisible to `pgrep -f`, `pgrep -x` and `pgrep -lf`, visible to `pgrep -a -f`
+# and to `ps -Ao comm=` all along.
+TARGET_PID=$(pgrep -a -f "^$TARGET/Contents/MacOS/Tote$" 2>/dev/null | head -1)
 [ -n "$TARGET_PID" ] && echo "note: $TARGET is running (pid $TARGET_PID) — the swap will wait for it to quit"
 
 # Backups from earlier runs, minus anything still running.
 for old in /Applications/Tote.app.backup-*; do
   [ -d "$old" ] || continue
-  if pgrep -f "^$old/Contents/MacOS/Tote$" >/dev/null 2>&1; then continue; fi
+  if pgrep -a -f "^$old/Contents/MacOS/Tote$" >/dev/null 2>&1; then continue; fi
   echo "removing stale backup $(basename "$old")"
   rm -rf "$old"
 done
@@ -123,7 +131,7 @@ else
   echo "installed ✓  $(du -sh "$TARGET" | cut -f1)"
   # Some OTHER bundle (a dev build in dist/) may still hold Tote's
   # single-instance lock, so the fresh copy cannot start until that one goes.
-  OTHER_PID=$(pgrep -f "Tote\.app/Contents/MacOS/Tote$" 2>/dev/null | head -1)
+  OTHER_PID=$(pgrep -a -f "Tote\.app/Contents/MacOS/Tote$" 2>/dev/null | head -1)
   if [ -n "$OTHER_PID" ]; then
     nohup sh -c "while kill -0 $OTHER_PID 2>/dev/null; do sleep 1; done; sleep 1; open '$TARGET'" \
       >/dev/null 2>&1 &

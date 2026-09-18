@@ -857,6 +857,18 @@ if (!gotLock) {
     });
   });
 
+  // The normal macOS quit never reaches `window-all-closed`. Cmd+Q (and any
+  // `app.quit()`) closes the windows itself and then goes straight to
+  // `will-quit` -- measured: `before-quit -> will-quit`, no `window-all-closed`
+  // -- so this is the only hook that sees it. Without it the ptys are still
+  // alive when Node tears the environment down, node-pty's exit-callback thread
+  // fires its ThreadSafeFunction into a dying env, and napi throws a C++
+  // exception with no JS left to throw it into: `abort()`, a SIGABRT crash
+  // report on every single quit, and a `will-quit` that never finishes.
+  app.on('before-quit', () => {
+    ptys && ptys.killAll();
+  });
+
   app.on('window-all-closed', () => {
     ptys && ptys.killAll();
     // The ssh masters are deliberately left running: ControlPersist=yes outlives

@@ -240,6 +240,11 @@ describe('docKind', () => {
   test('pdf is pdf', () => {
     assert.strictEqual(docKind('a.pdf'), 'pdf');
   });
+  test('html is its own kind even though it is also text', () => {
+    assert.strictEqual(docKind('a.html'), 'html');
+    assert.strictEqual(docKind('a.htm'), 'html');
+    assert.strictEqual(docKind('SHOWCASE.HTML'), 'html');
+  });
   test('anything else is binary', () => {
     for (const n of ['a.zip', 'a.mp4', 'noextension']) assert.strictEqual(docKind(n), 'binary');
   });

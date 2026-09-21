@@ -706,7 +706,7 @@ function renderNodes(nodes) {
       };
     } else {
       icon.textContent = n.kind === 'image' ? '▣' : n.kind === 'pdf' ? '❐'
-        : n.kind === 'binary' ? '•' : '≡';
+        : n.kind === 'html' ? '◈' : n.kind === 'binary' ? '•' : '≡';
       row.onclick = (e) => openFile(n, e);
     }
     row.oncontextmenu = (e) => {
@@ -944,6 +944,10 @@ function renderDocBody(id) {
     p.body.appendChild(docPdfEl(id));
     return;
   }
+  if (st.kind === 'html' && doc.mode !== 'src') {
+    p.body.appendChild(docHtmlEl(id));
+    return;
+  }
   p.body.appendChild(docSourceEl(id));
 }
 
@@ -957,29 +961,45 @@ function docImageEl(id) {
   return wrap;
 }
 
-// Electron renders a PDF with Chromium's own viewer. A webview is out of
-// process, so the host CSP does not apply to it and the file needs no copy --
-// readDoc hands over a file:// URL rather than 25 MB of base64.
-function docPdfEl(id) {
+// The two kinds a pane shows by pointing a <webview> at the file itself. A
+// webview is out of process, so the host's `script-src 'self'` CSP does not
+// apply inside it and the file needs no copy -- readDoc hands over a file://
+// URL rather than megabytes of base64. Attributes go on before `src`, because
+// setting that is what starts the load.
+function docWebviewEl(id, cls, attrs, failMsg) {
   const wv = document.createElement('webview');
-  wv.className = 'doc-pdf';
-  wv.setAttribute('plugins', '');          // the PDF viewer is one
+  wv.className = cls;
+  for (const [k, v] of Object.entries(attrs)) wv.setAttribute(k, v);
   wv.setAttribute('src', docState(id).fileUrl || '');
   wv.addEventListener('did-fail-load', (e) => {
     if (e.errorCode === -3 || !e.isMainFrame) return;   // -3 = ABORTED, normal
     const p = docPane(id), doc = docOf(id);
     if (!p || !doc) return;
     p.body.textContent = '';
-    p.body.appendChild(docErrorEl(doc.path, 'This PDF could not be shown in a pane.'));
+    p.body.appendChild(docErrorEl(doc.path, failMsg));
   });
   return wv;
 }
 
-// Two kinds have both a rendered and an editable face: markdown, and SVG --
-// which readDoc hands back as an image that also carries its own source.
+// Electron renders a PDF with Chromium's own viewer, which is a plugin.
+const docPdfEl = (id) =>
+  docWebviewEl(id, 'doc-pdf', { plugins: '' }, 'This PDF could not be shown in a pane.');
+
+// A rendered HTML file. The partition is deliberately its own and not
+// persisted: a page that arrived in the inbox must never be able to reach a
+// provider tab's logged-in cookies, and nothing it stores should outlive the
+// pane. Relative assets still load, because the src is the real file.
+const docHtmlEl = (id) =>
+  docWebviewEl(id, 'doc-html', { partition: 'tote-doc' }, 'This page could not be shown in a pane.');
+
+// The kinds with both a rendered and an editable face: markdown, HTML, and SVG
+// -- which readDoc hands back as an image that also carries its own source.
+// The source half is what may be missing (a file over the read cap), so the
+// toggle follows the text rather than the kind.
 const docHasModes = (id) => {
   const st = docState(id);
-  return !!st && (st.kind === 'md' || (st.kind === 'image' && st.savedText != null));
+  if (!st) return false;
+  return st.kind === 'md' || ((st.kind === 'html' || st.kind === 'image') && st.savedText != null);
 };
 
 function renderDocControls(id) {
@@ -1242,6 +1262,10 @@ async function recheckDocs() {
     const top = docScrollTop(doc.id);
     Object.assign(st, {
       text: res.text, savedText: res.text, dataUrl: res.dataUrl || null,
+      // HTML's rendered face is this URL, and a remote one is keyed by mtime --
+      // an edit on the other machine caches a new file, so keeping the old URL
+      // would re-render the version that just changed.
+      fileUrl: res.fileUrl || null,
       mtimeMs: res.mtimeMs, size: res.size, error: res.error || null,
     });
     renderDocBody(doc.id);
@@ -2353,7 +2377,7 @@ addEventListener('keydown', (e) => {
     if (g) switchGroup(g.id);
     return;
   }
-  if (e.key === 'e' || e.key === 'E') {        // flip a markdown or SVG pane
+  if (e.key === 'e' || e.key === 'E') {        // flip a markdown, HTML or SVG pane
     const doc = focusedDoc();
     if (doc && docHasModes(doc.id)) {
       e.preventDefault();

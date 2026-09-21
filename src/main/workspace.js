@@ -83,6 +83,7 @@ const TEXT_EXT = new Set([
 const MAX_READ_BYTES = 2 * 1024 * 1024;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg']);
 const MD_EXT = new Set(['.md', '.markdown']);
+const HTML_EXT = new Set(['.html', '.htm']);
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -99,12 +100,15 @@ function extOf(name) {
 
 // How a file is shown in a doc pane. SVG is deliberately an image even though
 // it is also in TEXT_EXT: readDoc fills in `text` as well, which is what gives
-// it both a rendered and an editable mode.
+// it both a rendered and an editable mode. HTML is the same arrangement -- it
+// stays in TEXT_EXT so the tree still calls it text and it is still savable,
+// but it classifies ahead of it so the pane knows it has a rendered face.
 function docKind(name) {
   const ext = extOf(name);
   if (MD_EXT.has(ext)) return 'md';
   if (IMAGE_EXT.has(ext)) return 'image';
   if (ext === '.pdf') return 'pdf';
+  if (HTML_EXT.has(ext)) return 'html';
   if (TEXT_EXT.has(ext)) return 'text';
   return 'binary';
 }
@@ -611,6 +615,21 @@ class WorkspaceManager {
     const base = { kind: kind, mtimeMs: stat.mtimeMs, size: stat.size };
     if (kind === 'binary') return base;
     if (kind === 'pdf') return Object.assign(base, { fileUrl: pathToFileURL(abs).href });
+
+    // HTML is handed over twice: a file:// URL for the rendered face and the
+    // source for the editable one. The URL is what makes the page's own
+    // stylesheets, scripts and images resolve against the folder it lives in --
+    // inlining the markup would render a downloaded page unstyled. Over the
+    // read cap it keeps the rendered face and simply has no source, which is a
+    // better answer for a generated page than the size error text gets.
+    if (kind === 'html') {
+      const out = Object.assign(base, { fileUrl: pathToFileURL(abs).href });
+      if (stat.size <= MAX_READ_BYTES) {
+        const buf = fs.readFileSync(abs);
+        if (!buf.includes(0)) out.text = buf.toString('utf8');
+      }
+      return out;
+    }
 
     if (kind === 'image') {
       if (stat.size > MAX_IMAGE_BYTES) {

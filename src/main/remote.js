@@ -383,6 +383,18 @@ class RemoteFs {
     // changed file is a different file and staleness needs no bookkeeping.
     if (kind === 'pdf') return Object.assign(base, { fileUrl: pathToFileURL(await this.cache(rel, st)).href });
 
+    // HTML gets the same two faces as it does locally, minus the folder around
+    // it: the cache holds one file, so a remote page whose stylesheet sits next
+    // to it renders unstyled. The source face is exact either way.
+    if (kind === 'html') {
+      const out = Object.assign(base, { fileUrl: pathToFileURL(await this.cache(rel, st)).href });
+      if (st.size <= this.meta.MAX_READ_BYTES) {
+        const buf = await this.conn.run(S.catCommand(abs));
+        if (!buf.includes(0)) out.text = buf.toString('utf8');
+      }
+      return out;
+    }
+
     if (kind === 'image') {
       if (st.size > this.meta.MAX_IMAGE_BYTES) {
         return Object.assign(base, { error: this.meta.mb(st.size) + ', larger than the 25 MB view limit' });

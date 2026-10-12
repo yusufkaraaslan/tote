@@ -150,7 +150,8 @@ unregisters it, and changing its folder just re-points it.
   whatever width you left it. Layouts are remembered **per workspace**.
 - **Groups** — each space holds several layouts, like desktops on your OS: switch with the
   chips under the workspace strip or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
-  groups keep running in the background.
+  groups keep running in the background. Move a pane to another group by dragging its title bar onto a
+  chip (or `+` for a new one), right-clicking the title bar, or **Cmd/Ctrl+Alt+Shift+1…9**.
 - **Workspace pane** — tree, right-click new/rename/trash/
   open-externally/reveal-in-Finder/copy-path, and **Send to active tab (experimental)**
   which injects a file into the current chat's upload control.

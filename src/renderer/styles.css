@@ -134,6 +134,8 @@ code {
 .group-chip.active { background: #1a2338; border-color: #2b5cff; color: #fff; }
 .group-dot { width: 4px; height: 4px; border-radius: 50%; background: #2b5cff; }
 .group-chip.active .group-dot { background: #7fa0ff; }
+/* a pane dragged over a chip (or +) lands in that group on release */
+.group-chip.drop-into, #btn-add-group.drop-into { border-color: #7fa0ff; background: #1a2338; color: #fff; }
 #btn-add-group { flex-shrink: 0; padding: 1px 8px; }
 
 /* ---------- tiling: panes, dividers ---------- */

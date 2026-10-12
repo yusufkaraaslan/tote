@@ -1886,9 +1886,11 @@ function paneShell(key, titleText, dotColor) {
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
   x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
   head.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;          // right button opens paneMenu instead
     if (e.target === x || (e.target.closest && e.target.closest('.pane-ctrls'))) return;
     startPaneDrag(e, el);
   });
+  head.addEventListener('contextmenu', (e) => { if (el.dataset.leaf) paneMenu(e, el.dataset.leaf); });
   return p;
 }
 
@@ -2043,12 +2045,14 @@ function splitTarget(S) {
   return (content[0] || live[0]).id;
 }
 
-// Opening a pane splits the focused one along its longer axis (dwindle).
-function openPane(node) {
-  const S = tiles();
+// Put a leaf into any group's tree, the active one or not: every group is laid
+// out in the same host rect, so the dwindle split is computed the same way.
+function placeLeaf(S, node) {
   if (!S.tree) {
     S.tree = node;
-  } else if (node.kind !== 'files' && !T.leaves(S.tree).some((l) => l.kind !== 'files')) {
+  } else if (node.kind === 'files') {
+    S.tree = T.insertRoot(S.tree, node, 'left', filesRatio());
+  } else if (!T.leaves(S.tree).some((l) => l.kind !== 'files')) {
     // Only the dock is open: the first content pane takes the rest of the width
     // instead of cutting the sidebar in half.
     S.tree = T.insertRoot(S.tree, node, 'right', 1 - filesRatio());
@@ -2057,6 +2061,12 @@ function openPane(node) {
     const target = splitTarget(S);
     S.tree = T.splitLeaf(S.tree, target, node, T.dirFor(rects.get(target) || hostRect()));
   }
+}
+
+// Opening a pane splits the focused one along its longer axis (dwindle).
+function openPane(node) {
+  const S = tiles();
+  placeLeaf(S, node);
   S.focus = node.id;
   S.zoom = null;
   applyTiles();
@@ -2136,8 +2146,16 @@ function startPaneDrag(e, el) {
   hint.className = 'drop-hint hidden';
   $('#tiles').appendChild(hint);
 
-  let drop = null;
+  let drop = null, chip = null;
   const move = (ev) => {
+    // Over the group strip: a chip takes the pane to that group, + to a new one.
+    const over = ev.target.closest && ev.target.closest('.group-chip:not(.active), #btn-add-group');
+    if (over !== chip) {
+      if (chip) chip.classList.remove('drop-into');
+      chip = over;
+      if (chip) chip.classList.add('drop-into');
+    }
+    if (chip) { drop = null; hint.classList.add('hidden'); return; }
     drop = dropTargetAt(ev.clientX, ev.clientY, fromId);
     if (!drop) { hint.classList.add('hidden'); return; }
     hint.classList.remove('hidden');
@@ -2155,7 +2173,10 @@ function startPaneDrag(e, el) {
     hint.remove();
     removeEventListener('mousemove', move);
     removeEventListener('mouseup', up);
-    if (drop && drop.id !== fromId) {
+    if (chip) {
+      chip.classList.remove('drop-into');
+      moveToGroup(fromId, chip.dataset.group || newGroup().id);
+    } else if (drop && drop.id !== fromId) {
       const S = tiles();
       S.tree = drop.edge === 'centre'
         ? T.swapLeaves(S.tree, fromId, drop.id)
@@ -2206,6 +2227,7 @@ function renderGroupBar() {
     const chip = document.createElement('button');
     chip.className = 'group-chip' + (g.id === V.activeGroup ? ' active' : '');
     chip.textContent = g.name;
+    chip.dataset.group = g.id;
     const count = T.leaves(g.tree).length;
     chip.title = count ? g.name + ' — ' + count + ' pane(s)' : g.name + ' — empty';
     if (count) chip.appendChild(Object.assign(document.createElement('i'), { className: 'group-dot' }));
@@ -2239,15 +2261,66 @@ function switchGroup(id) {
   saveViews();
 }
 
-function addGroup() {
-  const V = wsViews();
+// An empty group at the end of the strip; the caller decides whether to go there.
+function newGroup() {
   const gs = groups();
   const g = { id: newGroupId(), name: nextGroupName(gs), tree: null, focus: null, zoom: null };
   gs.push(g);
-  V.activeGroup = g.id;
+  return g;
+}
+
+function addGroup() {
+  const g = newGroup();
+  wsViews().activeGroup = g.id;
   applyTiles();
   renderGroupBar();
   saveViews();
+}
+
+/* Move a pane of the active group into another group. Only the trees change:
+ * the pane's element, webview and PTY are untouched -- leaving the active tree
+ * just hides it, exactly as a group switch would -- so a chat draft or a
+ * running agent travels intact. The view stays here; the pane is focused in
+ * its new group for when you go there. */
+function moveToGroup(leafId, groupId) {
+  const S = tiles();
+  const lf = T.findLeaf(S.tree, leafId);
+  const dest = groups().find((g) => g.id === groupId);
+  if (!lf || !dest || dest === S) return;
+  if (lf.kind === 'files') rememberFilesRatio(leafId);
+  S.tree = T.removeLeaf(S.tree, leafId);
+  if (S.zoom === leafId) S.zoom = null;
+  if (S.focus === leafId) S.focus = null;     // applyTiles falls back to the first live pane
+  // The files dock is one element shared by every group: a group that already
+  // has it just keeps its own.
+  if (!(lf.kind === 'files' && T.leaves(dest.tree).some((l) => l.kind === 'files'))) {
+    placeLeaf(dest, lf);
+    dest.focus = lf.id;
+    dest.zoom = null;
+  }
+  applyTiles();
+  renderGroupBar();
+  focusActivePaneContent();
+  saveViews();
+}
+
+// Right-click on a pane head: where else it could live.
+function paneMenu(e, leafId) {
+  e.preventDefault();
+  e.stopPropagation();
+  hideContextMenu();
+  const V = wsViews();
+  const menu = $('#context-menu');
+  menu.innerHTML = '';
+  for (const g of groups()) {
+    if (g.id === V.activeGroup) continue;
+    menu.appendChild(ctxItem('move to group ' + g.name, () => moveToGroup(leafId, g.id)));
+  }
+  menu.appendChild(ctxItem('move to new group', () => moveToGroup(leafId, newGroup().id)));
+  menu.appendChild(ctxItem('close pane', () => closePane(leafId), true));
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.remove('hidden');
 }
 
 async function renameGroup(g) {
@@ -2369,6 +2442,16 @@ addEventListener('keydown', (e) => {
     } else {
       focusPane(T.neighbour(rects, S.focus, dir));
     }
+    return;
+  }
+  // MOD+Shift+N sends the focused pane to group N (a new group when N is one
+  // past the last). e.code, because Shift turns e.key into '!', '@', ...
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && e.shiftKey) {
+    e.preventDefault();
+    const gs = groups(), n = +digit[1];
+    const g = gs[n - 1] || (n === gs.length + 1 ? newGroup() : null);
+    if (g && S.focus) moveToGroup(S.focus, g.id);
     return;
   }
   if (e.key >= '1' && e.key <= '9') {          // switch group, like OS desktops

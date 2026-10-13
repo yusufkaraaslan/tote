@@ -8,7 +8,8 @@
 // views, terminals -- and serves VIEWERS. Every window is a viewer with its own
 // active space. This file is the viewer side: windows, web sessions, native
 // apps, the wizard, and the IPC routing in front of the host.
-const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker, Menu, clipboard } = require('electron');
+const { editMenu } = require('./editMenu');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -563,6 +564,12 @@ function focusedWindow() {
 // otherwise a Google/GitHub login completes in the system browser and the
 // webview never sees the cookies. Only non-web schemes go external.
 app.on('web-contents-created', (event, contents) => {
+  contents.on('context-menu', (_event, params) => {
+    const template = editMenu(contents, params, clipboard);
+    if (!template.length) return;
+    const owner = contents.hostWebContents || contents;
+    Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(owner) || undefined });
+  });
   if (contents.getType() !== 'webview') return;
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
@@ -611,6 +618,18 @@ function registerHostChannels() {
 }
 
 const hostCall = (e, name, ...args) => route(e, name, args);
+
+// Local clipboard access is exposed only to registered Tote viewers, never
+// provider guests, and never routed to the device being viewed.
+ipcMain.handle('clipboard:readText', (e) => {
+  if (!host?.viewers.has(viewerIdOf(e.sender))) throw new Error('Not a Tote viewer');
+  return clipboard.readText();
+});
+ipcMain.handle('clipboard:writeText', (e, text) => {
+  if (!host?.viewers.has(viewerIdOf(e.sender))) throw new Error('Not a Tote viewer');
+  if (typeof text !== 'string') throw new Error('Expected clipboard text');
+  clipboard.writeText(text);
+});
 
 // --- IPC: split channels (a picker here, the operation on the host) ------------------
 

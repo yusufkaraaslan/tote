@@ -2,6 +2,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('tote', {
+  readClipboardText: () => ipcRenderer.invoke('clipboard:readText'),
+  writeClipboardText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
   // workspaces (spaces)
   listWorkspaces: () => ipcRenderer.invoke('workspaces:list'),
   addWorkspace: (name) => ipcRenderer.invoke('workspaces:add', name),

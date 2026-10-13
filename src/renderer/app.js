@@ -104,7 +104,7 @@ function renderWorkspaceSwitcher() {
       } else {
         menu.appendChild(ctxItem('open folder', () => tote.openPath('.')));
       }
-      menu.appendChild(ctxItem('copy path', () => navigator.clipboard.writeText(
+      menu.appendChild(ctxItem('copy path', () => tote.writeClipboardText(
         isRemote(w) ? w.host + ':' + w.path : w.path)));
       menu.appendChild(ctxItem('rename…', () => renameWorkspace(w)));
       menu.appendChild(ctxItem('change folder…', () => changeWorkspaceFolder(w)));
@@ -800,7 +800,7 @@ function showContextMenu(x, y, node) {
       menu.appendChild(ctxItem(REVEAL_LABEL, () => tote.revealPath(node.path)));
     }
     menu.appendChild(ctxItem('Send to active tab (experimental)', () => sendToTab(node.path)));
-    menu.appendChild(ctxItem('Copy path', () => navigator.clipboard.writeText(node.path)));
+    menu.appendChild(ctxItem('Copy path', () => tote.writeClipboardText(node.path)));
   } else {
     menu.appendChild(ctxItem('New file here', () => newFile(node.path)));
     menu.appendChild(ctxItem('New folder here', () => newFolder(node.path)));
@@ -1945,6 +1945,23 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
   }
   term.open(pane.body);
 
+  const clip = window.TermClipboard.create(term, {
+    readText: () => tote.readClipboardText(),
+    writeText: (text) => tote.writeClipboardText(text),
+  }, { mac: navigator.platform.startsWith('Mac'), onError: (e) => toast(e.message, 'error') });
+  pane.body.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = $('#context-menu');
+    menu.replaceChildren();
+    if (term.hasSelection()) menu.appendChild(ctxItem('Copy', clip.copy));
+    menu.appendChild(ctxItem('Paste', clip.paste));
+    menu.appendChild(ctxItem('Select all', () => term.selectAll()));
+    menu.classList.remove('hidden');
+    menu.style.left = Math.max(8, Math.min(e.clientX, innerWidth - menu.offsetWidth - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(e.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
+  }, true);
+
   const entry = { term, fit, sid, pane, name: title, wsId, alive: false };
   state.terms.set(sid, entry);
   const send = (d) => { if (entry.alive) tote.ptyWrite(sid, d); };
@@ -1978,6 +1995,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
   };
   const ALT_ARROW = { ArrowUp: 'A', ArrowDown: 'B' };
   term.attachCustomKeyEventHandler((e) => {
+    if (!clip.key(e)) return false;
     if (e.type !== 'keydown') return true;
     if (e.altKey && !e.ctrlKey && !e.metaKey && ALT_ARROW[e.key]) {
       // xterm modifier code: 1 + Shift(1) + Alt(2)
@@ -3281,7 +3299,7 @@ function renderWzSpaces() {
 }
 
 $('#wz-copy-snippet').onclick = () => {
-  navigator.clipboard.writeText($('#wz-snippet').value);
+  tote.writeClipboardText($('#wz-snippet').value);
   toast('MCP snippet copied.', 'success');
 };
 

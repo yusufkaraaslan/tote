@@ -36,6 +36,7 @@ const HOST = new Set([
 const FIRE = new Set(['pty:write', 'pty:resize', 'pty:kill', 'pty:detach']);
 
 const VIEWER = new Set([
+  'clipboard:readText', 'clipboard:writeText',
   'config:getProviders', 'config:saveProviders', 'config:openDir',
   'settings:get', 'settings:save',
   'apps:list', 'apps:add', 'apps:remove', 'apps:launch',

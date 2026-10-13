@@ -130,6 +130,11 @@ unregisters it, and changing its folder just re-points it.
   adds a line** instead of sending the message. **Shift+↑/↓** scrolls back through a long
   answer (Shift+Home/End jump to the ends) — a bare arrow stays the agent's own history key. **Drag an image onto an agent pane**
   and it arrives as a path the agent can read, the way a native terminal does it. Green/red dots show what's on your PATH.
+- **Copy and paste** — right-click selected text or an input in web tabs and documents
+  for editing actions. Terminals have a right-click Copy/Paste menu and use
+  **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows, **Cmd+C / Cmd+V** on macOS.
+  Plain Ctrl+C still interrupts the terminal command. Clipboard text stays on the
+  machine running your window, including when viewing another device.
 - **Remote spaces** — `+r` on the strip opens a project that lives on **another machine**
   over ssh, which is to say Tailscale works with no extra setup: give it a host
   (`devbox`, or `user@devbox`) and a path, and you get the same space you always had —

@@ -39,6 +39,8 @@ const VIEWER = new Set([
   'pty:run', 'provider:ensureLocal',
   'workspace:openPath', 'workspace:revealPath',
   'app:openExternal', 'app:newWindow',
+  // Which machine this WINDOW looks at is the viewer's business by definition.
+  'devices:list', 'devices:current', 'devices:view',
 ]);
 
 const SPLIT = new Set([

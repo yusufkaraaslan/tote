@@ -110,7 +110,7 @@ const preloadChannels = () =>
 const mainLiterals = () =>
   new Set([...read('src/main/main.js').matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
 const EVENTS = new Set(['pty:data', 'pty:exit', 'workspace:changed', 'workspaces:changed', 'views:changed',
-                        'remote:state', 'workspace:swept', 'download:done', 'win:focus']);
+                        'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'devices:lost']);
 
 describe('channels', () => {
   test('every channel preload uses is classified (or is an event)', () => {
@@ -370,6 +370,201 @@ describe('viewers', () => {
       assert.deepStrictEqual(calls.at(-2), ['a', 'b']);
       assert.deepStrictEqual(calls.at(-1), ['a']);
     } finally { h.cleanup(); }
+  });
+});
+
+/* ----- phase 3: protocol, tailscale, the wire ----- */
+
+const P = require('../src/host/protocol');
+const TS = require('../src/host/tailscale');
+const { DeviceServer } = require('../src/host/server');
+const { DeviceClient } = require('../src/main/devices');
+
+describe('protocol', () => {
+  test('well-formed frames decode, malformed ones are errors not exceptions', () => {
+    assert.deepStrictEqual(P.decode('{"t":"call","id":1,"m":"workspace:tree"}').msg.a, []);
+    assert.ok(P.decode('{"t":"hello","v":1}').msg);
+    assert.ok(P.decode('{"t":"ev","e":"pty:data","p":{}}').msg);
+    for (const bad of ['nope', '[]', 'null', '{"t":"call","m":"x"}', '{"t":"call","id":1}',
+                       '{"t":"call","id":1,"m":"x","a":"str"}', '{"t":"hello"}', '{"t":"zap"}', '{"t":"ev"}']) {
+      assert.ok(P.decode(bad).error, 'accepted ' + bad);
+    }
+  });
+
+  test('a version mismatch is a readable reason', () => {
+    assert.strictEqual(P.checkHello(P.hello('viewer', 'x')), null);
+    assert.match(P.checkHello({ t: 'hello', v: P.VERSION + 1 }), /update Tote/);
+    assert.match(P.checkHello({ t: 'call' }), /expected hello/);
+  });
+
+  test('another device can call host methods and nothing else', () => {
+    assert.ok(P.allowedRemote('workspace:tree'));
+    assert.ok(P.allowedRemote('workspaces:discardConfirmed'));     // second half of a split
+    for (const no of ['settings:save', 'apps:launch', 'pty:run', 'setup:fixNpmPrefix', 'app:openExternal',
+                      'devices:view', 'workspaces:add', 'constructor', '__proto__', 42, null]) {
+      assert.ok(!P.allowedRemote(no), String(no));
+    }
+  });
+});
+
+// Shaped like `tailscale status --json` / `whois --json`, with made-up people.
+const OWNER = 1111, OTHER = 2222;
+const STATUS = {
+  BackendState: 'Running',
+  Self: { HostName: "me's laptop", DNSName: 'laptop.tail0.ts.net.', OS: 'macOS', UserID: OWNER, Online: true,
+          TailscaleIPs: ['100.64.0.1', 'fd7a::1'] },
+  Peer: {
+    a: { HostName: 'desk', DNSName: 'desk.tail0.ts.net.', OS: 'linux', UserID: OWNER, Online: true, TailscaleIPs: ['100.64.0.2'] },
+    b: { HostName: 'box', DNSName: 'box.tail0.ts.net.', OS: 'linux', UserID: OWNER, Online: false, TailscaleIPs: ['100.64.0.3'] },
+    c: { HostName: 'friend', DNSName: 'friend.tail0.ts.net.', OS: 'linux', UserID: OTHER, Online: true, TailscaleIPs: ['100.64.0.4'] },
+    d: { HostName: 'shared', DNSName: 'shared.other.ts.net.', OS: 'linux', UserID: OWNER, Online: true, TailscaleIPs: ['100.64.0.5'], ShareeNode: true },
+  },
+  User: { [OWNER]: { ID: OWNER, LoginName: 'me@example.com' } },
+};
+const whois = (user, extra = {}) => ({
+  Node: { Name: 'desk.tail0.ts.net.', ComputedName: 'desk', User: user, Sharer: null, ...extra },
+  UserProfile: { ID: user, LoginName: user === OWNER ? 'me@example.com' : 'them@example.com' },
+});
+
+describe('tailscale', () => {
+  test('status: self, peers, and which of them are ours', () => {
+    const st = TS.parseStatus(JSON.stringify(STATUS));
+    assert.strictEqual(st.owner, OWNER);
+    assert.strictEqual(st.self.name, 'laptop');
+    assert.strictEqual(st.self.ip4, '100.64.0.1');
+    const by = Object.fromEntries(st.peers.map((p) => [p.name, p]));
+    assert.ok(by.desk.ours && by.desk.online);
+    assert.ok(by.box.ours && !by.box.online);
+    assert.ok(!by.friend.ours, 'another owner counted as ours');
+    assert.ok(!by.shared.ours, 'a shared-in node counted as ours');
+  });
+
+  test('status without Self (logged out) says so', () => {
+    assert.throws(() => TS.parseStatus({ BackendState: 'NeedsLogin' }), /logged in/);
+  });
+
+  test('authorize: our own device is let in, by name', () => {
+    assert.deepStrictEqual(TS.authorize(OWNER, whois(OWNER)), { ok: true, name: 'desk' });
+  });
+
+  test('authorize: someone else, a shared-in node, or an unknown address is not', () => {
+    assert.ok(!TS.authorize(OWNER, whois(OTHER)).ok);
+    assert.ok(!TS.authorize(OWNER, whois(OWNER, { Sharer: OTHER })).ok);
+    assert.ok(!TS.authorize(OWNER, whois(OWNER, { User: OTHER })).ok, 'node owner and profile disagree');
+    assert.ok(!TS.authorize(OWNER, {}).ok);
+    assert.ok(!TS.authorize(null, whois(OWNER)).ok);
+  });
+
+  test('a v4-mapped socket address is unwrapped for whois', () => {
+    assert.strictEqual(TS.peerIp('::ffff:100.64.0.2'), '100.64.0.2');
+    assert.strictEqual(TS.peerIp('100.64.0.2'), '100.64.0.2');
+  });
+});
+
+// The real server and the real client, over loopback, with the authorizer
+// injected -- everything but `tailscale whois` itself.
+async function wire({ authorize = async () => ({ ok: true, name: 'test' }) } = {}) {
+  const h = hostHarness();
+  const server = new DeviceServer({ host: h.host, device: 'host-box', tote: '9.9.9', authorize });
+  const addr = await server.start({ bind: '127.0.0.1', port: 0 });
+  const port = Number(addr.split(':').pop());
+  const events = [];
+  const client = new DeviceClient({ address: '127.0.0.1', port, device: 'viewer-box',
+    onEvent: (e, p) => events.push([e, p]) });
+  return { h, server, client, port, events,
+    done: async () => { client.close(); await server.stop(); h.cleanup(); } };
+}
+
+describe('the wire', () => {
+  test('connect, then a host call returns that host\'s answer', async () => {
+    const w = await wire();
+    try {
+      const hello = await w.client.connect();
+      assert.strictEqual(hello.device, 'host-box');
+      assert.strictEqual(hello.tote, '9.9.9');
+      const names = (await w.client.call('workspace:tree', [])).map((n) => n.name);
+      assert.ok(names.includes('only-in-one.txt'), names.join(','));
+    } finally { await w.done(); }
+  });
+
+  test('a remote viewer has its own space on the host', async () => {
+    const w = await wire();
+    try {
+      w.h.host.addViewer({ id: 'local', send: () => {} });
+      await w.client.connect();
+      await w.client.call('workspaces:setActive', ['b']);
+      assert.strictEqual((await w.client.call('workspaces:list', [])).active, 'b');
+      assert.strictEqual(w.h.host.viewers.get('local').wsId, 'a', 'the remote moved the local window');
+    } finally { await w.done(); }
+  });
+
+  test('terminal output streams to the remote viewer as events', async () => {
+    const w = await wire();
+    try {
+      await w.client.connect();
+      await w.client.call('pty:spawn', [{ sid: 'rs1', profileId: 'sh', cols: 80, rows: 24 }]);
+      w.h.ptys.out(1, 'over the wire');
+      await tick(50);
+      const data = w.events.filter(([e]) => e === 'pty:data').map(([, p]) => p.data).join('');
+      assert.ok(data.includes('over the wire'));
+    } finally { await w.done(); }
+  });
+
+  test('viewer-side channels are refused over the wire', async () => {
+    const w = await wire();
+    try {
+      await w.client.connect();
+      await assert.rejects(w.client.call('settings:save', [{}]), /Not callable from another device/);
+      await assert.rejects(w.client.call('apps:launch', ['x']), /Not callable from another device/);
+    } finally { await w.done(); }
+  });
+
+  test('an unauthorized caller never gets past the upgrade', async () => {
+    const w = await wire({ authorize: async () => ({ ok: false, reason: 'owned by someone else' }) });
+    try {
+      await assert.rejects(w.client.connect(), /refused by that device/);
+      assert.strictEqual(w.h.host.viewers.size, 0);
+    } finally { await w.done(); }
+  });
+
+  test('a probe is answered and never becomes a viewer', async () => {
+    const w = await wire();
+    try {
+      const probe = new DeviceClient({ address: '127.0.0.1', port: w.port, device: 'x', role: 'probe' });
+      const hello = await probe.connect();
+      assert.strictEqual(hello.device, 'host-box');
+      await tick(50);
+      assert.strictEqual(w.h.host.viewers.size, 0);
+      probe.close();
+    } finally { await w.done(); }
+  });
+
+  test('a peer on another protocol version is told why', async () => {
+    const w = await wire();
+    try {
+      const WebSocket = require('ws');
+      const ws = new WebSocket('ws://127.0.0.1:' + w.port);
+      const reply = await new Promise((resolve) => {
+        ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', v: P.VERSION + 7, role: 'viewer' })));
+        ws.on('message', (m) => resolve(JSON.parse(String(m))));
+      });
+      assert.match(reply.error, /update Tote/);
+      assert.strictEqual(w.h.host.viewers.size, 0);
+      ws.close();
+    } finally { await w.done(); }
+  });
+
+  test('a dropped connection removes its viewer but not its terminals', async () => {
+    const w = await wire();
+    try {
+      await w.client.connect();
+      await w.client.call('pty:spawn', [{ sid: 'rs2', profileId: 'sh', cols: 80, rows: 24 }]);
+      assert.strictEqual(w.h.host.viewers.size, 1);
+      w.client.close();
+      await tick(100);
+      assert.strictEqual(w.h.host.viewers.size, 0);
+      assert.ok(w.h.host.sessions.get('rs2').alive, 'the agent died with the connection');
+    } finally { await w.done(); }
   });
 });
 

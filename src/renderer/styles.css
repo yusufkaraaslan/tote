@@ -216,6 +216,30 @@ body.dragging { user-select: none; }
 .sidebar-header.sub { padding-top: 0; }
 #btn-add-ws, #btn-del-ws { flex-shrink: 0; padding: 3px 8px; }
 
+/* device chip: whose Tote this window is showing */
+#device-wrap { position: relative; flex-shrink: 0; }
+#btn-device {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 9px; font-size: 11px; color: #8a97b5;
+  border: 1px solid #232c44; border-radius: 999px; background: transparent;
+  max-width: 180px;
+}
+#btn-device #device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fb950; flex-shrink: 0; }
+#device-menu {
+  position: absolute; left: 0; top: 30px; min-width: 260px; z-index: 50;
+  background: #141b2c; border: 1px solid #2a3654; border-radius: 8px; padding: 5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+#device-menu.hidden { display: none; }
+#device-menu .term-menu-item.off { opacity: 0.5; cursor: default; }
+#device-menu .note { padding: 6px 8px; font-size: 11px; color: #6b7894; }
+/* Viewing ANOTHER machine: the strip says so, always, so it is never a guess
+   whose agents you are typing into. */
+body.on-device #ws-bar { background: #1a1408; border-bottom-color: #6b5a2b; }
+body.on-device #btn-device { color: #f0d9a8; border-color: #d9a441; background: #2a210c; }
+body.on-device .device-dot { background: #d9a441; }
+
 /* apps launcher menu */
 #apps-wrap { position: relative; }
 #apps-menu {

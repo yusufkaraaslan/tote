@@ -71,6 +71,11 @@ contextBridge.exposeInMainWorld('tote', {
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
 
+  // devices: other machines' Tote, over the tailnet
+  devicesList: () => ipcRenderer.invoke('devices:list'),
+  deviceCurrent: () => ipcRenderer.invoke('devices:current'),
+  deviceView: (target) => ipcRenderer.invoke('devices:view', target),
+
   // terminals -- host sessions, keyed by an id the renderer picks (see sessions.js)
   ptyAvailable: () => ipcRenderer.invoke('pty:available'),
   ptySpawn: (sid, profileId, cols, rows) =>
@@ -93,4 +98,5 @@ contextBridge.exposeInMainWorld('tote', {
   onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),
   onWindowFocus: (cb) => ipcRenderer.on('win:focus', () => cb()),
+  onDeviceLost: (cb) => ipcRenderer.on('devices:lost', (e, m) => cb(m)),
 });

@@ -68,7 +68,8 @@
     "@xterm/headless": "^5.5.0",
     "@xterm/xterm": "^5.5.0",
     "chokidar": "^4.0.1",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "electron": "^37.0.0",

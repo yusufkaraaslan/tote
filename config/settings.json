@@ -1,6 +1,8 @@
 {
   "bridgeDownloads": true,
   "keepAwake": false,
+  "shareDevice": false,
+  "devicePort": 47821,
   "setupDone": false,
   "scratchDays": 7,
   "remotePollMs": 4000

@@ -1399,6 +1399,108 @@ async function sendToTab(relPath) {
   }
 }
 
+/* ---------------- devices ----------------
+ * A window can show another machine's Tote instead of this one's: every host
+ * call is routed there by main, so after switching the renderer just reloads
+ * and comes up against the other host as if it were local. Phase 4 of the
+ * devices design keeps each device's panes alive across switches instead. */
+
+function renderDeviceChip() {
+  const d = state.device;
+  $('#device-name').textContent = d ? d.name : 'this machine';
+  $('#btn-device').title = d
+    ? 'This window shows ' + d.name + "'s Tote — click to switch"
+    : "This window shows this machine's Tote — click for your other devices";
+  document.body.classList.toggle('on-device', !!d);
+}
+
+// Carried across the reload a switch causes, so the reason is still on screen.
+function toastAfterReload(msg, kind) {
+  try { sessionStorage.setItem('toteToast', JSON.stringify([msg, kind])); } catch {}
+}
+
+async function viewDevice(target) {
+  $('#device-menu').classList.add('hidden');
+  try {
+    const d = await tote.deviceView(target);
+    toastAfterReload(d ? 'Now showing ' + d.name + "'s Tote." : "Back to this machine's Tote.", 'success');
+    location.reload();
+  } catch (e) {
+    toast('Could not open ' + ((target && target.name) || 'that device') + ': ' + e.message, 'error');
+  }
+}
+
+const DEVICE_STATE = {
+  ready: '', offline: 'offline', 'no-tote': 'Tote not running or not shared',
+  update: 'needs a Tote update', refused: 'refused',
+};
+
+async function renderDeviceMenu() {
+  const menu = $('#device-menu');
+  menu.innerHTML = '';
+  const item = (label, sub, fn, off) => {
+    const el = document.createElement('div');
+    el.className = 'term-menu-item' + (off ? ' off' : '');
+    el.appendChild(document.createTextNode(label));
+    if (sub) {
+      const s = document.createElement('span');
+      s.className = 'cmd';
+      s.textContent = sub;
+      el.appendChild(s);
+    }
+    if (fn && !off) el.onclick = fn;
+    menu.appendChild(el);
+    return el;
+  };
+  const note = (text) => {
+    const el = document.createElement('div');
+    el.className = 'note';
+    el.textContent = text;
+    menu.appendChild(el);
+  };
+  item('this machine', state.device ? 'switch back' : 'showing', state.device ? () => viewDevice(null) : null, !state.device);
+  const wait = document.createElement('div');
+  wait.className = 'note';
+  wait.textContent = 'looking for your devices…';
+  menu.appendChild(wait);
+  let res;
+  try { res = await tote.devicesList(); } catch (e) { res = { devices: [], error: e.message }; }
+  wait.remove();
+  if (res.error) note(res.error);
+  for (const d of res.devices || []) {
+    const here = state.device && state.device.address === d.ip4;
+    const sub = here ? 'showing' : DEVICE_STATE[d.state] || d.state;
+    item(d.name, sub, () => viewDevice({ address: d.ip4, name: d.name }), d.state !== 'ready' || here);
+  }
+  if (res.devices && !res.devices.length && !res.error) note('No other devices of yours on this tailnet.');
+  const sep = document.createElement('div');
+  sep.className = 'ctx-sep';
+  menu.appendChild(sep);
+  const sh = res.share || {};
+  note(sh.on ? 'This machine is shared on ' + sh.address + '.'
+    : sh.error ? 'Sharing this machine failed: ' + sh.error
+    : 'This machine is not shared — Settings → Behavior to turn it on.');
+}
+
+$('#btn-device').onclick = async (e) => {
+  e.stopPropagation();
+  const menu = $('#device-menu');
+  if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+  menu.classList.remove('hidden');
+  await renderDeviceMenu();
+};
+document.addEventListener('click', (e) => {
+  if (!$('#device-wrap').contains(e.target)) $('#device-menu').classList.add('hidden');
+});
+
+// The other machine went away (asleep, quit, off the tailnet). Main has already
+// pointed this window back home; the reload brings this machine's Tote up.
+tote.onDeviceLost((m) => {
+  toastAfterReload(m.name + ' went offline' + (m.reason ? ' (' + m.reason + ')' : '') +
+    " — back to this machine's Tote. Its agents keep running there.", 'error');
+  location.reload();
+});
+
 /* ---------------- native apps launcher ---------------- */
 async function renderAppsMenu() {
   const menu = $('#apps-menu');
@@ -2612,6 +2714,7 @@ function renderSettings() {
   // behavior
   $('#set-bridge').checked = state.settings.bridgeDownloads !== false;
   $('#set-awake').checked = state.settings.keepAwake === true;
+  $('#set-share').checked = state.settings.shareDevice === true;
 
   // cli profiles
   const cHost = $('#settings-clis');
@@ -2652,6 +2755,14 @@ $('#set-bridge').onchange = async (e) => {
   state.settings.bridgeDownloads = e.target.checked;
   await tote.saveSettings(state.settings);
   toast('Downloads bridge ' + (e.target.checked ? 'enabled' : 'disabled') + '.', 'success');
+};
+
+$('#set-share').onchange = async (e) => {
+  state.settings.shareDevice = e.target.checked;
+  await tote.saveSettings(state.settings);
+  toast(e.target.checked
+    ? 'Sharing this machine with your devices. Open the device menu (top left) to check it is listening.'
+    : 'This machine is no longer shared.', 'success');
 };
 
 $('#set-awake').onchange = async (e) => {
@@ -3050,6 +3161,12 @@ tote.onDownloadDone((m) => {
   state.profiles = await tote.getCliProfiles();
   state.apps = await tote.listApps();
   state.settings = await tote.getSettings();
+  state.device = await tote.deviceCurrent();   // null: this machine's own host
+  renderDeviceChip();
+  try {
+    const carried = sessionStorage.getItem('toteToast');
+    if (carried) { sessionStorage.removeItem('toteToast'); toast(...JSON.parse(carried)); }
+  } catch {}
   state.workspaces = await tote.listWorkspaces();
   state.views = (await tote.getViews()) || {};
   await refreshSessions();     // before the first applyTiles, or every term leaf is pruned

@@ -180,10 +180,35 @@ systems:
     depends_on:
     - host.channels
     - host.host
+    - host.server
+    - host.tailscale
+    - main.devices
     - main.config
     - main.installer
     - main.ptymanager
     - main.workspace
+  - id: devices
+    name: devices
+    kind: module
+    class_name: src/main/devices.js
+    depends_on:
+    - host.protocol
+    - host.tailscale
+    methods:
+    - name: connect
+      args: []
+    - name: call
+      args:
+      - name: method
+        type: unknown
+      - name: args
+        type: unknown
+    - name: close
+      args: []
+    - name: discover
+      args:
+      - name: opts
+        type: unknown
   - id: ptymanager
     name: ptyManager
     kind: module
@@ -960,6 +985,93 @@ systems:
       args:
       - name: host
         type: unknown
+  - id: protocol
+    name: protocol
+    kind: module
+    class_name: src/host/protocol.js
+    depends_on:
+    - host.channels
+    methods:
+    - name: allowedRemote
+      args:
+      - name: method
+        type: unknown
+    - name: encode
+      args:
+      - name: msg
+        type: unknown
+    - name: decode
+      args:
+      - name: text
+        type: unknown
+    - name: hello
+      args:
+      - name: role
+        type: unknown
+      - name: device
+        type: unknown
+      - name: tote
+        type: unknown
+    - name: checkHello
+      args:
+      - name: msg
+        type: unknown
+  - id: tailscale
+    name: tailscale
+    kind: module
+    class_name: src/host/tailscale.js
+    methods:
+    - name: parseStatus
+      args:
+      - name: json
+        type: unknown
+    - name: authorize
+      args:
+      - name: owner
+        type: unknown
+      - name: whois
+        type: unknown
+    - name: peerIp
+      args:
+      - name: addr
+        type: unknown
+    - name: run
+      args:
+      - name: args
+        type: unknown
+      - name: timeout
+        type: unknown
+    - name: status
+      args: []
+    - name: whois
+      args:
+      - name: ip
+        type: unknown
+    - name: ip4
+      args: []
+  - id: server
+    name: server
+    kind: module
+    class_name: src/host/server.js
+    depends_on:
+    - host.host
+    - host.protocol
+    - host.tailscale
+    methods:
+    - name: start
+      args:
+      - name: opts
+        type: unknown
+    - name: accept
+      args:
+      - name: ws
+        type: unknown
+      - name: auth
+        type: unknown
+    - name: stop
+      args: []
+    - name: tailnetAuthorizer
+      args: []
 - id: preload
   name: Preload
   components:

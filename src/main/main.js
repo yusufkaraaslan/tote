@@ -11,6 +11,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const http = require('http');
 const { spawn, execSync, execFileSync } = require('child_process');
 const { ConfigStore } = require('./config');
@@ -19,6 +20,9 @@ const { PtyManager } = require('./ptyManager');
 const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
 const { Host } = require('../host/host');
 const CH = require('../host/channels');
+const { DeviceServer, tailnetAuthorizer } = require('../host/server');
+const TS = require('../host/tailscale');
+const { DeviceClient, discover } = require('./devices');
 
 // LLM sites (Cloudflare-fronted ones especially) reject UAs that don't match
 // the real engine. Use Electron's own UA with the Electron/Tote tokens
@@ -148,6 +152,11 @@ let workspace;
 let ptys;
 let host;
 let lastFocused = null;   // viewer id of the window that last had focus
+let deviceServer = null;  // this machine's listener, while sharing is on
+let shareError = null;    // why sharing is not on, when it should be
+// webContents id -> { client, name, address, port }: the windows looking at
+// ANOTHER machine's Tote. A window not in here talks to the local host.
+const viewing = new Map();
 let swept = [];   // stale temp spaces removed at launch, reported once the UI is up
 
 const partitionFor = (providerId) => `persist:tote-${providerId}`;
@@ -165,6 +174,52 @@ function spaceOfWindow(wc) {
 }
 
 const winOf = (e) => BrowserWindow.fromWebContents(e.sender) || undefined;
+
+/* ----- devices ----- */
+
+const DEFAULT_DEVICE_PORT = 47821;
+const devicePort = () => Number(configStore.getSettings().devicePort) || DEFAULT_DEVICE_PORT;
+const deviceOf = (wc) => viewing.get(wc.id) || null;
+
+let selfNameCache = null;
+async function selfName() {
+  if (selfNameCache) return selfNameCache;
+  try { selfNameCache = (await TS.status()).self.name; } catch { selfNameCache = os.hostname(); }
+  return selfNameCache;
+}
+
+// Things that only make sense against THIS machine's disk refuse while the
+// window is looking at another one, rather than acting on the wrong machine.
+function localOnly(e, what) {
+  const d = deviceOf(e.sender);
+  if (d) throw new Error(what + ' is not available while viewing ' + d.name);
+}
+
+/* Share this machine: listen on its tailnet address, and only there. Opt-in
+ * (settings.shareDevice) -- a machine nobody meant to expose must not become
+ * reachable because Tote updated. Re-applied on every settings save. */
+async function applyShareSetting() {
+  const want = configStore.getSettings().shareDevice === true;
+  const port = devicePort();
+  if (deviceServer && (!want || !deviceServer.address.endsWith(':' + port))) {
+    await deviceServer.stop();
+    deviceServer = null;
+  }
+  shareError = null;
+  if (!want || deviceServer) return;
+  try {
+    const bind = await TS.ip4();
+    const server = new DeviceServer({
+      host, device: await selfName(), tote: app.getVersion(), authorize: tailnetAuthorizer(),
+    });
+    await server.start({ bind, port });
+    deviceServer = server;
+    console.log('[tote] sharing this device on ' + server.address);
+  } catch (e) {
+    shareError = e.code === 'EADDRINUSE' ? 'port ' + port + ' is already in use' : e.message;
+    console.error('[tote] could not share this device:', shareError);
+  }
+}
 
 function uniquePath(p) {
   if (!fs.existsSync(p)) return p;
@@ -418,13 +473,21 @@ function createWindow() {
   // Registered before the page loads, so its first IPC call finds a viewer.
   // `send` guards on isDestroyed: a closing window can still be handed an
   // event, and every call on a destroyed webContents throws.
-  host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
+  // While the window looks at another machine, this machine's host has
+  // nothing to tell it: those events would land in a renderer showing a
+  // different device's spaces and terminals.
+  host.addViewer({ id: vid, send: (ev, payload) => {
+    if (!wc.isDestroyed() && !viewing.has(wc.id)) wc.send(ev, payload);
+  } });
   lastFocused = vid;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   // Its terminals keep running: the sessions belong to the host, and another
   // window -- or a later one -- re-attaches with a replay.
+  const wcId = wc.id;
   win.on('closed', () => {
+    const d = viewing.get(wcId);
+    if (d) { viewing.delete(wcId); d.client.close(); }
     host.removeViewer(vid);
     if (lastFocused === vid) lastFocused = null;
   });
@@ -485,23 +548,30 @@ app.on('web-contents-created', (event, contents) => {
 // Everything the device owns is forwarded, by channel name, to the host's
 // method of the same name, with the calling window as the viewer. The table
 // of which channels those are is src/host/channels.js.
+//
+// A window viewing another device sends the same call to THAT device's host
+// instead. The renderer cannot tell the difference, which is the point.
+function route(e, name, args) {
+  const d = deviceOf(e.sender);
+  return d ? d.client.call(name, args) : host.call(name, viewerIdOf(e.sender), args);
+}
+
 function registerHostChannels() {
   for (const ch of CH.HOST) {
     if (CH.FIRE.has(ch)) {
-      ipcMain.on(ch, (e, ...args) => {
-        host.call(ch, viewerIdOf(e.sender), args).catch(() => {});
-      });
+      ipcMain.on(ch, (e, ...args) => { route(e, ch, args).catch(() => {}); });
     } else {
-      ipcMain.handle(ch, (e, ...args) => host.call(ch, viewerIdOf(e.sender), args));
+      ipcMain.handle(ch, (e, ...args) => route(e, ch, args));
     }
   }
 }
 
-const hostCall = (e, name, ...args) => host.call(name, viewerIdOf(e.sender), args);
+const hostCall = (e, name, ...args) => route(e, name, args);
 
 // --- IPC: split channels (a picker here, the operation on the host) ------------------
 
 ipcMain.handle('workspaces:add', async (e, name) => {
+  localOnly(e, 'Adding a folder space');
   const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Pick or create the workspace folder for "' + name + '"',
     properties: ['openDirectory', 'createDirectory'],
@@ -513,6 +583,7 @@ ipcMain.handle('workspaces:add', async (e, name) => {
 // Point an existing space at a different folder (folder picker). Nothing on
 // disk moves; open terminals keep their old cwd.
 ipcMain.handle('workspaces:setPath', async (e, id) => {
+  localOnly(e, 'Picking a folder');
   const w = workspace.space(id);
   if (!w) throw new Error('Unknown workspace: ' + id);
   const res = await dialog.showOpenDialog(winOf(e), {
@@ -550,6 +621,7 @@ ipcMain.handle('workspaces:discard', async (e, id) => {
 });
 
 ipcMain.handle('workspaces:promote', async (e, id) => {
+  localOnly(e, 'Picking a folder');
   const w = workspace.space(id);
   if (!w) throw new Error('Unknown workspace: ' + id);
   const res = await dialog.showOpenDialog(winOf(e), {
@@ -565,9 +637,57 @@ ipcMain.handle('workspaces:promote', async (e, id) => {
 // default application instead. Both stay inside resolveSafe.
 
 const viewerWs = (e) => workspace.scoped(spaceOfWindow(e.sender));
-ipcMain.handle('workspace:openPath', (e, rel) => shell.openPath(viewerWs(e).resolveSafe(rel)));
+ipcMain.handle('workspace:openPath', (e, rel) => {
+  localOnly(e, 'Opening with this machine\'s apps');
+  return shell.openPath(viewerWs(e).resolveSafe(rel));
+});
 ipcMain.handle('workspace:revealPath', (e, rel) => {
+  localOnly(e, 'Revealing in this machine\'s file manager');
   shell.showItemInFolder(viewerWs(e).resolveSafe(rel));
+});
+
+// --- IPC: devices ------------------------------------------------------------------------
+
+// Your other machines with Tote, probed live, plus whether this one is shared.
+ipcMain.handle('devices:list', async () => {
+  const share = { on: !!deviceServer, address: deviceServer && deviceServer.address, error: shareError };
+  try {
+    return { ...(await discover({ port: devicePort(), device: await selfName() })), share };
+  } catch (e) {
+    return { self: null, devices: [], share, error: e.message };
+  }
+});
+
+ipcMain.handle('devices:current', (e) => {
+  const d = deviceOf(e.sender);
+  return d ? { name: d.name, address: d.address, port: d.port } : null;
+});
+
+/* Point this window at another machine's Tote (or back home with null).
+ * The renderer reloads itself afterwards and simply comes up against the new
+ * host: every host channel is routed by route(), so nothing in it changes. */
+ipcMain.handle('devices:view', async (e, target) => {
+  const wc = e.sender;
+  const old = viewing.get(wc.id);
+  if (old) { viewing.delete(wc.id); old.client.close(); }
+  if (!target) { host.syncWatches(); return null; }
+  const port = Number(target.port) || devicePort();
+  const entry = { client: null, name: target.name || target.address, address: target.address, port };
+  entry.client = new DeviceClient({
+    address: target.address, port, device: await selfName(),
+    onEvent: (ev, payload) => { if (viewing.get(wc.id) === entry && !wc.isDestroyed()) wc.send(ev, payload); },
+    onClose: (code, reason) => {
+      if (viewing.get(wc.id) !== entry) return;
+      viewing.delete(wc.id);
+      if (!wc.isDestroyed()) wc.send('devices:lost', { name: entry.name, reason });
+    },
+  });
+  const hello = await entry.client.connect();
+  if (!target.name && hello.device) entry.name = hello.device;
+  // This machine's terminals stop streaming into a window that no longer shows them.
+  host.sessions.detachAll(viewerIdOf(wc));
+  viewing.set(wc.id, entry);
+  return { name: entry.name, address: entry.address, port };
 });
 
 // --- IPC: config ------------------------------------------------------------------------
@@ -585,6 +705,7 @@ ipcMain.handle('settings:save', (e, s) => {
   configStore.saveSettings(s);
   applyBridgeSetting();
   applyKeepAwake();
+  applyShareSetting();
   return true;
 });
 
@@ -615,6 +736,7 @@ ipcMain.handle('apps:remove', (e, id) => {
 ipcMain.handle('apps:launch', (e, id) => {
   const entry = configStore.getApps().list.find((a) => a.id === id);
   if (!entry) throw new Error('Unknown app: ' + id);
+  localOnly(e, 'Launching a native app into a space');
   return launchApp(entry, viewerWs(e));
 });
 
@@ -629,6 +751,7 @@ ipcMain.handle('setup:fixNpmPrefix', () => fixNpmPrefix());
 ipcMain.handle('conn:claudeStatus', () => claudeStatus());
 
 ipcMain.handle('conn:bindClaude', (e) => {
+  localOnly(e, 'Binding Claude Desktop');
   const W = viewerWs(e);
   if (workspace.isRemote(W.active())) {
     throw new Error('Claude Desktop runs on this machine and cannot be bound to a remote space');
@@ -637,7 +760,10 @@ ipcMain.handle('conn:bindClaude', (e) => {
   return { cfgPath, workspace: W.active().name, root: W.getRoot() };
 });
 
-ipcMain.handle('conn:mcpSnippet', (e) => mcpSnippet(viewerWs(e).getRoot()));
+ipcMain.handle('conn:mcpSnippet', (e) => {
+  localOnly(e, 'An MCP snippet for this machine');
+  return mcpSnippet(viewerWs(e).getRoot());
+});
 
 // Run an arbitrary install/setup command in a PTY rooted at the window's
 // space, so the wizard can stream real output into a mini terminal. Not a host
@@ -761,6 +887,7 @@ if (!gotLock) {
     }
     applyBridgeSetting();
     applyKeepAwake();
+    applyShareSetting();
     createWindow();
 
     app.on('activate', () => {

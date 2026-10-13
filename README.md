@@ -148,6 +148,11 @@ unregisters it, and changing its folder just re-points it.
   pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
   to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at
   whatever width you left it. Layouts are remembered **per workspace**.
+- **Your other machines** — run Tote on each of your machines, tick **Settings → Share this machine**
+  on the ones you want to reach, and the chip at the top left lists them (over Tailscale). Pick one
+  and this window *becomes* that machine's Tote: its spaces, its files, its agents still running —
+  type into them from here. The strip turns amber while you're on another machine. Only your own
+  Tailscale devices are let in; nothing listens anywhere but the Tailscale address.
 - **More than one window** — **Cmd/Ctrl+Shift+N** opens another window on the same Tote. Each
   window is in its own workspace, but they share the terminals: open the same space in both and
   the agent shows in both, with its scrollback, live. Terminals belong to the app rather than to

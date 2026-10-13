@@ -1,6 +1,6 @@
 # Devices — every Tote you own, from any Tote you sit at
 
-**Status:** phase 1 (keep awake) and phase 2 (host extraction) implemented; phases 3–4 not started
+**Status:** phases 1–3 implemented (keep awake, host extraction, protocol + listener + a minimal device chip); phase 4 not started
 **Branch:** `feat/devices`
 
 ## Goal
@@ -336,6 +336,22 @@ Each phase leaves Tote working and is verified before the next one starts.
 4. **Devices UI.** The device chip and menu, per-device state, offline
    banners, doc caching, download push, auth URLs opening on the viewer.
 5. **Later:** host-only and client-only roles.
+
+*Phase 3 as built:* `protocol.js`, `tailscale.js` and `server.js` under
+`src/host/`, the client and discovery in `src/main/devices.js`, and `route()`
+in `main.js`. It shipped with a small device chip and menu rather than only a
+dev menu item, because switching was cheap to build once routing existed: the
+window reloads against the other host. Verified with two isolated instances on
+one Mac talking through the real tailnet (`whois` on its own address). Chunked
+transfers were deferred to phase 4 with the features that need them (download
+push, PDF/HTML caching) — frames are capped at 64 MB, enough for a 25 MB image
+in base64. Discovery probes use a `probe` hello role that is answered and never
+becomes a viewer, so opening the menu does not arm watchers on every machine.
+
+Phase 4 still owes: per-device pane retention (no reload on switch), offline
+banners over a dropped device's panes, web downloads pushed into the viewed
+machine's inbox, PDF/HTML doc caching for another machine's files, auth URLs
+opening on the viewer, and typed-path folder picking for another machine.
 
 ## Tests
 

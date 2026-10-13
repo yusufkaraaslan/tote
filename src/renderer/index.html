@@ -12,6 +12,13 @@
   <div id="app">
     <!-- workspace strip: the ACTIVE space is the routing context for everything below -->
     <div id="ws-bar">
+      <!-- which machine's Tote this window shows (devices design) -->
+      <div id="device-wrap">
+        <button id="btn-device" title="Which machine's Tote this window shows — click for your other devices">
+          <span class="device-dot"></span><span id="device-name">this machine</span>
+        </button>
+        <div id="device-menu" class="hidden"></div>
+      </div>
       <div id="ws-tabs"></div>
       <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
       <button id="btn-add-temp" class="plus" title="New temp space (deletable, swept when stale)">+t</button>
@@ -106,6 +113,12 @@
         <input type="checkbox" id="set-bridge" />
         Copy downloads made by native LLM apps (Claude, ChatGPT, Kimi…) from system Downloads
         into the active workspace inbox. Originals stay in Downloads. macOS only.
+      </label>
+      <label class="settings-check">
+        <input type="checkbox" id="set-share" />
+        Share this machine with my other devices: they can open its Tote — spaces, files,
+        running agents — over Tailscale. Only your own devices are let in, and only on this
+        machine's Tailscale address.
       </label>
       <label class="settings-check">
         <input type="checkbox" id="set-awake" />

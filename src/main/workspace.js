@@ -924,4 +924,4 @@ class WorkspaceManager {
   }
 }
 
-module.exports = { WorkspaceManager, originApp, docKind };
+module.exports = { WorkspaceManager, originApp, docKind, expandTilde };

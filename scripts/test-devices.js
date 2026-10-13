@@ -110,7 +110,7 @@ const preloadChannels = () =>
 const mainLiterals = () =>
   new Set([...read('src/main/main.js').matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
 const EVENTS = new Set(['pty:data', 'pty:exit', 'workspace:changed', 'workspaces:changed', 'views:changed',
-                        'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'devices:lost']);
+                        'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'devices:lost', 'devices:back', 'remote:auth']);
 
 describe('channels', () => {
   test('every channel preload uses is classified (or is an event)', () => {
@@ -565,6 +565,109 @@ describe('the wire', () => {
       assert.strictEqual(w.h.host.viewers.size, 0);
       assert.ok(w.h.host.sessions.get('rs2').alive, 'the agent died with the connection');
     } finally { await w.done(); }
+  });
+});
+
+/* ----- phase 4: transfers, login pages, typed paths, keep-awake ----- */
+
+describe('transfers', () => {
+  test('readChunk walks a file in slices and says when it is done', async () => {
+    const h = hostHarness();
+    try {
+      const big = Buffer.alloc(5 * 1024 * 1024 + 7, 0x41);
+      fs.writeFileSync(path.join(h.tmp, 'one', 'big.pdf'), big);
+      h.host.addViewer({ id: 'v', send: () => {} });
+      const parts = [];
+      for (let off = 0; ;) {
+        const c = await h.host.call('workspace:readChunk', 'v', ['big.pdf', off]);
+        const b = Buffer.from(c.b64, 'base64');
+        parts.push(b);
+        off += b.length;
+        assert.strictEqual(c.size, big.length);
+        if (c.eof) break;
+      }
+      assert.ok(parts.length >= 2, 'one slice for a 5 MB file');
+      assert.ok(Buffer.concat(parts).equals(big));
+    } finally { h.cleanup(); }
+  });
+
+  test('readChunk stays inside the space', async () => {
+    const h = hostHarness();
+    try {
+      h.host.addViewer({ id: 'v', send: () => {} });
+      await assert.rejects(h.host.call('workspace:readChunk', 'v', ['../two/only-in-two.txt', 0]), /escapes/);
+    } finally { h.cleanup(); }
+  });
+
+  test('an upload lands in the inbox of the space it was started for', async () => {
+    const h = hostHarness();
+    try {
+      h.host.addViewer({ id: 'v', send: () => {} });          // the viewer itself is in space a
+      const chunk = (b64, final) => h.host.call('workspace:upload', 'v',
+        [{ id: 'up123456', wsId: 'b', name: 'report (1).pdf', providerId: 'claude', b64, final }]);
+      await chunk(Buffer.from('hello ').toString('base64'), false);
+      const res = await chunk(Buffer.from('world').toString('base64'), true);
+      assert.strictEqual(res.workspace, 'B');
+      assert.strictEqual(res.path, path.join(h.tmp, 'two', 'inbox', 'claude', 'report (1).pdf'));
+      assert.strictEqual(fs.readFileSync(res.path, 'utf8'), 'hello world');
+      assert.strictEqual(h.host.uploads.size, 0, 'staging left behind');
+    } finally { h.cleanup(); }
+  });
+
+  test('an upload cannot name its way out of the inbox', async () => {
+    const h = hostHarness();
+    try {
+      h.host.addViewer({ id: 'v', send: () => {} });
+      const res = await h.host.call('workspace:upload', 'v',
+        [{ id: 'up654321', wsId: 'a', name: '../../../etc/evil', b64: '', final: true }]);
+      assert.strictEqual(path.basename(res.path), 'evil');
+      assert.ok(res.path.startsWith(path.join(h.tmp, 'one', 'inbox')), res.path);
+      await assert.rejects(h.host.call('workspace:upload', 'v', [{ id: '../x', name: 'a', final: true }]), /Bad upload id/);
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('login pages and device settings', () => {
+  test('a remote space login page goes to the viewer that clicked connect, only', () => {
+    const h = hostHarness();
+    try {
+      const r1 = recorder(), r2 = recorder();
+      h.host.addViewer({ id: 'v1', send: r1.send });
+      h.host.addViewer({ id: 'v2', send: r2.send });
+      h.host.authUrl('https://login.example/a/xyz', { viewerId: 'v2', wsId: 'b' });
+      assert.ok(!r1.got.some(([e]) => e === 'remote:auth'));
+      assert.deepStrictEqual(r2.got.find(([e]) => e === 'remote:auth')[1], { id: 'b', url: 'https://login.example/a/xyz' });
+      h.host.authUrl('https://login.example/b', null);          // a silent reconnect opens nothing
+      assert.strictEqual(r1.got.length + r2.got.length, 1);
+    } finally { h.cleanup(); }
+  });
+
+  test('keep-awake is set on the host and applied there', async () => {
+    const h = hostHarness();
+    try {
+      let saved = {}, applied = 0;
+      h.host.cfg.getSettings = () => saved;
+      h.host.cfg.saveSettings = (x) => { saved = x; };
+      h.host.platform.applyKeepAwake = () => { applied++; };
+      h.host.addViewer({ id: 'v', send: () => {} });
+      await h.host.call('device:setKeepAwake', 'v', [true]);
+      assert.strictEqual(saved.keepAwake, true);
+      assert.strictEqual(applied, 1);
+      assert.deepStrictEqual(await h.host.call('device:settings', 'v', []), { keepAwake: true });
+    } finally { h.cleanup(); }
+  });
+
+  test('a typed folder must be absolute, and ~ is the host\'s home', async () => {
+    const h = hostHarness();
+    try {
+      h.host.addViewer({ id: 'v', send: () => {} });
+      await assert.rejects(h.host.call('workspaces:addLocal', 'v', ['rel', 'some/relative']), /absolute path/);
+      const where = path.join(h.tmp, 'typed');
+      const st = await h.host.call('workspaces:addLocal', 'v', ['Typed', where]);
+      assert.strictEqual(st.list.find((w) => w.name === 'Typed').path, where);
+      assert.ok(fs.existsSync(path.join(where, 'inbox')));
+      assert.strictEqual(require('../src/main/workspace').expandTilde('~/x'), path.join(os.homedir(), 'x'));
+    } finally { h.cleanup(); }
   });
 });
 

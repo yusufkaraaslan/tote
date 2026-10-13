@@ -151,7 +151,11 @@ unregisters it, and changing its folder just re-points it.
 - **Your other machines** — run Tote on each of your machines, tick **Settings → Share this machine**
   on the ones you want to reach, and the chip at the top left lists them (over Tailscale). Pick one
   and this window *becomes* that machine's Tote: its spaces, its files, its agents still running —
-  type into them from here. The strip turns amber while you're on another machine. Only your own
+  type into them from here. The strip turns amber while you're on another machine. Switching back
+  and forth is instant and loses nothing: each machine's panes stay alive in the window, web tabs
+  keep their pages and unsent drafts. If a machine sleeps, its panes stay up under a banner and
+  reconnect by themselves when it wakes. A download from a web tab goes to the machine you were
+  looking at, PDFs from it open here, and **Keep awake** in Settings applies to it. Only your own
   Tailscale devices are let in; nothing listens anywhere but the Tailscale address.
 - **More than one window** — **Cmd/Ctrl+Shift+N** opens another window on the same Tote. Each
   window is in its own workspace, but they share the terminals: open the same space in both and

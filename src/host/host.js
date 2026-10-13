@@ -8,13 +8,28 @@
 // so a windowless host can be started later with a plain-node one. The rule is
 // enforced by scripts/test-devices.js, not by good intentions.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 const { Sessions } = require('./sessions');
 const { shellCommand } = require('../main/ptyManager');
 const { shq } = require('../main/sshfix');
+const { expandTilde } = require('../main/workspace');
+
+// A typed folder path (from another machine, where no picker can browse this
+// disk): `~` is THIS machine's home, and it must be absolute after that, or
+// mkdir and rename would act relative to wherever the process happens to be.
+function hostPath(p) {
+  const abs = expandTilde(String(p || '').trim());
+  if (!path.isAbsolute(abs)) throw new Error('Give an absolute path, or one starting with ~/');
+  return abs;
+}
 
 const SEND_FILE_MAX = 15 * 1024 * 1024;
+// Transfers between devices move in slices, so a 200 MB download or PDF never
+// sits in one frame (the protocol caps frames at 64 MB) or one buffer.
+const CHUNK_MAX = 4 * 1024 * 1024;
+const UPLOAD_ID = /^[A-Za-z0-9_-]{6,64}$/;
 
 class Host {
   constructor({ cfg, workspace, ptys, platform }) {
@@ -29,6 +44,7 @@ class Host {
       if (v) v.send(ev, payload);
     });
     this.methods = methods(this);
+    this.uploads = new Map();   // upload id -> { dir, file, wsId, providerId }
   }
 
   /* ----- viewers ----- */
@@ -126,6 +142,15 @@ class Host {
     this.sessions.killWhere((s) => s.wsId === id);
   }
 
+  /* A remote space's login page belongs on the machine of whoever clicked
+   * "connect" -- which, with devices, need not be this one. So the URL goes as
+   * an event to that one viewer, whose renderer opens it in ITS browser. With
+   * no owner (a silent reconnect) nothing opens; the banner offers the link. */
+  authUrl(url, owner) {
+    const v = owner && this.viewers.get(owner.viewerId);
+    if (v) { try { v.send('remote:auth', { id: owner.wsId, url }); } catch {} }
+  }
+
   /* ----- remote connect sessions -----
    * RemoteConn calls this through the launchPty hook. Its pty is an ordinary
    * session, so a second viewer can watch -- and answer -- the host-key
@@ -171,14 +196,14 @@ function methods(host) {
       return host.wsState(ctx);
     },
     'workspaces:addLocal': (ctx, name, absPath) => {
-      const id = W.add(name, absPath);
+      const id = W.add(name, hostPath(absPath));
       host.setViewerSpace(ctx, id);
       host.spacesChanged();
       return host.wsState(ctx);
     },
     // Nothing on disk moves; open terminals keep their old cwd.
     'workspaces:setPathTo': (ctx, id, absPath) => {
-      W.updateSpace(id, { path: absPath });
+      W.updateSpace(id, { path: hostPath(absPath) });
       host.spacesChanged();
       return host.wsState(ctx);
     },
@@ -216,7 +241,7 @@ function methods(host) {
       return host.wsState(ctx);
     },
     'workspaces:promoteTo': (ctx, id, absPath) => {
-      W.promote(id, absPath);
+      W.promote(id, hostPath(absPath));
       host.spacesChanged();
       return host.wsState(ctx);
     },
@@ -262,6 +287,61 @@ function methods(host) {
       const stat = fs.statSync(abs);
       if (stat.size > SEND_FILE_MAX) throw new Error('File too large for in-page attach (> 15 MB)');
       return { name: path.basename(abs), b64: fs.readFileSync(abs).toString('base64') };
+    },
+
+    // One slice of a file, for a viewer on another machine that needs a real
+    // local copy (a PDF or an HTML page for a <webview>). localFileFor makes a
+    // remote space's file local HERE first, so this works for those too.
+    'workspace:readChunk': async (ctx, rel, offset, length) => {
+      const abs = await host.ws(ctx).localFileFor(rel);
+      const size = fs.statSync(abs).size;
+      const start = Math.max(0, Number(offset) || 0);
+      const len = Math.min(CHUNK_MAX, Math.max(0, Number(length) || CHUNK_MAX), Math.max(0, size - start));
+      const buf = Buffer.alloc(len);
+      const fd = fs.openSync(abs, 'r');
+      try { fs.readSync(fd, buf, 0, len, start); } finally { fs.closeSync(fd); }
+      return { b64: buf.toString('base64'), size, eof: start + len >= size };
+    },
+    /* A file arriving from another machine -- a download made in a web tab
+     * there while it was showing this machine. Chunks append to a staging file
+     * named like the download; the last one files it into the inbox of the
+     * space given (fixed when the download STARTED, like any download) and the
+     * staging copy goes. The id is the viewer's, so two transfers never mix. */
+    'workspace:upload': async (ctx, { id, wsId, name, providerId, b64, final }) => {
+      if (!UPLOAD_ID.test(String(id))) throw new Error('Bad upload id');
+      let up = host.uploads.get(id);
+      if (!up) {
+        const base = path.basename(String(name || 'download'));
+        if (!base || base === '.' || base === '..') throw new Error('Bad file name');
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tote-upload-'));
+        up = { dir, file: path.join(dir, base), wsId: wsId || ctx.wsId, providerId: providerId || '_desktop' };
+        host.uploads.set(id, up);
+      }
+      try {
+        if (b64) fs.appendFileSync(up.file, Buffer.from(b64, 'base64'));
+        else if (!fs.existsSync(up.file)) fs.writeFileSync(up.file, '');
+        if (!final) return { ok: true };
+        const W = host.workspace.scoped(up.wsId);
+        const landed = await W.ingest(up.file, up.providerId);
+        host.uploads.delete(id);
+        fs.rmSync(up.dir, { recursive: true, force: true });
+        return { path: landed, workspace: W.active().name };
+      } catch (e) {
+        host.uploads.delete(id);
+        fs.rmSync(up.dir, { recursive: true, force: true });
+        throw e;
+      }
+    },
+
+    /* ----- settings that belong to the device ----- */
+    // Keep-awake is about the machine that stays awake, so it is set THERE --
+    // including from another machine that is looking at it. Sharing is not
+    // here on purpose: exposing a machine is decided at that machine.
+    'device:settings': () => ({ keepAwake: cfg.getSettings().keepAwake === true }),
+    'device:setKeepAwake': (ctx, on) => {
+      cfg.saveSettings({ ...cfg.getSettings(), keepAwake: !!on });
+      if (host.platform.applyKeepAwake) host.platform.applyKeepAwake();
+      return { keepAwake: !!on };
     },
 
     /* ----- config that belongs to the device ----- */

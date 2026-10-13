@@ -16,6 +16,11 @@
 const HOST = new Set([
   'workspaces:list', 'workspaces:setActive', 'workspaces:remove', 'workspaces:reorder',
   'workspaces:rename', 'workspaces:addRemote', 'workspaces:tempName', 'workspaces:addTemp',
+  // The second halves of the folder pickers, callable directly with a typed
+  // path: a native picker can only browse THIS machine's disk, so on another
+  // machine the path is typed instead.
+  'workspaces:addLocal', 'workspaces:setPathTo', 'workspaces:promoteTo',
+  'device:settings', 'device:setKeepAwake',
   'remote:connect', 'remote:state', 'remote:disconnect',
   'workspace:getRoot', 'workspace:tree', 'workspace:read', 'workspace:readDoc',
   'workspace:write', 'workspace:createFile', 'workspace:createFolder', 'workspace:rename',
@@ -40,7 +45,7 @@ const VIEWER = new Set([
   'workspace:openPath', 'workspace:revealPath',
   'app:openExternal', 'app:newWindow',
   // Which machine this WINDOW looks at is the viewer's business by definition.
-  'devices:list', 'devices:current', 'devices:view',
+  'devices:list', 'devices:current', 'devices:view', 'devices:open',
 ]);
 
 const SPLIT = new Set([
@@ -50,8 +55,9 @@ const SPLIT = new Set([
 
 // Host methods with no channel of their own: the second half of a split one.
 const HOST_ONLY = new Set([
-  'workspaces:addLocal', 'workspaces:setPathTo', 'workspaces:measure',
-  'workspaces:discardConfirmed', 'workspaces:promoteTo', 'workspace:fileBytes',
+  'workspaces:measure', 'workspaces:discardConfirmed', 'workspace:fileBytes',
+  // device-to-device transfers, driven by main, never by the renderer
+  'workspace:readChunk', 'workspace:upload',
 ]);
 
 function kindOf(channel) {

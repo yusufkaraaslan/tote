@@ -1,6 +1,6 @@
 # Devices — every Tote you own, from any Tote you sit at
 
-**Status:** phases 1–3 implemented (keep awake, host extraction, protocol + listener + a minimal device chip); phase 4 not started
+**Status:** phases 1–4 implemented; host-only and client-only roles (section 10) remain future work
 **Branch:** `feat/devices`
 
 ## Goal
@@ -348,10 +348,39 @@ push, PDF/HTML caching) — frames are capped at 64 MB, enough for a 25 MB image
 in base64. Discovery probes use a `probe` hello role that is answered and never
 becomes a viewer, so opening the menu does not arm watchers on every machine.
 
-Phase 4 still owes: per-device pane retention (no reload on switch), offline
-banners over a dropped device's panes, web downloads pushed into the viewed
-machine's inbox, PDF/HTML doc caching for another machine's files, auth URLs
-opening on the viewer, and typed-path folder picking for another machine.
+*Phase 4 as built:* all six of the items phase 3 left open.
+
+- **Pane retention.** The renderer keeps one slice of `state` per device and
+  swaps slices on a switch; the page never reloads. Events from another
+  machine carry its key as a trailing IPC argument, so a hidden device's
+  terminals keep streaming into their hidden panes. A window keeps a
+  connection per device it has opened, for its life.
+- **Offline.** A dropped device's panes stay up, dimmed, under a banner; main
+  retries with backoff (2 s → 30 s) and the renderer re-attaches every
+  terminal on the way back. Found while testing: a replay onto an xterm that
+  already shows the session doubles the scrollback, so a replay now resets
+  the xterm first.
+- **Downloads** made while viewing another machine stage locally and stream
+  up in 2 MB slices (`workspace:upload`) into the inbox of the space the
+  window was in when the download started.
+- **PDF/HTML** from another machine are fetched in 4 MB slices
+  (`workspace:readChunk`) into `<userData>/devices/…`, keyed by mtime.
+- **Login URLs** for a remote space go only to the viewer that clicked
+  connect, which opens them in its own machine's browser.
+- **Typed paths** replace the folder picker on another machine (`~` is that
+  machine's home), and **keep-awake** became a host setting, so it applies to
+  the machine on screen. Sharing stays decided at each machine.
+
+Verified by unit tests (46 in test-devices.js) and the two-instance tailnet
+run, 21/21: no reload across switches, a web tab's unsent draft surviving two
+switches, a hidden terminal streaming, a download landing on the other
+machine and not this one, a PDF opening from the local cache, keep-awake set
+remotely, a typed folder, the offline banner with panes kept, auto-reconnect,
+and a re-attach that does not double the scrollback.
+
+Still open, deliberately: host-only and client-only builds (section 10), an
+HTML page from another machine renders without its neighbouring assets, and
+pane retention is per window (a new window starts on this machine).
 
 ## Tests
 

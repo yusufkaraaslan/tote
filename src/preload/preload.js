@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('tote', {
   wsDiscard: (id) => ipcRenderer.invoke('workspaces:discard', id),
   wsPromote: (id) => ipcRenderer.invoke('workspaces:promote', id),
   setWorkspacePath: (id) => ipcRenderer.invoke('workspaces:setPath', id),
+  // the same three with a typed path, for another machine's disk
+  addWorkspaceAt: (name, path) => ipcRenderer.invoke('workspaces:addLocal', name, path),
+  setWorkspacePathTo: (id, path) => ipcRenderer.invoke('workspaces:setPathTo', id, path),
+  wsPromoteTo: (id, path) => ipcRenderer.invoke('workspaces:promoteTo', id, path),
 
   // remote spaces (ssh, e.g. over Tailscale)
   addRemoteWorkspace: (name, host, path) =>
@@ -75,6 +79,9 @@ contextBridge.exposeInMainWorld('tote', {
   devicesList: () => ipcRenderer.invoke('devices:list'),
   deviceCurrent: () => ipcRenderer.invoke('devices:current'),
   deviceView: (target) => ipcRenderer.invoke('devices:view', target),
+  devicesOpen: () => ipcRenderer.invoke('devices:open'),
+  deviceSettings: () => ipcRenderer.invoke('device:settings'),
+  setKeepAwake: (on) => ipcRenderer.invoke('device:setKeepAwake', on),
 
   // terminals -- host sessions, keyed by an id the renderer picks (see sessions.js)
   ptyAvailable: () => ipcRenderer.invoke('pty:available'),
@@ -88,15 +95,19 @@ contextBridge.exposeInMainWorld('tote', {
   ptyKill: (id) => ipcRenderer.send('pty:kill', { id }),
   checkCommand: (cmd) => ipcRenderer.invoke('cli:check', cmd),
 
-  // events
-  onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m) => cb(m.id, m.data)),
-  onPtyExit: (cb) => ipcRenderer.on('pty:exit', (e, m) => cb(m.id, m.exitCode)),
-  onWorkspaceChanged: (cb) => ipcRenderer.on('workspace:changed', () => cb()),
-  onWorkspacesChanged: (cb) => ipcRenderer.on('workspaces:changed', () => cb()),
-  onViewsChanged: (cb) => ipcRenderer.on('views:changed', (e, views) => cb(views)),
-  onRemoteState: (cb) => ipcRenderer.on('remote:state', (e, info) => cb(info)),
+  // events. Another machine's events carry its device key as a trailing
+  // argument (undefined for this machine), so the renderer can file each one
+  // under the right device even while that device's panes are hidden.
+  onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m, dev) => cb(m.id, m.data, dev, !!m.replay)),
+  onPtyExit: (cb) => ipcRenderer.on('pty:exit', (e, m, dev) => cb(m.id, m.exitCode, dev)),
+  onWorkspaceChanged: (cb) => ipcRenderer.on('workspace:changed', (e, wsId, dev) => cb(dev)),
+  onWorkspacesChanged: (cb) => ipcRenderer.on('workspaces:changed', (e, x, dev) => cb(dev)),
+  onViewsChanged: (cb) => ipcRenderer.on('views:changed', (e, views, dev) => cb(views, dev)),
+  onRemoteState: (cb) => ipcRenderer.on('remote:state', (e, info, dev) => cb(info, dev)),
+  onRemoteAuth: (cb) => ipcRenderer.on('remote:auth', (e, m, dev) => cb(m, dev)),
   onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),
   onWindowFocus: (cb) => ipcRenderer.on('win:focus', () => cb()),
   onDeviceLost: (cb) => ipcRenderer.on('devices:lost', (e, m) => cb(m)),
+  onDeviceBack: (cb) => ipcRenderer.on('devices:back', (e, m) => cb(m)),
 });

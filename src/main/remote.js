@@ -156,6 +156,7 @@ class RemoteConn {
   // host uses it for the session id and the viewer to stream to).
   connect({ cols, rows, owner, mkdir }) {
     if (this.connecting) return this.connecting;
+    this.owner = owner || null;       // who to send a login page to -- see onAuthUrl
     this.setState('connecting');
     let buf = '';
     let triedAuth = false;            // open the login page at most once per attempt
@@ -184,7 +185,7 @@ class RemoteConn {
         const cls = S.classify(buf);
         if (cls.kind === 'auth') {
           this.setState('auth', { url: cls.url, message: 'Waiting for you to authenticate...' });
-          if (!triedAuth) { triedAuth = true; this.onAuthUrl(cls.url); }
+          if (!triedAuth) { triedAuth = true; this.onAuthUrl(cls.url, this.owner); }
         } else if (cls.kind !== 'unknown' && this.state === 'connecting') {
           this.setState(cls.kind, { message: S.describe(cls) });
         }

@@ -285,9 +285,22 @@ async function renameWorkspace(ws) {
 
 // Re-point a space at another folder (main opens a picker). Nothing on disk
 // moves; already-open terminals keep their old cwd.
+// On another machine a native picker would browse THIS machine's disk, so the
+// folder is typed instead; `~` means that machine's home.
+function askRemoteFolder(title, initial = '~/') {
+  return askInput(title + ' — a folder on ' + state.device.name + ' (~ is its home)', initial);
+}
+
 async function changeWorkspaceFolder(ws) {
   try {
-    const res = await tote.setWorkspacePath(ws.id);
+    let res;
+    if (state.device) {
+      const p = await askRemoteFolder('New folder for "' + ws.name + '"', ws.path);
+      if (!p) return false;
+      res = await tote.setWorkspacePathTo(ws.id, p);
+    } else {
+      res = await tote.setWorkspacePath(ws.id);
+    }
     if (!res) return false; // canceled
     state.workspaces = res;
     renderWorkspaceSwitcher();
@@ -304,7 +317,19 @@ const activeWorkspaceById = (id) => state.workspaces.list.find((w) => w.id === i
 async function addWorkspace() {
   const name = await askInput('New workspace name (e.g. nexus-core)');
   if (!name) return false;
-  const res = await tote.addWorkspace(name); // main opens a folder picker
+  let res;
+  try {
+    if (state.device) {
+      const p = await askRemoteFolder('Folder for "' + name + '"');
+      if (!p) return false;
+      res = await tote.addWorkspaceAt(name, p);
+    } else {
+      res = await tote.addWorkspace(name); // main opens a folder picker
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+    return false;
+  }
   if (!res) return false; // canceled
   state.workspaces = res;
   renderWorkspaceSwitcher();
@@ -364,7 +389,14 @@ async function discardWorkspace(ws) {
 // groups and layout come along. Running terminals keep their old cwd.
 async function promoteWorkspace(ws) {
   try {
-    const res = await tote.wsPromote(ws.id);
+    let res;
+    if (state.device) {
+      const p = await askRemoteFolder('Keep "' + ws.name + '" in');
+      if (!p) return;
+      res = await tote.wsPromoteTo(ws.id, p);
+    } else {
+      res = await tote.wsPromote(ws.id);
+    }
     if (!res) return; // canceled
     state.workspaces = res;
     renderWorkspaceSwitcher();
@@ -1400,10 +1432,118 @@ async function sendToTab(relPath) {
 }
 
 /* ---------------- devices ----------------
- * A window can show another machine's Tote instead of this one's: every host
- * call is routed there by main, so after switching the renderer just reloads
- * and comes up against the other host as if it were local. Phase 4 of the
- * devices design keeps each device's panes alive across switches instead. */
+ * A window can show another machine's Tote instead of this one's: main routes
+ * every host call to whichever device the window is on, so the renderer never
+ * asks who answers.
+ *
+ * Each device gets its own SLICE of `state` -- its spaces, views, terminals,
+ * tabs, docs, tree -- and switching swaps slices the way switching space swaps
+ * trees: nothing is torn down. The other device's panes stay alive and hidden
+ * (applyTiles hides every pane not in the active tree), its terminals keep
+ * streaming into them, its webviews keep their pages and unsent drafts. Only
+ * #tiles is shared, and it is flat, so no pane is ever reparented.
+ *
+ * Events from another machine carry its key (see preload), and sliceFor()
+ * files each one under the right device, current or not. */
+
+const LOCAL = '';                    // this machine's slice key
+const SLICE = ['profiles', 'workspaces', 'treeData', 'treeWs', 'views', 'tabs', 'activeTab', 'terms',
+               'sessions', 'cliAvail', 'docs', 'docOrder', 'remote', 'activeTermByWs', 'expanded',
+               'sliceLoaded', 'deviceDown', 'needsReattach'];
+state.deviceKey = LOCAL;
+state.slices = new Map();            // device key -> a stashed slice (never the current one)
+
+function freshSlice() {
+  return {
+    profiles: [], workspaces: { active: null, list: [] }, treeData: [], treeWs: null, views: {},
+    tabs: new Map(), activeTab: null, terms: new Map(), sessions: new Map(), cliAvail: new Map(),
+    docs: new Map(), docOrder: [], remote: {}, activeTermByWs: {}, expanded: new Set(['inbox']),
+    sliceLoaded: false, deviceDown: false, needsReattach: false,
+  };
+}
+
+const keyOf = (dev) => dev || LOCAL;
+function sliceFor(dev) {
+  const k = keyOf(dev);
+  return k === state.deviceKey ? state : state.slices.get(k) || null;
+}
+
+// Every terminal of the slice being left is about to be hidden; flag it so the
+// viewport is re-measured when it comes back (see repairViewport).
+function stashSlice() {
+  const s = {};
+  for (const k of SLICE) s[k] = state[k];
+  for (const t of state.terms.values()) t.wasHidden = true;
+  state.slices.set(state.deviceKey, s);
+}
+
+function unstashSlice(key) {
+  const s = state.slices.get(key) || freshSlice();
+  state.slices.delete(key);
+  for (const k of SLICE) state[k] = s[k];
+  state.deviceKey = key;
+}
+
+/* Everything the current device's host owns, read fresh. Shared by boot and
+ * by the first visit to a device. */
+async function loadHostState() {
+  state.profiles = await tote.getCliProfiles();
+  state.workspaces = await tote.listWorkspaces();
+  state.views = (await tote.getViews()) || {};
+  await refreshSessions();     // before the first applyTiles, or every term leaf is pruned
+  // Control sockets outlive Tote (ControlPersist=yes), so a remote space is
+  // usually already connected by the time we ask -- which is the point.
+  for (const w of state.workspaces.list.filter(isRemote)) {
+    try { state.remote[w.id] = await tote.remoteState(w.id); } catch {}
+  }
+  state.sliceLoaded = true;
+  renderWorkspaceSwitcher();
+  showWorkspaceViews();
+  await refreshTree();
+}
+
+/* Back to a device this window already holds. Its panes are all still here;
+ * what may have moved on while it was hidden is the registry and views.json
+ * (edited from its own screen, say), so those are re-read and applied the
+ * way another window's save is. A device that is down shows its last state
+ * under the offline banner instead. */
+async function catchUpSlice() {
+  renderOfflineBanner();
+  if (state.deviceDown) {
+    renderWorkspaceSwitcher();
+    showWorkspaceViews();
+    return;
+  }
+  if (state.needsReattach) { await reattachSlice(); return; }
+  try {
+    state.workspaces = await tote.listWorkspaces();
+    await adoptViews((await tote.getViews()) || {});
+  } catch {}
+  renderWorkspaceSwitcher();
+  showWorkspaceViews();
+  await refreshTree();
+}
+
+/* The connection came back (a slept laptop, a blip). The host made a NEW
+ * viewer for it: put it back in this window's space, and re-attach every
+ * terminal -- each replays its screen (a reset first, so nothing doubles),
+ * catching up on everything the agent printed while the link was down. */
+async function reattachSlice() {
+  state.needsReattach = false;
+  try { await tote.setActiveWorkspace(state.workspaces.active); } catch {}
+  await refreshSessions();
+  for (const [sid, t] of state.terms) {
+    if (!state.sessions.has(sid)) { t.alive = false; t.pane && t.pane.el.classList.add('dead'); continue; }
+    tote.ptyAttach(sid).then((m) => { t.alive = !!m.alive; }).catch(() => {});
+  }
+  try {
+    state.workspaces = await tote.listWorkspaces();
+    await adoptViews((await tote.getViews()) || {});
+  } catch {}
+  renderWorkspaceSwitcher();
+  showWorkspaceViews();
+  await refreshTree();
+}
 
 function renderDeviceChip() {
   const d = state.device;
@@ -1412,22 +1552,66 @@ function renderDeviceChip() {
     ? 'This window shows ' + d.name + "'s Tote — click to switch"
     : "This window shows this machine's Tote — click for your other devices";
   document.body.classList.toggle('on-device', !!d);
+  document.body.classList.toggle('device-down', !!(d && state.deviceDown));
 }
 
-// Carried across the reload a switch causes, so the reason is still on screen.
-function toastAfterReload(msg, kind) {
-  try { sessionStorage.setItem('toteToast', JSON.stringify([msg, kind])); } catch {}
+// Over a device that dropped: its panes stay (an empty screen would read as
+// "nothing is running there"), dimmed, with the reason and the way out.
+function renderOfflineBanner() {
+  const bar = $('#device-offline');
+  const d = state.device;
+  renderDeviceChip();
+  if (!d || !state.deviceDown) { bar.classList.add('hidden'); return; }
+  bar.innerHTML = '';
+  const msg = document.createElement('span');
+  msg.textContent = d.name + ' is offline' + (state.deviceDownSince ? ' since ' + state.deviceDownSince : '') +
+    ' — reconnecting by itself. Its agents keep running there; this is the last thing they showed.';
+  bar.appendChild(msg);
+  const b1 = document.createElement('button');
+  b1.textContent = 'retry now';
+  b1.onclick = () => switchDevice({ address: d.address, port: d.port, name: d.name }, { force: true });
+  const b2 = document.createElement('button');
+  b2.textContent = 'this machine';
+  b2.onclick = () => switchDevice(null);
+  bar.append(b1, b2);
+  bar.classList.remove('hidden');
 }
 
-async function viewDevice(target) {
+/* Show another machine's Tote in this window -- or this machine's, with null.
+ * Main connects (once per device per window) and routes from then on; here
+ * the current slice is stashed and the target's is brought back, or loaded
+ * for the first time. */
+async function switchDevice(target, { force = false } = {}) {
   $('#device-menu').classList.add('hidden');
+  let info;
   try {
-    const d = await tote.deviceView(target);
-    toastAfterReload(d ? 'Now showing ' + d.name + "'s Tote." : "Back to this machine's Tote.", 'success');
-    location.reload();
+    info = await tote.deviceView(target);
   } catch (e) {
     toast('Could not open ' + ((target && target.name) || 'that device') + ': ' + e.message, 'error');
+    return;
   }
+  const key = info ? info.key : LOCAL;
+  if (key === state.deviceKey && !force) return;
+  if (key !== state.deviceKey) {
+    stashSlice();
+    unstashSlice(key);
+  }
+  state.device = info;
+  if (info && !info.up) state.deviceDown = true;
+  if (info && info.up && state.deviceDown) { state.deviceDown = false; state.needsReattach = true; }
+  renderDeviceChip();
+  if (!state.sliceLoaded) {
+    try {
+      await loadHostState();
+    } catch (e) {
+      toast('Could not read ' + (info ? info.name : 'this machine') + ': ' + e.message, 'error');
+    }
+  } else {
+    await catchUpSlice();
+  }
+  renderOfflineBanner();
+  focusActivePaneContent();
+  toast(info ? 'Now showing ' + info.name + "'s Tote." : "Back to this machine's Tote.", 'success');
 }
 
 const DEVICE_STATE = {
@@ -1443,10 +1627,10 @@ async function renderDeviceMenu() {
     el.className = 'term-menu-item' + (off ? ' off' : '');
     el.appendChild(document.createTextNode(label));
     if (sub) {
-      const s = document.createElement('span');
-      s.className = 'cmd';
-      s.textContent = sub;
-      el.appendChild(s);
+      const sp = document.createElement('span');
+      sp.className = 'cmd';
+      sp.textContent = sub;
+      el.appendChild(sp);
     }
     if (fn && !off) el.onclick = fn;
     menu.appendChild(el);
@@ -1458,21 +1642,35 @@ async function renderDeviceMenu() {
     el.textContent = text;
     menu.appendChild(el);
   };
-  item('this machine', state.device ? 'switch back' : 'showing', state.device ? () => viewDevice(null) : null, !state.device);
+  item('this machine', state.device ? 'switch back' : 'showing', state.device ? () => switchDevice(null) : null, !state.device);
   const wait = document.createElement('div');
   wait.className = 'note';
   wait.textContent = 'looking for your devices…';
   menu.appendChild(wait);
   let res;
   try { res = await tote.devicesList(); } catch (e) { res = { devices: [], error: e.message }; }
+  // Machines this window already holds, even if discovery no longer finds them
+  // (asleep): their panes are still here, so they must stay reachable.
+  let open = [];
+  try { open = await tote.devicesOpen(); } catch {}
   wait.remove();
   if (res.error) note(res.error);
+  const seen = new Set();
   for (const d of res.devices || []) {
+    const held = open.find((o) => o.address === d.ip4);
+    seen.add(d.ip4);
     const here = state.device && state.device.address === d.ip4;
-    const sub = here ? 'showing' : DEVICE_STATE[d.state] || d.state;
-    item(d.name, sub, () => viewDevice({ address: d.ip4, name: d.name }), d.state !== 'ready' || here);
+    const sub = here ? 'showing' : held && !held.up ? 'offline · panes kept' : held ? 'open' : DEVICE_STATE[d.state] || d.state;
+    const go = () => switchDevice({ address: d.ip4, name: d.name, port: held && held.port });
+    item(d.name, sub, go, here || (!held && d.state !== 'ready'));
   }
-  if (res.devices && !res.devices.length && !res.error) note('No other devices of yours on this tailnet.');
+  for (const o of open) {
+    if (seen.has(o.address)) continue;
+    const here = state.device && state.device.key === o.key;
+    item(o.name, here ? 'showing' : o.up ? 'open' : 'offline · panes kept',
+      () => switchDevice({ address: o.address, port: o.port, name: o.name }), here);
+  }
+  if (res.devices && !res.devices.length && !open.length && !res.error) note('No other devices of yours on this tailnet.');
   const sep = document.createElement('div');
   sep.className = 'ctx-sep';
   menu.appendChild(sep);
@@ -1493,12 +1691,37 @@ document.addEventListener('click', (e) => {
   if (!$('#device-wrap').contains(e.target)) $('#device-menu').classList.add('hidden');
 });
 
-// The other machine went away (asleep, quit, off the tailnet). Main has already
-// pointed this window back home; the reload brings this machine's Tote up.
+// A machine dropped. Its slice keeps everything; main keeps retrying.
 tote.onDeviceLost((m) => {
-  toastAfterReload(m.name + ' went offline' + (m.reason ? ' (' + m.reason + ')' : '') +
-    " — back to this machine's Tote. Its agents keep running there.", 'error');
-  location.reload();
+  const S = sliceFor(m.key);
+  if (!S) return;
+  S.deviceDown = true;
+  if (S === state) {
+    state.deviceDownSince = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    renderOfflineBanner();
+  }
+});
+
+// ...and came back. Re-attach now if it is on screen, or on the next visit.
+tote.onDeviceBack((m) => {
+  const S = sliceFor(m.key);
+  if (!S) return;
+  S.deviceDown = false;
+  if (S === state) {
+    if (state.device) state.device.up = true;
+    renderOfflineBanner();
+    reattachSlice();
+    toast(m.name + ' is back.', 'success');
+  } else {
+    S.needsReattach = true;
+  }
+});
+
+// A remote space's login page, for a connect started in THIS window -- opened
+// in this machine's browser, where the person who clicked is.
+tote.onRemoteAuth((m) => {
+  tote.openExternal(m.url);
+  toast('Opened the login page for that remote space in your browser.', 'success');
 });
 
 /* ---------------- native apps launcher ---------------- */
@@ -1865,9 +2088,19 @@ function closeTerm(id) {
 
 // Two id spaces share these events: host sessions (string ids this renderer
 // picked) and the wizard's own installer pty (a number from pty:run).
-tote.onPtyData((ptyId, data) => {
-  const t = state.terms.get(ptyId);
-  if (t) { t.term.write(data); return; }
+tote.onPtyData((ptyId, data, dev, replay) => {
+  // Filed under the device it came from: a hidden device's terminals keep
+  // streaming into their hidden panes, like another space's do.
+  const S = sliceFor(dev);
+  const t = S && S.terms.get(ptyId);
+  if (t) {
+    // A replay is the whole screen as the host has it; on a re-attach this
+    // xterm already shows an older copy, and writing on top would double it.
+    if (replay) t.term.reset();
+    t.term.write(data);
+    return;
+  }
+  if (dev) return;
   if (wizTerm && ptyId === wizTermPty) {
     wizTerm.write(data);
     // Buffer for the post-exit npm diagnostics; warnings sit at the tail, so
@@ -1877,8 +2110,9 @@ tote.onPtyData((ptyId, data) => {
   }
 });
 
-tote.onPtyExit((ptyId, code) => {
-  const t = state.terms.get(ptyId);
+tote.onPtyExit((ptyId, code, dev) => {
+  const S = sliceFor(dev);
+  const t = S && S.terms.get(ptyId);
   if (t) {
     if (!t.alive && t.pane && t.pane.el.classList.contains('dead')) return;   // already told
     t.alive = false;
@@ -1888,7 +2122,7 @@ tote.onPtyExit((ptyId, code) => {
       : 'process exited with code ' + code) + ']\x1b[0m');
     return;
   }
-  if (typeof ptyId === 'string') return;
+  if (dev || typeof ptyId === 'string') return;
   if (wizOnExit) wizOnExit(ptyId, code);
 });
 
@@ -2713,7 +2947,10 @@ function renderSettings() {
 
   // behavior
   $('#set-bridge').checked = state.settings.bridgeDownloads !== false;
-  $('#set-awake').checked = state.settings.keepAwake === true;
+  // Keep-awake belongs to the machine on screen -- including another one, whose
+  // agents are the ones that need it -- so it is read from that machine's host.
+  $('#awake-who').textContent = state.device ? state.device.name : 'this machine';
+  tote.deviceSettings().then((d) => { $('#set-awake').checked = d.keepAwake; }, () => {});
   $('#set-share').checked = state.settings.shareDevice === true;
 
   // cli profiles
@@ -2766,10 +3003,14 @@ $('#set-share').onchange = async (e) => {
 };
 
 $('#set-awake').onchange = async (e) => {
-  state.settings.keepAwake = e.target.checked;
-  await tote.saveSettings(state.settings);
-  toast(e.target.checked ? 'This machine will not idle to sleep while Tote runs.'
-                         : 'Keep awake off.', 'success');
+  const who = state.device ? state.device.name : 'This machine';
+  try {
+    await tote.setKeepAwake(e.target.checked);
+    toast(e.target.checked ? who + ' will not idle to sleep while Tote runs.' : 'Keep awake off for ' + who + '.', 'success');
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    toast(err.message, 'error');
+  }
 };
 
 $('#nw-add').onclick = async () => {
@@ -3087,9 +3328,12 @@ $('#btn-run-wizard').onclick = () => {
 };
 
 /* ---------------- events from main ---------------- */
-tote.onWorkspaceChanged(() => { refreshTree(); recheckDocs(); });
-tote.onWorkspacesChanged(onSpacesChanged);
-tote.onViewsChanged(adoptViews);
+// Tree, registry and views events matter only for the device on screen: a
+// hidden device is re-read when it comes back (catchUpSlice).
+const onScreen = (dev) => keyOf(dev) === state.deviceKey;
+tote.onWorkspaceChanged((dev) => { if (onScreen(dev)) { refreshTree(); recheckDocs(); } });
+tote.onWorkspacesChanged((dev) => { if (onScreen(dev)) onSpacesChanged(); });
+tote.onViewsChanged((views, dev) => { if (onScreen(dev)) adoptViews(views); });
 
 /* Another window changed the space registry: a space added, renamed,
  * re-pointed, reordered -- or removed, in which case the host has already
@@ -3140,7 +3384,11 @@ async function adoptViews(views) {
   renderGroupBar();
 }
 tote.onWindowFocus(focusActivePaneContent);
-tote.onRemoteState(onRemoteState);
+tote.onRemoteState((info, dev) => {
+  const S = sliceFor(dev);
+  if (S === state) onRemoteState(info);
+  else if (S) S.remote[info.id] = info;
+});
 
 tote.onDownloadDone((m) => {
   if (m.state === 'completed') {
@@ -3158,26 +3406,16 @@ tote.onDownloadDone((m) => {
     toast('node-pty unavailable - terminals disabled. Rebuild with: npm rebuild node-pty', 'error');
   }
   state.providers = await tote.getProviders();
-  state.profiles = await tote.getCliProfiles();
   state.apps = await tote.listApps();
   state.settings = await tote.getSettings();
-  state.device = await tote.deviceCurrent();   // null: this machine's own host
+  // A reload while showing another machine comes back up showing it: main
+  // still routes this window there.
+  state.device = await tote.deviceCurrent();
+  state.deviceKey = state.device ? state.device.key : LOCAL;
+  if (state.device && !state.device.up) state.deviceDown = true;
   renderDeviceChip();
-  try {
-    const carried = sessionStorage.getItem('toteToast');
-    if (carried) { sessionStorage.removeItem('toteToast'); toast(...JSON.parse(carried)); }
-  } catch {}
-  state.workspaces = await tote.listWorkspaces();
-  state.views = (await tote.getViews()) || {};
-  await refreshSessions();     // before the first applyTiles, or every term leaf is pruned
-  // Control sockets outlive Tote (ControlPersist=yes), so a remote space is
-  // usually already connected by the time we ask -- which is the point.
-  for (const w of state.workspaces.list.filter(isRemote)) {
-    try { state.remote[w.id] = await tote.remoteState(w.id); } catch {}
-  }
-  renderWorkspaceSwitcher();
-  showWorkspaceViews();
-  await refreshTree();
+  await loadHostState();
+  renderOfflineBanner();
   if (state.settings.setupDone === false) {
     wizStep = 0;
     openWizard();

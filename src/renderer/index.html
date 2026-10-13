@@ -56,6 +56,8 @@
            content instance and never reparented -- moving a pane changes its
            rect, never its parent. Dividers are siblings, rebuilt per layout. -->
       <div id="tiles">
+        <!-- over a device that dropped: its panes stay, under this -->
+        <div id="device-offline" class="hidden"></div>
         <aside id="files-panel" class="panel">
           <div class="sidebar-header sub">
             <!-- no title here: the pane's own head already says "files" -->
@@ -122,7 +124,7 @@
       </label>
       <label class="settings-check">
         <input type="checkbox" id="set-awake" />
-        Keep this machine awake while Tote runs, so its agents keep working and stay
+        Keep <b id="awake-who">this machine</b> awake while Tote runs, so its agents keep working and stay
         reachable. Stops idle sleep only — closing a laptop lid still sleeps it unless
         it is on power with an external display.
       </label>

@@ -12,6 +12,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerS
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
+const { pathToFileURL } = require('url');
 const http = require('http');
 const { spawn, execSync, execFileSync } = require('child_process');
 const { ConfigStore } = require('./config');
@@ -154,8 +156,10 @@ let host;
 let lastFocused = null;   // viewer id of the window that last had focus
 let deviceServer = null;  // this machine's listener, while sharing is on
 let shareError = null;    // why sharing is not on, when it should be
-// webContents id -> { client, name, address, port }: the windows looking at
-// ANOTHER machine's Tote. A window not in here talks to the local host.
+// webContents id -> { current, devices: Map(key -> device) }. A window keeps a
+// connection to every machine it has opened -- their panes stay alive, hidden,
+// the way another space's do -- and `current` says which one it is showing
+// (null: this machine). A device is { key, name, address, port, client, up }.
 const viewing = new Map();
 let swept = [];   // stale temp spaces removed at launch, reported once the UI is up
 
@@ -179,7 +183,12 @@ const winOf = (e) => BrowserWindow.fromWebContents(e.sender) || undefined;
 
 const DEFAULT_DEVICE_PORT = 47821;
 const devicePort = () => Number(configStore.getSettings().devicePort) || DEFAULT_DEVICE_PORT;
-const deviceOf = (wc) => viewing.get(wc.id) || null;
+const deviceKey = (address, port) => address + ':' + port;
+function deviceOf(wc) {
+  const w = viewing.get(wc.id);
+  return (w && w.current && w.devices.get(w.current)) || null;
+}
+const deviceInfo = (d) => d && { key: d.key, name: d.name, address: d.address, port: d.port, up: d.up };
 
 let selfNameCache = null;
 async function selfName() {
@@ -246,6 +255,35 @@ function setupProviderSession(provider) {
     // staging folder and the finished file is pushed up afterwards. The space is
     // the one the webview's WINDOW is looking at, read when the event fires.
     const owner = guest && (guest.hostWebContents || guest);
+    // A window showing another machine downloads for THAT machine: stage here
+    // (Chromium only writes locally), push it up when done. Which device, and
+    // which of its spaces, are fixed now, when the download starts.
+    const dev = owner && deviceOf(owner);
+    if (dev) {
+      const stage = path.join(app.getPath('userData'), 'devices', sha(dev.key), 'staging');
+      fs.mkdirSync(stage, { recursive: true });
+      const target = uniquePath(path.join(stage, item.getFilename() || 'download'));
+      item.setSavePath(target);
+      const wsIdThere = dev.client.call('workspaces:list', []).then((l) => l.active, () => null);
+      item.once('done', async (e, state) => {
+        let landed = target, where = dev.name, outcome = state;
+        if (state === 'completed') {
+          try {
+            const res = await pushDownload(dev, await wsIdThere, target, provider.id);
+            landed = res.path;
+            where = dev.name + ' · ' + res.workspace;
+            fs.rmSync(target, { force: true });
+          } catch (err) {
+            outcome = 'interrupted: ' + err.message + ' (kept at ' + target + ')';
+          }
+        }
+        if (!owner.isDestroyed()) {
+          owner.send('download:done', { providerId: provider.id, provider: provider.name, workspace: where,
+                                        filename: path.basename(landed), path: landed, state: outcome });
+        }
+      });
+      return;
+    }
     const W = workspace.scoped(spaceOfWindow(owner));
     const space = W.active();
     const remote = workspace.isRemote(space);
@@ -473,12 +511,10 @@ function createWindow() {
   // Registered before the page loads, so its first IPC call finds a viewer.
   // `send` guards on isDestroyed: a closing window can still be handed an
   // event, and every call on a destroyed webContents throws.
-  // While the window looks at another machine, this machine's host has
-  // nothing to tell it: those events would land in a renderer showing a
-  // different device's spaces and terminals.
-  host.addViewer({ id: vid, send: (ev, payload) => {
-    if (!wc.isDestroyed() && !viewing.has(wc.id)) wc.send(ev, payload);
-  } });
+  // This machine's events carry no device tag; another machine's carry its key
+  // as a second argument (see openDevice), and the renderer files each under
+  // the right device -- including the ones whose panes are hidden right now.
+  host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
   lastFocused = vid;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
@@ -486,8 +522,11 @@ function createWindow() {
   // window -- or a later one -- re-attaches with a replay.
   const wcId = wc.id;
   win.on('closed', () => {
-    const d = viewing.get(wcId);
-    if (d) { viewing.delete(wcId); d.client.close(); }
+    const w = viewing.get(wcId);
+    if (w) {
+      viewing.delete(wcId);
+      for (const d of w.devices.values()) { clearTimeout(d.retry); d.gone = true; if (d.client) d.client.close(); }
+    }
     host.removeViewer(vid);
     if (lastFocused === vid) lastFocused = null;
   });
@@ -553,7 +592,12 @@ app.on('web-contents-created', (event, contents) => {
 // instead. The renderer cannot tell the difference, which is the point.
 function route(e, name, args) {
   const d = deviceOf(e.sender);
-  return d ? d.client.call(name, args) : host.call(name, viewerIdOf(e.sender), args);
+  if (!d) return host.call(name, viewerIdOf(e.sender), args);
+  if (!d.up) return Promise.reject(new Error(d.name + ' is offline'));
+  const call = d.client.call(name, args);
+  // A doc pane is handed a file:// URL for a PDF or an HTML page, and on
+  // another machine that URL names a file that is not here: fetch it first.
+  return name === 'workspace:readDoc' ? call.then((r) => localizeDoc(d, args[0], r)) : call;
 }
 
 function registerHostChannels() {
@@ -658,36 +702,126 @@ ipcMain.handle('devices:list', async () => {
   }
 });
 
-ipcMain.handle('devices:current', (e) => {
-  const d = deviceOf(e.sender);
-  return d ? { name: d.name, address: d.address, port: d.port } : null;
-});
+ipcMain.handle('devices:current', (e) => deviceInfo(deviceOf(e.sender)));
 
-/* Point this window at another machine's Tote (or back home with null).
- * The renderer reloads itself afterwards and simply comes up against the new
- * host: every host channel is routed by route(), so nothing in it changes. */
-ipcMain.handle('devices:view', async (e, target) => {
-  const wc = e.sender;
-  const old = viewing.get(wc.id);
-  if (old) { viewing.delete(wc.id); old.client.close(); }
-  if (!target) { host.syncWatches(); return null; }
-  const port = Number(target.port) || devicePort();
-  const entry = { client: null, name: target.name || target.address, address: target.address, port };
-  entry.client = new DeviceClient({
-    address: target.address, port, device: await selfName(),
-    onEvent: (ev, payload) => { if (viewing.get(wc.id) === entry && !wc.isDestroyed()) wc.send(ev, payload); },
+/* A PDF or HTML doc pane needs a file:// URL a <webview> can load, and the
+ * one another machine hands back names a file on THAT machine. Fetch it in
+ * slices into <userData>/devices/<device>/, keyed by mtime -- a changed file
+ * is a different file, so staleness needs no bookkeeping, exactly like the
+ * remote-space PDF cache. An HTML page whose stylesheet sits next to it
+ * renders unstyled from here (only the page travels); source mode is exact. */
+const sha = (s) => crypto.createHash('sha1').update(String(s)).digest('hex').slice(0, 16);
+async function localizeDoc(d, rel, r) {
+  if (!r || !r.fileUrl) return r;
+  const dir = path.join(app.getPath('userData'), 'devices', sha(d.key), sha(rel + '\u0000' + r.mtimeMs));
+  const file = path.join(dir, path.basename(String(rel)) || 'file');
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = file + '.part';
+    fs.writeFileSync(tmp, '');
+    for (let offset = 0; ;) {
+      const c = await d.client.call('workspace:readChunk', [rel, offset]);
+      const buf = Buffer.from(c.b64, 'base64');
+      fs.appendFileSync(tmp, buf);
+      offset += buf.length;
+      if (c.eof || !buf.length) break;
+    }
+    fs.renameSync(tmp, file);
+  }
+  return { ...r, fileUrl: pathToFileURL(file).href };
+}
+
+/* A finished download, made in a web tab while its window showed another
+ * machine, goes to THAT machine's inbox: streamed up in slices, into the space
+ * the window was in when the download started. Resolves to where it landed. */
+async function pushDownload(d, wsId, absFile, providerId) {
+  const id = 'u' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+  const name = path.basename(absFile);
+  const fd = fs.openSync(absFile, 'r');
+  try {
+    const CHUNK = 2 * 1024 * 1024;
+    const buf = Buffer.alloc(CHUNK);
+    for (;;) {
+      const n = fs.readSync(fd, buf, 0, CHUNK, null);
+      const final = n < CHUNK;
+      const res = await d.client.call('workspace:upload',
+        [{ id, wsId, name, providerId, b64: buf.subarray(0, n).toString('base64'), final }]);
+      if (final) return res;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/* Connect a window to another machine (once), and keep it connected: a drop
+ * is retried with backoff for as long as the window lives, so a laptop that
+ * slept comes back by itself. The renderer hears devices:lost / devices:back
+ * and keeps the device's panes in between, under a banner. */
+function connectDevice(wc, d) {
+  d.client = new DeviceClient({
+    address: d.address, port: d.port, device: selfNameCache || os.hostname(),
+    onEvent: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload, d.key); },
     onClose: (code, reason) => {
-      if (viewing.get(wc.id) !== entry) return;
-      viewing.delete(wc.id);
-      if (!wc.isDestroyed()) wc.send('devices:lost', { name: entry.name, reason });
+      if (d.gone) return;
+      d.up = false;
+      if (!wc.isDestroyed()) wc.send('devices:lost', { key: d.key, name: d.name, reason });
+      scheduleRetry(wc, d);
     },
   });
-  const hello = await entry.client.connect();
-  if (!target.name && hello.device) entry.name = hello.device;
-  // This machine's terminals stop streaming into a window that no longer shows them.
-  host.sessions.detachAll(viewerIdOf(wc));
-  viewing.set(wc.id, entry);
-  return { name: entry.name, address: entry.address, port };
+  return d.client.connect().then((hello) => {
+    d.up = true;
+    d.backoff = 0;
+    if (!d.named && hello.device) d.name = hello.device;
+    return hello;
+  });
+}
+
+function scheduleRetry(wc, d) {
+  clearTimeout(d.retry);
+  if (d.gone || wc.isDestroyed()) return;
+  d.backoff = Math.min((d.backoff || 2000) * 2, 30000);
+  d.retry = setTimeout(async () => {
+    if (d.gone || wc.isDestroyed() || d.up) return;
+    try {
+      await connectDevice(wc, d);
+      if (!wc.isDestroyed()) wc.send('devices:back', deviceInfo(d));
+    } catch {
+      scheduleRetry(wc, d);
+    }
+  }, d.backoff);
+}
+
+/* Show another machine's Tote in this window (or this machine's, with null).
+ * Nothing is torn down: the device you leave keeps its connection and its
+ * panes keep streaming, hidden, so coming back is instant. A device that is
+ * down can still be switched to -- its panes come up under the offline banner
+ * while the retry loop works. */
+ipcMain.handle('devices:view', async (e, target) => {
+  const wc = e.sender;
+  let w = viewing.get(wc.id);
+  if (!w) { w = { current: null, devices: new Map() }; viewing.set(wc.id, w); }
+  if (!target) { w.current = null; return null; }
+  await selfName();
+  const port = Number(target.port) || devicePort();
+  const key = deviceKey(target.address, port);
+  let d = w.devices.get(key);
+  if (!d) {
+    d = { key, name: target.name || target.address, named: !!target.name, address: target.address, port,
+          client: null, up: false, backoff: 0, retry: null, gone: false };
+    await connectDevice(wc, d);          // a first connect that fails is just an error
+    w.devices.set(key, d);
+  } else if (!d.up) {
+    clearTimeout(d.retry);
+    try { await connectDevice(wc, d); } catch { scheduleRetry(wc, d); }
+  }
+  w.current = key;
+  return deviceInfo(d);
+});
+
+// Every machine this window holds a connection to, for the chip menu.
+ipcMain.handle('devices:open', (e) => {
+  const w = viewing.get(e.sender.id);
+  return w ? [...w.devices.values()].map(deviceInfo) : [];
 });
 
 // --- IPC: config ------------------------------------------------------------------------
@@ -702,7 +836,10 @@ ipcMain.handle('config:openDir', () => shell.openPath(configStore.getDir()));
 
 ipcMain.handle('settings:get', () => configStore.getSettings());
 ipcMain.handle('settings:save', (e, s) => {
-  configStore.saveSettings(s);
+  // keepAwake is the HOST's setting (device:setKeepAwake), which another
+  // machine may have changed since this window read its copy -- never let a
+  // stale renderer copy write it back.
+  configStore.saveSettings({ ...s, keepAwake: configStore.getSettings().keepAwake === true });
   applyBridgeSetting();
   applyKeepAwake();
   applyShareSetting();
@@ -860,7 +997,11 @@ if (!gotLock) {
     ptys = new PtyManager();
     host = new Host({
       cfg: configStore, workspace, ptys,
-      platform: { trash: (abs) => shell.trashItem(abs), openExternal: (url) => shell.openExternal(url) },
+      platform: {
+        trash: (abs) => shell.trashItem(abs),
+        openExternal: (url) => shell.openExternal(url),
+        applyKeepAwake: () => applyKeepAwake(),
+      },
     });
     registerHostChannels();
     // RemoteConn needs a pty it can both stream to a pane and read itself, plus
@@ -872,9 +1013,10 @@ if (!gotLock) {
       launchPty: (spec, owner, onData, onExit) => host.launchRemotePty(spec, owner, onData, onExit),
       onState: (info) => host.emit('remote:state', info),
       // Tailscale's check blocks the ssh session until this page is visited, so
-      // opening it is what unblocks the connect -- and it goes to the system
-      // browser, where the user's Tailscale login already lives.
-      onAuthUrl: (url) => shell.openExternal(url),
+      // opening it is what unblocks the connect -- in the system browser of the
+      // machine the user is AT, where their Tailscale login lives. The host
+      // sends it to the viewer that clicked connect; its renderer opens it.
+      onAuthUrl: (url, owner) => host.authUrl(url, owner),
     });
     setupAllProviderSessions();
     detectApps();

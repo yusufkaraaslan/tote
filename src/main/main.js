@@ -2,7 +2,7 @@
 // Model: two-level spaces (Global + project workspaces). The ACTIVE workspace
 // is the routing context for everything: web-tab downloads, files bridged
 // from native apps, and the cwd of every new CLI terminal.
-const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -228,6 +228,21 @@ function bridgeAllowlist() {
     add(bundleName(entry.path));
   }
   return names;
+}
+
+// Keep awake: hold a power-save blocker while the setting is on, so a device
+// left running agents stays reachable instead of idling to sleep. It stops
+// IDLE sleep only -- closing a lid still sleeps the Mac unless it is in
+// clamshell mode, and nothing an app can ask for changes that.
+let awakeBlocker = null;
+function applyKeepAwake() {
+  const on = configStore.getSettings().keepAwake === true;
+  if (on && awakeBlocker === null) {
+    awakeBlocker = powerSaveBlocker.start('prevent-app-suspension');
+  } else if (!on && awakeBlocker !== null) {
+    powerSaveBlocker.stop(awakeBlocker);
+    awakeBlocker = null;
+  }
 }
 
 function applyBridgeSetting() {
@@ -637,6 +652,7 @@ ipcMain.handle('settings:get', () => configStore.getSettings());
 ipcMain.handle('settings:save', (e, s) => {
   configStore.saveSettings(s);
   applyBridgeSetting();
+  applyKeepAwake();
   return true;
 });
 
@@ -850,6 +866,7 @@ if (!gotLock) {
     }
     watchActive();
     applyBridgeSetting();
+    applyKeepAwake();
     createWindow();
 
     app.on('activate', () => {

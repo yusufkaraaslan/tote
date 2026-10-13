@@ -2582,6 +2582,7 @@ function renderSettings() {
 
   // behavior
   $('#set-bridge').checked = state.settings.bridgeDownloads !== false;
+  $('#set-awake').checked = state.settings.keepAwake === true;
 
   // cli profiles
   const cHost = $('#settings-clis');
@@ -2622,6 +2623,13 @@ $('#set-bridge').onchange = async (e) => {
   state.settings.bridgeDownloads = e.target.checked;
   await tote.saveSettings(state.settings);
   toast('Downloads bridge ' + (e.target.checked ? 'enabled' : 'disabled') + '.', 'success');
+};
+
+$('#set-awake').onchange = async (e) => {
+  state.settings.keepAwake = e.target.checked;
+  await tote.saveSettings(state.settings);
+  toast(e.target.checked ? 'This machine will not idle to sleep while Tote runs.'
+                         : 'Keep awake off.', 'success');
 };
 
 $('#nw-add').onclick = async () => {

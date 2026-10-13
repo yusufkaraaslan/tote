@@ -163,7 +163,7 @@ unregisters it, and changing its folder just re-points it.
   for side-by-side. When an agent rewrites a file under you, a clean pane just updates —
   a pane with unsaved edits asks first.
 - **Settings** — manage workspaces (add / rename / change folder / remove), add/remove
-  providers, CLI profiles, native apps; toggle the Downloads bridge. Everything is plain JSON in `<userData>/config/` (**open config folder**).
+  providers, CLI profiles, native apps; toggle the Downloads bridge and **keep awake** (holds off idle sleep while Tote runs, so agents keep working; a closed laptop lid still sleeps unless it is in clamshell mode). Everything is plain JSON in `<userData>/config/` (**open config folder**).
 
 ## Architecture
 

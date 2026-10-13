@@ -134,4 +134,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager };
+module.exports = { PtyManager, shellCommand };

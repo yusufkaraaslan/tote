@@ -148,6 +148,10 @@ unregisters it, and changing its folder just re-points it.
   pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
   to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at
   whatever width you left it. Layouts are remembered **per workspace**.
+- **More than one window** — **Cmd/Ctrl+Shift+N** opens another window on the same Tote. Each
+  window is in its own workspace, but they share the terminals: open the same space in both and
+  the agent shows in both, with its scrollback, live. Terminals belong to the app rather than to
+  a window, so on macOS closing a window doesn't stop its agents — the next window picks them up.
 - **Groups** — each space holds several layouts, like desktops on your OS: switch with the
   chips under the workspace strip or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
   groups keep running in the background. Move a pane to another group by dragging its title bar onto a

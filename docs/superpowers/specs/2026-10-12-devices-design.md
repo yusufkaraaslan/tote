@@ -1,6 +1,6 @@
 # Devices — every Tote you own, from any Tote you sit at
 
-**Status:** design approved, unimplemented
+**Status:** phase 1 (keep awake) and phase 2 (host extraction) implemented; phases 3–4 not started
 **Branch:** `feat/devices`
 
 ## Goal
@@ -76,11 +76,13 @@ process. This design splits them.
 
 ### 1. The host: `src/host/`
 
-A new directory whose modules **never require `electron`**. Most of it moves
-rather than gets written: `workspace.js`, `ptyManager.js`, `config.js`,
-`remote.js`, `scratch.js` and `sshfix.js` are already Electron-free. What moves
-out of `main.js` is the *bodies* of the device-owned IPC handlers, into one
-method table:
+A new directory whose modules **never require `electron`**. `workspace.js`,
+`ptyManager.js`, `config.js`, `remote.js`, `scratch.js` and `sshfix.js` are
+already Electron-free. *As built:* they stayed in `src/main/` rather than
+moving (the move was churn for the tests and docs with nothing to gain, since
+the no-electron test follows `src/host/`'s requires into them anyway); what
+moved out of `main.js` is the *bodies* of the device-owned IPC handlers, into
+one method table in `src/host/host.js`:
 
 ```js
 // src/host/methods.js
@@ -189,6 +191,17 @@ exist. So:
 - Shift+Enter→LF, the scrollback keys, Alt+Up/Down, file drop and
   `repairViewport` stay in the renderer and work unchanged: they act on the
   viewer's xterm and the bytes it writes.
+- **Terminal reports are answered once, by the mirror.** *Found while
+  building phase 2:* xterm answers a program's queries (DA, CPR, DECRQM, OSC
+  colours) through `onData`, like keystrokes, so with two viewers a program
+  read every reply twice — vi took the duplicate DECRQM reply as a typed `y`.
+  The mirror now answers and each viewer drops its own xterm's replies
+  (`src/renderer/termreports.js`). Cost: Shift+F3 is byte-identical to a
+  cursor-position report and is dropped.
+- **A size push must be real.** *Also found in phase 2:* an adopted pane that
+  was not laid out yet fitted to 2×1 and pushed it, and the shell redrew its
+  prompt for a 2-column screen in every other window. Size pushes fit first
+  and refuse hidden panes and anything under 20×4.
 
 ### 6. Wire protocol
 

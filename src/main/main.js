@@ -1,7 +1,13 @@
 // Tote main process.
-// Model: two-level spaces (Global + project workspaces). The ACTIVE workspace
-// is the routing context for everything: web-tab downloads, files bridged
-// from native apps, and the cwd of every new CLI terminal.
+// Model: two-level spaces (Global + project workspaces). A space is the routing
+// context for everything: web-tab downloads, files bridged from native apps,
+// and the cwd of every new CLI terminal.
+//
+// Split in two since the devices design (docs/superpowers/specs/
+// 2026-10-12-devices-design.md): src/host/ owns the device -- spaces, files,
+// views, terminals -- and serves VIEWERS. Every window is a viewer with its own
+// active space. This file is the viewer side: windows, web sessions, native
+// apps, the wizard, and the IPC routing in front of the host.
 const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -11,7 +17,8 @@ const { ConfigStore } = require('./config');
 const { WorkspaceManager, originApp } = require('./workspace');
 const { PtyManager } = require('./ptyManager');
 const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
-const { shq } = require('./sshfix');
+const { Host } = require('../host/host');
+const CH = require('../host/channels');
 
 // LLM sites (Cloudflare-fronted ones especially) reject UAs that don't match
 // the real engine. Use Electron's own UA with the Electron/Tote tokens
@@ -136,13 +143,28 @@ function adoptLoginShellPath() {
   }
 }
 
-let win = null;
 let configStore;
 let workspace;
 let ptys;
+let host;
+let lastFocused = null;   // viewer id of the window that last had focus
 let swept = [];   // stale temp spaces removed at launch, reported once the UI is up
 
 const partitionFor = (providerId) => `persist:tote-${providerId}`;
+
+// A window's viewer id. One webContents per window, and it outlives nothing.
+const viewerIdOf = (wc) => 'w' + wc.id;
+
+// The space a window is looking at; the most recently focused window's for
+// events that come from no window at all (a native app's download).
+function spaceOfWindow(wc) {
+  const v = wc && host.viewers.get(viewerIdOf(wc));
+  if (v) return v.wsId;
+  const last = lastFocused && host.viewers.get(lastFocused);
+  return last ? last.wsId : workspace.activeId();
+}
+
+const winOf = (e) => BrowserWindow.fromWebContents(e.sender) || undefined;
 
 function uniquePath(p) {
   if (!fs.existsSync(p)) return p;
@@ -164,13 +186,15 @@ function setupProviderSession(provider) {
   ses.__toteReady = true;
   ses.setUserAgent(chromeUA(ses));
 
-  ses.on('will-download', (event, item) => {
+  ses.on('will-download', (event, item, guest) => {
     // Chromium can only write to local disk, so a remote space downloads into a
-    // staging folder and the finished file is pushed up afterwards. Which space
-    // is active is read here, when the event fires, exactly as before.
-    const space = workspace.active();
+    // staging folder and the finished file is pushed up afterwards. The space is
+    // the one the webview's WINDOW is looking at, read when the event fires.
+    const owner = guest && (guest.hostWebContents || guest);
+    const W = workspace.scoped(spaceOfWindow(owner));
+    const space = W.active();
     const remote = workspace.isRemote(space);
-    const inbox = remote ? workspace.stagingDir(provider.id) : workspace.inboxDir(provider.id);
+    const inbox = remote ? W.stagingDir(provider.id) : W.inboxDir(provider.id);
     fs.mkdirSync(inbox, { recursive: true });
     const target = uniquePath(path.join(inbox, item.getFilename() || 'download'));
     item.setSavePath(target);
@@ -185,8 +209,8 @@ function setupProviderSession(provider) {
           outcome = 'interrupted: ' + err.message;   // the file is still in staging
         }
       }
-      if (win) {
-        win.webContents.send('download:done', {
+      if (owner && !owner.isDestroyed()) {
+        owner.send('download:done', {
           providerId: provider.id,
           provider: provider.name,
           workspace: space.name,
@@ -257,22 +281,23 @@ function applyBridgeSetting() {
     // No origin (hand-made file) or an app we don't own (a browser, Slack,
     // AirDrop): not ours to touch.
     if (!app || !bridgeAllowlist().has(app.toLowerCase())) return;
+    // No window started it, so it goes to the space of the window you were
+    // last in -- the closest thing to "where you are" a native app has.
+    const W = workspace.scoped(spaceOfWindow(null));
     try {
-      const target = await workspace.ingest(absPath, '_desktop');
-      if (win) {
-        win.webContents.send('download:done', {
-          providerId: '_desktop',
-          provider: app,
-          workspace: workspace.active().name,
-          filename: path.basename(target),
-          path: target,
-          state: 'completed',
-        });
-      }
+      const target = await W.ingest(absPath, '_desktop');
+      host.emit('download:done', {
+        providerId: '_desktop',
+        provider: app,
+        workspace: W.active().name,
+        filename: path.basename(target),
+        path: target,
+        state: 'completed',
+      });
     } catch (e) {
-      if (win) win.webContents.send('download:done', {
+      host.emit('download:done', {
         providerId: '_desktop', provider: app,
-        workspace: workspace.active().name,
+        workspace: W.active().name,
         filename: path.basename(absPath), path: absPath, state: 'interrupted: ' + e.message,
       });
     }
@@ -348,9 +373,9 @@ function detectApps() {
   configStore.saveApps(data);
 }
 
-async function launchApp(entry) {
-  const wsName = workspace.active().name;
-  const rootPath = workspace.getRoot();
+async function launchApp(entry, W) {
+  const wsName = W.active().name;
+  const rootPath = W.getRoot();
   let note = null;
   if (entry.kind === 'claude') {
     try {
@@ -370,8 +395,11 @@ async function launchApp(entry) {
 
 // --- window ------------------------------------------------------------------------
 
+// Every window is a viewer of the local host, with its own active space. More
+// than one is allowed (app:newWindow) -- which is also how the host/viewer
+// split is exercised on one machine before any network exists.
 function createWindow() {
-  win = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1480,
     height: 920,
     minWidth: 1080,
@@ -385,35 +413,47 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  const wc = win.webContents;
+  const vid = viewerIdOf(wc);
+  // Registered before the page loads, so its first IPC call finds a viewer.
+  // `send` guards on isDestroyed: a closing window can still be handed an
+  // event, and every call on a destroyed webContents throws.
+  host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
+  lastFocused = vid;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  // On macOS the app outlives its window (`window-all-closed` only quits
-  // elsewhere) and every call on a destroyed BrowserWindow throws "Object has
-  // been destroyed". Drop the reference so the `if (win)` guards on the
-  // download pushes, the watcher and `second-instance` mean "a live window".
+  // Its terminals keep running: the sessions belong to the host, and another
+  // window -- or a later one -- re-attaches with a replay.
   win.on('closed', () => {
-    win = null;
+    host.removeViewer(vid);
+    if (lastFocused === vid) lastFocused = null;
   });
 
   // Re-activation is the renderer's cue to put keyboard focus back inside the
   // focused pane. The main process is the authority on window activation: the
   // renderer's own `focus` event is ambiguous once a webview guest is involved.
   win.on('focus', () => {
-    if (win) win.webContents.send('win:focus');
+    lastFocused = vid;
+    if (!wc.isDestroyed()) wc.send('win:focus');
   });
 
   // The sweep already ran at startup; the renderer can only be told once it has
   // a toast area to show it in.
-  win.webContents.once('did-finish-load', () => {
-    if (swept.length) win.webContents.send('workspace:swept', swept);
+  wc.once('did-finish-load', () => {
+    if (swept.length) wc.send('workspace:swept', swept);
   });
 
   // The shell page never navigates. Anything that tries is a file dropped onto
   // a spot that did not handle it -- Chromium's default is to open it in place,
   // which would replace the whole UI with the dropped image.
-  win.webContents.on('will-navigate', (e, url) => {
-    if (url !== win.webContents.getURL()) e.preventDefault();
+  wc.on('will-navigate', (e, url) => {
+    if (url !== wc.getURL()) e.preventDefault();
   });
+  return win;
+}
+
+function focusedWindow() {
+  return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
 }
 
 // Popups from embedded webviews (OAuth windows, "open in new tab" links).
@@ -431,7 +471,7 @@ app.on('web-contents-created', (event, contents) => {
           height: 720,
           autoHideMenuBar: true,
           backgroundColor: '#ffffff',
-          parent: win || undefined,
+          parent: BrowserWindow.fromWebContents(contents.hostWebContents) || undefined,
         },
       };
     }
@@ -440,191 +480,94 @@ app.on('web-contents-created', (event, contents) => {
   });
 });
 
-// --- IPC: workspaces -----------------------------------------------------------------
+// --- IPC: the host's channels ----------------------------------------------------------
 
-// The tree watcher is bound to the active root; re-arm it after anything that
-// can change which folder is active.
-const watchActive = () => workspace.watch(() => win && win.webContents.send('workspace:changed'));
-const wsState = () => ({ active: workspace.activeId(), list: workspace.list() });
+// Everything the device owns is forwarded, by channel name, to the host's
+// method of the same name, with the calling window as the viewer. The table
+// of which channels those are is src/host/channels.js.
+function registerHostChannels() {
+  for (const ch of CH.HOST) {
+    if (CH.FIRE.has(ch)) {
+      ipcMain.on(ch, (e, ...args) => {
+        host.call(ch, viewerIdOf(e.sender), args).catch(() => {});
+      });
+    } else {
+      ipcMain.handle(ch, (e, ...args) => host.call(ch, viewerIdOf(e.sender), args));
+    }
+  }
+}
 
-ipcMain.handle('workspaces:list', () => wsState());
+const hostCall = (e, name, ...args) => host.call(name, viewerIdOf(e.sender), args);
+
+// --- IPC: split channels (a picker here, the operation on the host) ------------------
 
 ipcMain.handle('workspaces:add', async (e, name) => {
-  const res = await dialog.showOpenDialog(win, {
+  const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Pick or create the workspace folder for "' + name + '"',
     properties: ['openDirectory', 'createDirectory'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  const id = workspace.add(name, res.filePaths[0]);
-  workspace.setActive(id);
-  watchActive();
-  return wsState();
-});
-
-ipcMain.handle('workspaces:setActive', (e, id) => {
-  const ws = workspace.setActive(id);
-  watchActive();
-  return ws;
-});
-
-ipcMain.handle('workspaces:remove', async (e, id) => {
-  const space = workspace.list().find((w) => w.id === id);
-  if (space && workspace.isRemote(space)) {
-    try { await workspace.conn(space).disconnect(); } catch {}
-    workspace.conns.delete(id);
-  }
-  workspace.remove(id);
-  watchActive();
-  return wsState();
-});
-
-// Strip order only -- the active space and every watcher stay as they are.
-ipcMain.handle('workspaces:reorder', (e, ids) => {
-  workspace.reorder(ids);
-  return wsState();
-});
-
-ipcMain.handle('workspaces:rename', (e, id, name) => {
-  workspace.updateSpace(id, { name });
-  return wsState();
+  return hostCall(e, 'workspaces:addLocal', name, res.filePaths[0]);
 });
 
 // Point an existing space at a different folder (folder picker). Nothing on
 // disk moves; open terminals keep their old cwd.
 ipcMain.handle('workspaces:setPath', async (e, id) => {
-  const w = workspace.list().find((x) => x.id === id);
+  const w = workspace.space(id);
   if (!w) throw new Error('Unknown workspace: ' + id);
-  const res = await dialog.showOpenDialog(win, {
+  const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Pick the folder for workspace "' + w.name + '"',
     defaultPath: w.path,
     properties: ['openDirectory', 'createDirectory'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  workspace.updateSpace(id, { path: res.filePaths[0] });
-  if (id === workspace.activeId()) watchActive();
-  return wsState();
+  return hostCall(e, 'workspaces:setPathTo', id, res.filePaths[0]);
 });
 
-// --- IPC: temp (scratch) spaces --------------------------------------------
 // A temp space skips the folder picker and can be deleted, files included --
-// the one exception to "removing a space never touches the disk".
-
-// --- IPC: remote spaces --------------------------------------------------------------------
-
-// Registering and connecting are deliberately separate. The space exists the
-// moment it is named, so the connect pane -- and every later reconnect, of which
-// there will be many, because Tailscale's check expires on a timer -- runs
-// against a real space through exactly one code path.
-ipcMain.handle('workspaces:addRemote', (e, { name, host, path: remotePath }) => {
-  const id = workspace.addRemote(name, host, remotePath);
-  workspace.setActive(id);
-  watchActive();
-  return wsState();
-});
-
-// Opens the one interactive ssh session that may authenticate, and hands the
-// renderer its pty id so it can mount it as an ordinary terminal pane.
-ipcMain.handle('remote:connect', (e, { id, cols, rows, mkdir }) => {
-  const space = workspace.list().find((w) => w.id === id) || workspace.active();
-  if (!workspace.isRemote(space)) throw new Error('Not a remote space: ' + space.name);
-  const conn = workspace.conn(space);
-  conn.connect({ cols, rows, sender: e.sender, mkdir }).then(() => {
-    if (workspace.activeId() === space.id) watchActive();   // start polling once up
-  });
-  return conn.info();
-});
-
-ipcMain.handle('remote:state', (e, id) => workspace.remoteState(id));
-
-ipcMain.handle('remote:disconnect', async (e, id) => {
-  const space = workspace.list().find((w) => w.id === id);
-  if (space && workspace.isRemote(space)) await workspace.conn(space).disconnect();
-  return workspace.remoteState(id);
-});
-
-ipcMain.handle('workspaces:tempName', () => workspace.suggestTempName());
-
-ipcMain.handle('workspaces:addTemp', (e, name) => {
-  const id = workspace.addTemp(name);
-  workspace.setActive(id);
-  watchActive();
-  return wsState();
-});
-
-// termLabels comes from the renderer because only it knows which PTY belongs to
-// which space. The confirm lives here: this is where the native dialog is, and
-// deleting files deserves one rather than the renderer's confirm().
-ipcMain.handle('workspaces:discard', async (e, id, termLabels) => {
-  const w = workspace.list().find((x) => x.id === id);
-  if (!w) throw new Error('Unknown workspace: ' + id);
-  if (!w.temp) throw new Error('Not a temp space: ' + w.name);
-  const { files, bytes } = workspace.measure(w.path);
-  const size = bytes < 1048576 ? Math.round(bytes / 1024) + ' KB'
-    : (bytes / 1048576).toFixed(1) + ' MB';
-  const kills = (termLabels || []).length
-    ? '\n\nRunning terminals that will be killed: ' + termLabels.join(', ')
+// the one exception to "removing a space never touches the disk". The confirm
+// lives here because this is where the native dialog is, and deleting files
+// deserves one rather than the renderer's confirm(). Which terminals die comes
+// from the host, which is what knows; the renderer's list is no longer needed.
+ipcMain.handle('workspaces:discard', async (e, id) => {
+  const m = await hostCall(e, 'workspaces:measure', id);
+  const size = m.bytes < 1048576 ? Math.round(m.bytes / 1024) + ' KB'
+    : (m.bytes / 1048576).toFixed(1) + ' MB';
+  const kills = m.terms.length
+    ? '\n\nRunning terminals that will be killed: ' + m.terms.join(', ')
     : '';
-  const res = await dialog.showMessageBox(win, {
+  const res = await dialog.showMessageBox(winOf(e), {
     type: 'warning',
     buttons: ['Cancel', 'Delete'],
     defaultId: 0,
     cancelId: 0,
     title: 'Discard temp space',
-    message: 'Delete "' + w.name + '" and everything in it?',
-    detail: w.path + '\n' + files + ' file(s), ' + size + kills + '\n\nThis cannot be undone.',
+    message: 'Delete "' + m.name + '" and everything in it?',
+    detail: m.path + '\n' + m.files + ' file(s), ' + size + kills + '\n\nThis cannot be undone.',
   });
   if (res.response !== 1) return { canceled: true };
-  workspace.discardTemp(id);
-  watchActive();
-  return wsState();
+  return hostCall(e, 'workspaces:discardConfirmed', id);
 });
 
 ipcMain.handle('workspaces:promote', async (e, id) => {
-  const w = workspace.list().find((x) => x.id === id);
+  const w = workspace.space(id);
   if (!w) throw new Error('Unknown workspace: ' + id);
-  const res = await dialog.showOpenDialog(win, {
+  const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Keep "' + w.name + '" -- pick its permanent folder',
     properties: ['openDirectory', 'createDirectory'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  workspace.promote(id, res.filePaths[0]);
-  if (id === workspace.activeId()) watchActive();
-  return wsState();
+  return hostCall(e, 'workspaces:promoteTo', id, res.filePaths[0]);
 });
 
-// --- IPC: files (active workspace) -----------------------------------------------------
-
-ipcMain.handle('workspace:getRoot', () => workspace.getRoot());
-ipcMain.handle('workspace:tree', () => workspace.tree());
-ipcMain.handle('workspace:read', (e, rel) => workspace.readText(rel));
-ipcMain.handle('workspace:readDoc', (e, rel) => workspace.readDoc(rel));
-ipcMain.handle('workspace:write', (e, rel, content) => {
-  workspace.writeText(rel, content);
-  return true;
-});
-ipcMain.handle('workspace:createFile', (e, rel) => {
-  workspace.createFile(rel);
-  return true;
-});
-ipcMain.handle('workspace:createFolder', (e, rel) => {
-  workspace.createFolder(rel);
-  return true;
-});
-ipcMain.handle('workspace:rename', (e, from, to) => {
-  workspace.rename(from, to);
-  return true;
-});
-ipcMain.handle('workspace:trash', async (e, rel) => {
-  const R = workspace.backend();
-  if (R) await R.trash(rel);                 // moves into the space's .tote-trash/
-  else await shell.trashItem(workspace.resolveSafe(rel));
-  return true;
-});
-ipcMain.handle('workspace:openPath', (e, rel) => shell.openPath(workspace.resolveSafe(rel)));
+// --- IPC: files that need THIS machine's shell --------------------------------------
 // Reveal selects the item in the OS file manager; openPath hands it to its
 // default application instead. Both stay inside resolveSafe.
+
+const viewerWs = (e) => workspace.scoped(spaceOfWindow(e.sender));
+ipcMain.handle('workspace:openPath', (e, rel) => shell.openPath(viewerWs(e).resolveSafe(rel)));
 ipcMain.handle('workspace:revealPath', (e, rel) => {
-  shell.showItemInFolder(workspace.resolveSafe(rel));
+  shell.showItemInFolder(viewerWs(e).resolveSafe(rel));
 });
 
 // --- IPC: config ------------------------------------------------------------------------
@@ -635,18 +578,7 @@ ipcMain.handle('config:saveProviders', (e, list) => {
   setupAllProviderSessions();
   return true;
 });
-ipcMain.handle('config:getCliProfiles', () => configStore.getCliProfiles());
-ipcMain.handle('config:saveCliProfiles', (e, list) => {
-  configStore.saveCliProfiles(list);
-  return true;
-});
 ipcMain.handle('config:openDir', () => shell.openPath(configStore.getDir()));
-
-ipcMain.handle('views:get', () => configStore.getViews());
-ipcMain.handle('views:save', (e, data) => {
-  configStore.saveViews(data);
-  return true;
-});
 
 ipcMain.handle('settings:get', () => configStore.getSettings());
 ipcMain.handle('settings:save', (e, s) => {
@@ -661,7 +593,7 @@ ipcMain.handle('settings:save', (e, s) => {
 ipcMain.handle('apps:list', () => configStore.getApps().list);
 
 ipcMain.handle('apps:add', async (e, name) => {
-  const res = await dialog.showOpenDialog(win, {
+  const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Pick the app binary for "' + name + '"',
     properties: ['openFile'],
   });
@@ -683,7 +615,7 @@ ipcMain.handle('apps:remove', (e, id) => {
 ipcMain.handle('apps:launch', (e, id) => {
   const entry = configStore.getApps().list.find((a) => a.id === id);
   if (!entry) throw new Error('Unknown app: ' + id);
-  return launchApp(entry);
+  return launchApp(entry, viewerWs(e));
 });
 
 // --- IPC: setup wizard / connections -------------------------------------------------------------
@@ -696,18 +628,20 @@ ipcMain.handle('setup:fixNpmPrefix', () => fixNpmPrefix());
 
 ipcMain.handle('conn:claudeStatus', () => claudeStatus());
 
-ipcMain.handle('conn:bindClaude', () => {
-  if (workspace.isRemote(workspace.active())) {
+ipcMain.handle('conn:bindClaude', (e) => {
+  const W = viewerWs(e);
+  if (workspace.isRemote(W.active())) {
     throw new Error('Claude Desktop runs on this machine and cannot be bound to a remote space');
   }
-  const cfgPath = bindClaudeToWorkspace(workspace.getRoot());
-  return { cfgPath, workspace: workspace.active().name, root: workspace.getRoot() };
+  const cfgPath = bindClaudeToWorkspace(W.getRoot());
+  return { cfgPath, workspace: W.active().name, root: W.getRoot() };
 });
 
-ipcMain.handle('conn:mcpSnippet', () => mcpSnippet(workspace.getRoot()));
+ipcMain.handle('conn:mcpSnippet', (e) => mcpSnippet(viewerWs(e).getRoot()));
 
-// Run an arbitrary install/setup command in a PTY rooted at the active
-// workspace, so the wizard can stream real output into a mini terminal.
+// Run an arbitrary install/setup command in a PTY rooted at the window's
+// space, so the wizard can stream real output into a mini terminal. Not a host
+// session: the wizard installs on THIS machine, and nobody else watches it.
 ipcMain.handle('pty:run', (e, { command, args }) => {
   let cmd = command;
   let argv = args || [];
@@ -716,7 +650,7 @@ ipcMain.handle('pty:run', (e, { command, args }) => {
     cmd = parts[0];
     argv = parts.slice(1);
   }
-  const id = ptys.spawn({ command: cmd, args: argv }, workspace.localCwd(), 110, 28, e.sender);
+  const id = ptys.spawn({ command: cmd, args: argv }, viewerWs(e).localCwd(), 110, 28, e.sender);
   return { id };
 });
 
@@ -731,15 +665,12 @@ ipcMain.handle('provider:ensureLocal', async (e, providerId) => {
 
 // Experimental: attach a workspace file into a web tab by injecting a File
 // into the page's file input (or firing a synthetic drop event).
-const SEND_FILE_MAX = 15 * 1024 * 1024;
+// Split: the bytes come from the host, the injection happens here, where the
+// webview is.
 ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
-  const abs = await workspace.localFileFor(relPath);
-  const stat = fs.statSync(abs);
-  if (stat.size > SEND_FILE_MAX) throw new Error('File too large for in-page attach (> 15 MB)');
   const wc = webContents.fromId(wcId);
   if (!wc) throw new Error('Tab is not ready yet - click it first, then retry.');
-  const b64 = fs.readFileSync(abs).toString('base64');
-  const name = path.basename(abs);
+  const { name, b64 } = await hostCall(e, 'workspace:fileBytes', relPath);
   const script = `(async () => {
     const bin = atob(${JSON.stringify(b64)});
     const bytes = new Uint8Array(bin.length);
@@ -762,52 +693,9 @@ ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
   return wc.executeJavaScript(script);
 });
 
-// --- IPC: terminals ------------------------------------------------------------------------------
-
-ipcMain.handle('pty:available', () => ptys.available());
-
-ipcMain.handle('pty:spawn', async (e, { profileId, cols, rows }) => {
-  const profile = configStore.getCliProfiles().find((p) => p.id === profileId);
-  if (!profile) throw new Error('Unknown CLI profile: ' + profileId);
-  const space = workspace.active();
-  const conn = workspace.isRemote(space) ? workspace.conn(space) : null;
-  // Try to heal silently first: after a sleep the master is usually just gone,
-  // and rebuilding it needs no human at all. Only send the user to the connect
-  // pane when it genuinely needs one.
-  if (conn && conn.state !== 'up' && !(await conn.silentConnect())) {
-    throw new Error(`${conn.host}: ${conn.message} — use the connect button in the files pane`);
-  }
-  const cwd = workspace.localCwd();
-  const id = ptys.spawn(profile, cwd, cols, rows, e.sender, conn);
-  return { id, workspace: space.name, cwd: conn ? conn.root : cwd, host: conn ? conn.host : null };
-});
-
-ipcMain.on('pty:write', (e, { id, data }) => ptys.write(id, data));
-ipcMain.on('pty:resize', (e, { id, cols, rows }) => ptys.resize(id, cols, rows));
-ipcMain.on('pty:kill', (e, { id }) => ptys.kill(id));
-
-ipcMain.handle('cli:check', async (e, command) => {
-  if (!command) return true; // plain shell profile always works
-  // A remote space runs the agent on the remote, so that is where it has to
-  // exist -- checking this machine would report the opposite of the truth.
-  const R = workspace.backend();
-  if (R) {
-    try {
-      await R.conn.run(`command -v ${shq(command)} >/dev/null`);
-      return true;
-    } catch { return false; }
-  }
-  try {
-    const cmd =
-      process.platform === 'win32' ? `where "${command}"` : `command -v "${command}"`;
-    execSync(cmd, { stdio: 'ignore', shell: process.platform === 'win32' ? undefined : '/bin/sh' });
-    return true;
-  } catch {
-    return false;
-  }
-});
-
 // --- IPC: misc ---------------------------------------------------------------------------------------
+
+ipcMain.handle('app:newWindow', () => { createWindow(); });
 
 ipcMain.on('app:openExternal', (e, url) => {
   // mailto: is here for links in a rendered doc -- the markdown parser allows
@@ -825,6 +713,7 @@ if (!gotLock) {
     // No window means it was closed with the app still alive (macOS): open one,
     // as `activate` does. Before ready there is nothing to do -- `whenReady`
     // is about to create it.
+    const win = focusedWindow();
     if (!win) {
       if (app.isReady()) createWindow();
       return;
@@ -843,13 +732,19 @@ if (!gotLock) {
     // mid-session. The report is pushed once the window can show a toast.
     swept = workspace.sweepTemp(configStore.getSettings().scratchDays ?? 7);
     ptys = new PtyManager();
+    host = new Host({
+      cfg: configStore, workspace, ptys,
+      platform: { trash: (abs) => shell.trashItem(abs), openExternal: (url) => shell.openExternal(url) },
+    });
+    registerHostChannels();
     // RemoteConn needs a pty it can both stream to a pane and read itself, plus
-    // the userData paths; main.js is the only layer that has all three.
+    // the userData paths; main.js is the only layer that has all three. Its pty
+    // is a host session, so every viewer can see the connect pane.
     workspace.configureRemote({
       socketDir: path.join(app.getPath('userData'), 'ssh'),
       cacheDir: path.join(app.getPath('userData'), 'remote'),
-      launchPty: (spec, sender, onData, onExit) => ptys.launch(spec, sender, onData, onExit),
-      onState: (info) => { if (win) win.webContents.send('remote:state', info); },
+      launchPty: (spec, owner, onData, onExit) => host.launchRemotePty(spec, owner, onData, onExit),
+      onState: (info) => host.emit('remote:state', info),
       // Tailscale's check blocks the ssh session until this page is visited, so
       // opening it is what unblocks the connect -- and it goes to the system
       // browser, where the user's Tailscale login already lives.
@@ -862,9 +757,8 @@ if (!gotLock) {
     // is a tree that is simply there.
     const active = workspace.active();
     if (workspace.isRemote(active)) {
-      workspace.conn(active).silentConnect().then(() => watchActive()).catch(() => {});
+      workspace.conn(active).silentConnect().then(() => host.syncWatches()).catch(() => {});
     }
-    watchActive();
     applyBridgeSetting();
     applyKeepAwake();
     createWindow();
@@ -887,10 +781,16 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
-    ptys && ptys.killAll();
     // The ssh masters are deliberately left running: ControlPersist=yes outlives
     // Tote, so the next launch reconnects to a still-authenticated connection
     // instead of sending the user back to a browser login.
-    if (process.platform !== 'darwin') app.quit();
+    //
+    // On macOS the app outlives its windows, and so do its terminals now: they
+    // belong to the host, and the next window re-attaches to them with a
+    // replay. Elsewhere the last window closing is a quit.
+    if (process.platform !== 'darwin') {
+      ptys && ptys.killAll();
+      app.quit();
+    }
   });
 }

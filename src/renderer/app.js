@@ -11,8 +11,8 @@ const state = {
   views: {}, // wsId -> { tabs: [{id, providerId}], tiling: {tree, focus, zoom} }  (persisted)
   tabs: new Map(), // tabId -> { wv: <webview>|null, providerId, wsId }  (webviews created lazily)
   activeTab: null, // tabId shown in the center (belongs to the active workspace)
-  terms: new Map(), // termId -> { term, fit, ptyId, localId, pane, name, wsId, alive }
-  termSeq: 0,
+  terms: new Map(), // session id -> { term, fit, sid, pane, name, wsId, alive }
+  sessions: new Map(), // session id -> host metadata, from pty:list -- what a term leaf may mount
   activeTerm: null,
   activeTermByWs: {}, // wsId -> termId last active there
   cliAvail: new Map(), // profileId -> boolean
@@ -21,7 +21,6 @@ const state = {
   docOrder: [], // doc leaf ids, least recently focused first -- which pane a click retargets
   wsDrag: null, // id of the workspace tab being dragged along the strip
   remote: {}, // spaceId -> { state, host, root, message, url } pushed from main
-  ptyPending: new Map(), // ptyId -> output that arrived before a pane claimed it
   treeWs: null, // which space state.treeData belongs to -- see refreshTree
 };
 
@@ -339,13 +338,12 @@ async function addTempWorkspace() {
 $('#btn-add-temp').onclick = addTempWorkspace;
 $('#btn-add-remote').onclick = addRemoteWorkspace;
 
-// Main measures the folder, names the terminals it will kill, and confirms.
+// The host measures the folder and names the terminals it will kill; main confirms.
 // Panes come down only after the delete succeeded, so a cancel leaves nothing
 // half-closed.
 async function discardWorkspace(ws) {
-  const labels = [...state.terms.values()].filter((t) => t.wsId === ws.id).map((t) => t.name);
   try {
-    const res = await tote.wsDiscard(ws.id, labels);
+    const res = await tote.wsDiscard(ws.id);
     if (!res || res.canceled) return;
     state.workspaces = res;
     for (const [id, t] of [...state.terms]) if (t.wsId === ws.id) closeTerm(id);
@@ -454,17 +452,17 @@ async function connectRemote({ mkdir = false } = {}) {
   // two xterms on the same session, both echoing and both writing.
   const open = remoteInfo(w.id);
   if (open && open.state === 'connecting' && open.ptyId) {
-    const live = [...state.terms.values()].find((t) => t.ptyId === open.ptyId);
-    if (live) { focusPane(live.pane.el.dataset.leaf); live.term.focus(); return; }
+    const live = state.terms.get(open.ptyId);
+    if (live && live.pane.el.dataset.leaf) { focusPane(live.pane.el.dataset.leaf); live.term.focus(); return; }
   }
   const ctx = createTermPane('connect ' + w.host);
   const { term } = ctx;
   term.writeln('\x1b[90m[Tote] connecting to ' + w.host + ' — answer anything it asks here\x1b[0m');
   try {
-    const info = await tote.remoteConnect(w.id, term.cols || 80, term.rows || 24, mkdir);
+    const info = await tote.remoteConnect(w.id, term.cols || 80, term.rows || 24, mkdir, ctx.sid);
     state.remote[w.id] = info;
     renderRemote();
-    if (info.ptyId) attachPty(ctx, info.ptyId);
+    if (info.ptyId) bindTerm(ctx);
   } catch (e) {
     term.writeln('\x1b[31mCould not connect:\x1b[0m ' + e.message);
     ctx.pane.el.classList.add('dead');
@@ -1486,9 +1484,20 @@ function refitTerms() {
   ptyResizeTimer = setTimeout(() => {
     for (const t of state.terms.values()) {
       if (!t.alive || !t.pane || t.pane.el.classList.contains('hidden')) continue;
-      try { tote.ptyResize(t.ptyId, t.term.cols, t.term.rows); } catch {}
+      pushTermSize(t, { fitted: true });
     }
   }, 150);
+}
+
+// Hand the pty this window's size for a terminal -- but only a real one. A pane
+// that is hidden or not laid out yet measures next to nothing, FitAddon clamps
+// that to 2 columns, and the shell would redraw its prompt for a 2-column
+// screen in every window showing the session.
+function pushTermSize(t, { fitted = false } = {}) {
+  if (!t.pane || t.pane.el.classList.contains('hidden')) return;
+  if (!fitted && t.fit) { try { t.fit.fit(); } catch {} }
+  if (t.term.cols < 20 || t.term.rows < 4) return;
+  try { tote.ptyResize(t.sid, t.term.cols, t.term.rows); } catch {}
 }
 
 /* A terminal whose pane is hidden -- another group, another space -- keeps
@@ -1515,14 +1524,13 @@ function repairViewport(term) {
   try { term._core.viewport.syncScrollArea(true); } catch {}
 }
 
-// Kill the PTY behind a term pane. The pane element and the leaf are closePane's
-// business; this only tears down the instance.
-function killTermByRef(localId) {
-  const hit = [...state.terms].find(([, t]) => t.localId === localId);
-  if (!hit) return;
-  const [id, t] = hit;
-  if (t.alive) tote.ptyKill(t.ptyId);
-  state.terms.delete(id);
+// Kill the session behind a term pane -- dead or alive, the host forgets it.
+// The pane element and the leaf are closePane's business; this only tears down
+// the instance. Every other window showing it hears the exit.
+function killTermByRef(sid) {
+  tote.ptyKill(sid);
+  state.terms.delete(sid);
+  state.sessions.delete(sid);
 }
 
 async function renderTermMenu() {
@@ -1585,9 +1593,14 @@ function acceptFileDrop(el, onPaths) {
 // Two things use this: an agent terminal, and a remote space's connect session
 // -- which is a pane rather than a modal precisely because re-authenticating is
 // not a one-off setup step, and must not interrupt whatever else is open.
-function createTermPane(title) {
-  const id = ++state.termSeq;
-  const pane = paneShell('term:' + id, title);
+//
+// The session id is chosen here, before the pty exists: the pane has to be
+// placed and fitted first so the pty starts at its real size, and its leaf --
+// which names the session -- is in the tree from that moment on. `place:
+// false` builds the pane for a leaf that is already in the tree: a session
+// some other window (or an earlier load of this one) started.
+function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.active, place = true } = {}) {
+  const pane = paneShell('term:' + sid, title);
 
   const term = new Terminal({
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
@@ -1607,9 +1620,12 @@ function createTermPane(title) {
   }
   term.open(pane.body);
 
-  const entry = { term, fit, ptyId: null, localId: id, pane, name: title,
-                  wsId: state.workspaces.active, alive: false };
-  state.terms.set(id, entry);
+  const entry = { term, fit, sid, pane, name: title, wsId, alive: false };
+  state.terms.set(sid, entry);
+  const send = (d) => { if (entry.alive) tote.ptyWrite(sid, d); };
+  // Keystrokes only: this xterm's answers to the program's queries are dropped,
+  // because the host's mirror answers them once for every window (termreports.js).
+  term.onData((d) => { if (!window.TermReports.isTermReport(d)) send(d); });
 
   // Keys Tote steals from the agent. A TUI owns every bare key, so both of these
   // ride on Shift, which Claude Code and Codex leave alone:
@@ -1640,13 +1656,13 @@ function createTermPane(title) {
     if (e.type !== 'keydown') return true;
     if (e.altKey && !e.ctrlKey && !e.metaKey && ALT_ARROW[e.key]) {
       // xterm modifier code: 1 + Shift(1) + Alt(2)
-      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\x1b[1;' + (e.shiftKey ? 4 : 3) + ALT_ARROW[e.key]);
+      send('\x1b[1;' + (e.shiftKey ? 4 : 3) + ALT_ARROW[e.key]);
       e.preventDefault();
       return false;
     }
     if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return true;
     if (e.key === 'Enter') {
-      if (entry.ptyId) tote.ptyWrite(entry.ptyId, '\n');
+      send('\n');
       return false;
     }
     const scroll = SCROLL[e.key];
@@ -1660,39 +1676,62 @@ function createTermPane(title) {
   // this the drop falls through to Chromium, which navigates the window to the
   // file instead.
   acceptFileDrop(pane.el, (paths) => {
-    if (!entry.ptyId || !paths.length) return;
-    tote.ptyWrite(entry.ptyId, paths.map(shellEscapePath).join(' ') + ' ');
+    if (!entry.alive || !paths.length) return;
+    send(paths.map(shellEscapePath).join(' ') + ' ');
     term.focus();
   });
 
   // Place the pane first so it has real dimensions, then fit synchronously: the
-  // PTY must be created at the true size, not 80x24.
-  openPane(T.leaf(newLeafId(), 'term', id));
-  if (fit) { try { fit.fit(); } catch {} }
-  return { id, entry, term, fit, pane };
+  // PTY must be created at the true size, not 80x24. An adopted pane is not
+  // laid out yet -- fitting it now would size its xterm to 2x1 -- so it waits
+  // for the refit applyTiles schedules.
+  if (place) {
+    openPane(T.leaf(newLeafId(), 'term', sid));
+    if (fit) { try { fit.fit(); } catch {} }
+  }
+  return { sid, entry, term, fit, pane };
 }
 
-// Bind a created pane to a pty id returned by main, in both directions.
-function attachPty(ctx, ptyId) {
-  ctx.entry.ptyId = ptyId;
+// The host has started the session this pane names: input flows from here on.
+// Output has been flowing all along -- the host subscribed this window before
+// the pty existed.
+function bindTerm(ctx) {
   ctx.entry.alive = true;
-  const early = state.ptyPending.get(ptyId);
-  if (early) { ctx.term.write(early); state.ptyPending.delete(ptyId); }
-  ctx.term.onData((d) => tote.ptyWrite(ptyId, d));
-  if (ctx.fit) { try { ctx.fit.fit(); } catch {} }   // the pane may have resized while spawning
-  tote.ptyResize(ptyId, ctx.term.cols, ctx.term.rows);
+  pushTermSize(ctx.entry);   // refits: the pane may have resized while spawning
   ctx.term.focus();
+}
+
+/* A session that exists on the host but has no pane in this window yet: one
+ * started by another window, or by this one before a reload. The host replays
+ * its screen and scrollback as ordinary pty:data, then streams live output, so
+ * nothing here differs from a terminal this window started -- the entry just
+ * has to be registered before the replay can arrive. */
+function adoptSession(meta) {
+  const ctx = createTermPane(meta.title || 'terminal', { sid: meta.id, wsId: meta.wsId, place: false });
+  ctx.entry.alive = !!meta.alive;
+  if (!meta.alive) ctx.pane.el.classList.add('dead');
+  tote.ptyAttach(meta.id).catch(() => {
+    ctx.entry.alive = false;
+    ctx.pane.el.classList.add('dead');
+  });
+  return ctx.entry;
+}
+
+async function refreshSessions() {
+  try {
+    state.sessions = new Map((await tote.ptyList()).map((m) => [m.id, m]));
+  } catch {}
 }
 
 async function spawnTerm(profile) {
   const ctx = createTermPane(profile.name);
   const { term, pane } = ctx;
   try {
-    const res = await tote.ptySpawn(profile.id, term.cols || 80, term.rows || 24);
+    const res = await tote.ptySpawn(ctx.sid, profile.id, term.cols || 80, term.rows || 24);
     const where = res.host ? res.host + ':' + res.cwd : res.cwd;
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + where + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
-    attachPty(ctx, res.id);
+    bindTerm(ctx);
   } catch (e) {
     term.writeln('\x1b[31mCould not start ' + profile.name + ':\x1b[0m ' + e.message);
     pane.el.classList.add('dead');
@@ -1714,20 +1753,19 @@ function closeTerm(id) {
     return;
   }
   if (lf) owner.tree = T.removeLeaf(owner.tree, lf.id);
-  if (t.alive) tote.ptyKill(t.ptyId);
+  tote.ptyKill(id);
   destroyPaneEl('term:' + id);
   state.terms.delete(id);
+  state.sessions.delete(id);
   renderGroupBar();
   saveViews();
 }
 
+// Two id spaces share these events: host sessions (string ids this renderer
+// picked) and the wizard's own installer pty (a number from pty:run).
 tote.onPtyData((ptyId, data) => {
-  for (const t of state.terms.values()) {
-    if (t.ptyId === ptyId) {
-      t.term.write(data);
-      return;
-    }
-  }
+  const t = state.terms.get(ptyId);
+  if (t) { t.term.write(data); return; }
   if (wizTerm && ptyId === wizTermPty) {
     wizTerm.write(data);
     // Buffer for the post-exit npm diagnostics; warnings sit at the tail, so
@@ -1735,29 +1773,20 @@ tote.onPtyData((ptyId, data) => {
     wizBuf = (wizBuf + data).slice(-131072);
     return;
   }
-  // Main starts streaming the moment it spawns, which is before the IPC reply
-  // carrying the id has come back -- so the first output of every pty arrives
-  // unclaimed. It matters most for a remote connect, where those first lines are
-  // the host-key question or the Tailscale login URL.
-  state.ptyPending.set(ptyId, ((state.ptyPending.get(ptyId) || '') + data).slice(-65536));
-  // A pty that dies before its pane claims it keeps its output, so attachPty can
-  // still show why -- but the map must not grow forever. Insertion order is
-  // oldest-first, so the stalest entry is the one to drop.
-  while (state.ptyPending.size > 16) {
-    state.ptyPending.delete(state.ptyPending.keys().next().value);
-  }
 });
 
 tote.onPtyExit((ptyId, code) => {
-  for (const t of state.terms.values()) {
-    if (t.ptyId === ptyId) {
-      state.ptyPending.delete(ptyId);   // claimed: there is nothing left to replay
-      t.alive = false;
-      if (t.pane) t.pane.el.classList.add('dead');
-      t.term.writeln('\r\n\x1b[90m[process exited with code ' + code + ']\x1b[0m');
-      return;
-    }
+  const t = state.terms.get(ptyId);
+  if (t) {
+    if (!t.alive && t.pane && t.pane.el.classList.contains('dead')) return;   // already told
+    t.alive = false;
+    if (t.pane) t.pane.el.classList.add('dead');
+    // A null code is a kill: the pane was closed in another window.
+    t.term.writeln('\r\n\x1b[90m[' + (code == null ? 'closed in another window'
+      : 'process exited with code ' + code) + ']\x1b[0m');
+    return;
   }
+  if (typeof ptyId === 'string') return;
   if (wizOnExit) wizOnExit(ptyId, code);
 });
 
@@ -1787,31 +1816,13 @@ const T = window.TileTree;
 const GUTTER = 6;
 const MIN_PANE = 140;
 
-let leafSeq = 0;
-const newLeafId = () => 'L' + (++leafSeq);
-let groupSeq = 0;
-const newGroupId = () => 'G' + (++groupSeq);
+// Random, not counted: two windows edit one views.json (last edit wins), and
+// two per-window counters would both hand out "L12".
+const newLeafId = () => newId('L');
+const newGroupId = () => newId('G');
 
 // Every group of every space, including a not-yet-migrated single tiling.
 const groupsOf = (V) => (V ? (V.groups || (V.tiling ? [V.tiling] : [])) : []);
-
-// Persisted ids must not be handed out again after a restart.
-function adoptLeafSeq(all) {
-  for (const V of Object.values(all || {})) {
-    for (const g of groupsOf(V)) {
-      for (const lf of T.leaves(g.tree)) {
-        const n = parseInt(String(lf.id).slice(1), 10);
-        if (n > leafSeq) leafSeq = n;
-        // Terminal leaves reference a per-run counter. Without adopting it too,
-        // the first terminal of the next run takes a number some other space's
-        // stale leaf still points at, and that space mounts this terminal.
-        if (lf.kind === 'term' && +lf.ref > state.termSeq) state.termSeq = +lf.ref;
-      }
-      const gn = parseInt(String(g.id || '').slice(1), 10);
-      if (gn > groupSeq) groupSeq = gn;
-    }
-  }
-}
 
 /* Groups are the space's virtual desktops: each holds its own tiling tree, and
  * switching brings one tree to the front. Panes in the other groups stay alive
@@ -1922,12 +1933,18 @@ function mountLeaf(lf) {
   }
   if (lf.kind === 'term') {
     // A terminal belongs to the space that spawned it, the way a web leaf must
-    // name a tab of this space. Anything else -- a dead ref, or a leaf pointing
-    // at another space's agent -- is pruned by returning null.
-    const t = [...state.terms.values()].find((x) => x.localId === lf.ref || x.ptyId === lf.ref);
-    if (!t || t.wsId !== state.workspaces.active) return null;
+    // name a tab of this space. Anything else -- a session the host no longer
+    // has, or a leaf pointing at another space's agent -- is pruned by
+    // returning null. A session this window has no pane for yet is adopted.
+    let t = state.terms.get(lf.ref);
+    if (!t) {
+      const meta = state.sessions.get(lf.ref);
+      if (!meta || meta.wsId !== state.workspaces.active) return null;
+      t = adoptSession(meta);
+    }
+    if (t.wsId !== state.workspaces.active) return null;
   }
-  return panes.get(key) || null;   // terminals are built by spawnTerm
+  return panes.get(key) || null;   // terminals are built by createTermPane
 }
 
 /* ----- applying the tree ----- */
@@ -2366,8 +2383,14 @@ function closeGroup(id) {
 function focusPaneContent(lf) {
   if (!lf) return;
   if (lf.kind === 'term') {
-    const t = [...state.terms.values()].find((x) => x.ptyId === lf.ref || x.localId === lf.ref);
-    if (t) t.term.focus();
+    const t = state.terms.get(lf.ref);
+    if (!t) return;
+    t.term.focus();
+    // One pty, one size: the window you are typing in takes it back. Fitted
+    // first, because this can run before the layout's own refit has -- and a
+    // pty is shared now, so a bogus size here makes the shell redraw for it in
+    // every OTHER window too.
+    if (t.alive) pushTermSize(t);
   } else if (lf.kind === 'web') {
     const en = state.tabs.get(lf.ref);
     if (!en || !en.wv) return;
@@ -2416,6 +2439,12 @@ addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
     const doc = focusedDoc();
     if (doc) { e.preventDefault(); saveDoc(doc.id); return; }
+  }
+  // Another window on this same Tote: its own space, the same terminals.
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
+    e.preventDefault();
+    tote.newWindow();
+    return;
   }
   if (e.ctrlKey && !e.altKey && e.key === '`') {
     e.preventDefault();
@@ -2948,6 +2977,57 @@ $('#btn-run-wizard').onclick = () => {
 
 /* ---------------- events from main ---------------- */
 tote.onWorkspaceChanged(() => { refreshTree(); recheckDocs(); });
+tote.onWorkspacesChanged(onSpacesChanged);
+tote.onViewsChanged(adoptViews);
+
+/* Another window changed the space registry: a space added, renamed,
+ * re-pointed, reordered -- or removed, in which case the host has already
+ * moved this window to another space, and listing is how we find out. */
+async function onSpacesChanged() {
+  const was = state.workspaces.active;
+  state.workspaces = await tote.listWorkspaces();
+  renderWorkspaceSwitcher();
+  if (state.workspaces.active !== was) {
+    showWorkspaceViews();
+    await refreshTree();
+  }
+}
+
+/* Another window saved views.json: last edit wins, and this window shows it.
+ * Sessions are re-listed FIRST -- a term leaf for a terminal the other window
+ * just started would otherwise be pruned here as unknown, and the next save
+ * from this window would delete it from theirs. Then every instance that no
+ * longer exists anywhere is torn down, the way closePane would have. */
+async function adoptViews(views) {
+  await refreshSessions();
+  const before = state.views;
+  state.views = views || {};
+  const tabs = new Set(), docs = new Map(), terms = new Set();
+  for (const V of Object.values(state.views)) {
+    for (const t of V.tabs || []) tabs.add(t.id);
+    for (const d of V.docs || []) docs.set(d.id, d);
+    for (const g of groupsOf(V)) {
+      for (const lf of T.leaves(g.tree)) if (lf.kind === 'term') terms.add(lf.ref);
+    }
+  }
+  for (const id of [...state.tabs.keys()]) {
+    if (!tabs.has(id)) { destroyPaneEl('web:' + id); destroyTabWebview(id); }
+  }
+  for (const [sid] of [...state.terms]) {
+    if (!terms.has(sid)) { tote.ptyDetach(sid); destroyPaneEl('term:' + sid); state.terms.delete(sid); }
+  }
+  const oldDocs = new Map();
+  for (const V of Object.values(before || {})) for (const d of V.docs || []) oldDocs.set(d.id, d);
+  for (const id of [...state.docs.keys()]) {
+    const d = docs.get(id);
+    if (!d) { destroyPaneEl('doc:' + id); state.docs.delete(id); continue; }
+    const was = oldDocs.get(id);
+    if (state.docs.get(id).path !== d.path) loadDoc(id);          // retargeted over there
+    else if (was && was.mode !== d.mode) renderDocBody(id);       // src/view flipped
+  }
+  applyTiles();
+  renderGroupBar();
+}
 tote.onWindowFocus(focusActivePaneContent);
 tote.onRemoteState(onRemoteState);
 
@@ -2972,7 +3052,7 @@ tote.onDownloadDone((m) => {
   state.settings = await tote.getSettings();
   state.workspaces = await tote.listWorkspaces();
   state.views = (await tote.getViews()) || {};
-  adoptLeafSeq(state.views);   // never re-issue a persisted pane id
+  await refreshSessions();     // before the first applyTiles, or every term leaf is pruned
   // Control sockets outlive Tote (ControlPersist=yes), so a remote space is
   // usually already connected by the time we ask -- which is the point.
   for (const w of state.workspaces.list.filter(isRemote)) {

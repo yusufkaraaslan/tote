@@ -178,6 +178,8 @@ systems:
     - name: wsState
       args: []
     depends_on:
+    - host.channels
+    - host.host
     - main.config
     - main.installer
     - main.ptymanager
@@ -621,12 +623,22 @@ systems:
       args: []
     - name: watchRemote
       args:
+      - name: space
+        type: unknown
       - name: callback
         type: unknown
     - name: list
       args: []
     - name: activeId
       args: []
+    - name: space
+      args:
+      - name: id
+        type: unknown
+    - name: scoped
+      args:
+      - name: id
+        type: unknown
     - name: active
       args: []
     - name: setActive
@@ -739,8 +751,18 @@ systems:
         type: unknown
       - name: budget
         type: unknown
-    - name: watch
+    - name: watchSpaces
       args:
+      - name: ids
+        type: unknown
+      - name: onChange
+        type: unknown
+    - name: watchLocal
+      args:
+      - name: space
+        type: unknown
+      - name: budget
+        type: unknown
       - name: callback
         type: unknown
     - name: watchDownloads
@@ -763,6 +785,181 @@ systems:
         type: unknown
     - name: skipper
       args: []
+- id: host
+  name: Host
+  components:
+  - id: channels
+    name: channels
+    kind: module
+    class_name: src/host/channels.js
+    methods:
+    - name: kindOf
+      args:
+      - name: channel
+        type: unknown
+  - id: sessions
+    name: sessions
+    kind: module
+    class_name: src/host/sessions.js
+    signals:
+    - name: pty:data
+      args: []
+    - name: pty:exit
+      args: []
+    methods:
+    - name: list
+      args: []
+    - name: get
+      args:
+      - name: sid
+        type: unknown
+    - name: spawn
+      args:
+      - name: opts
+        type: unknown
+    - name: onData
+      args:
+      - name: sid
+        type: unknown
+      - name: data
+        type: unknown
+    - name: onExit
+      args:
+      - name: sid
+        type: unknown
+      - name: exitCode
+        type: unknown
+    - name: attach
+      args:
+      - name: sid
+        type: unknown
+      - name: viewerId
+        type: unknown
+    - name: detach
+      args:
+      - name: sid
+        type: unknown
+      - name: viewerId
+        type: unknown
+    - name: detachAll
+      args:
+      - name: viewerId
+        type: unknown
+    - name: write
+      args:
+      - name: sid
+        type: unknown
+      - name: data
+        type: unknown
+    - name: resize
+      args:
+      - name: sid
+        type: unknown
+      - name: cols
+        type: unknown
+      - name: rows
+        type: unknown
+    - name: kill
+      args:
+      - name: sid
+        type: unknown
+    - name: killWhere
+      args:
+      - name: pred
+        type: unknown
+    - name: forget
+      args:
+      - name: sid
+        type: unknown
+  - id: host
+    name: host
+    kind: module
+    class_name: src/host/host.js
+    depends_on:
+    - host.sessions
+    - main.ptymanager
+    - main.sshfix
+    - main.workspace
+    signals:
+    - name: workspace:changed
+      args: []
+    - name: workspaces:changed
+      args: []
+    - name: views:changed
+      args: []
+    - name: remote:state
+      args: []
+    - name: download:done
+      args: []
+    methods:
+    - name: addViewer
+      args:
+      - name: opts
+        type: unknown
+    - name: removeViewer
+      args:
+      - name: id
+        type: unknown
+    - name: ctx
+      args:
+      - name: viewerId
+        type: unknown
+    - name: ws
+      args:
+      - name: ctx
+        type: unknown
+    - name: call
+      args:
+      - name: name
+        type: unknown
+      - name: viewerId
+        type: unknown
+      - name: args
+        type: unknown
+    - name: emit
+      args:
+      - name: event
+        type: unknown
+      - name: payload
+        type: unknown
+      - name: filter
+        type: unknown
+    - name: syncWatches
+      args: []
+    - name: setViewerSpace
+      args:
+      - name: ctx
+        type: unknown
+      - name: id
+        type: unknown
+    - name: wsState
+      args:
+      - name: ctx
+        type: unknown
+    - name: spacesChanged
+      args: []
+    - name: termTitles
+      args:
+      - name: wsId
+        type: unknown
+    - name: dropSpace
+      args:
+      - name: id
+        type: unknown
+    - name: launchRemotePty
+      args:
+      - name: spec
+        type: unknown
+      - name: owner
+        type: unknown
+      - name: onData
+        type: unknown
+      - name: onExit
+        type: unknown
+    - name: methods
+      args:
+      - name: host
+        type: unknown
 - id: preload
   name: Preload
   components:
@@ -1527,6 +1724,15 @@ systems:
       - name: src
         type: unknown
       - name: start
+        type: unknown
+  - id: termreports
+    name: termreports
+    kind: module
+    class_name: src/renderer/termreports.js
+    methods:
+    - name: isTermReport
+      args:
+      - name: data
         type: unknown
   - id: npmfix
     name: npmfix

@@ -1,6 +1,12 @@
 // Workspace manager: two-level spaces (one Global + project workspaces).
-// "Active workspace" is the routing context: downloads from web tabs,
-// bridged files from native apps, and new CLI terminals all land here.
+// A space is the routing context: downloads from web tabs, bridged files from
+// native apps, and new CLI terminals all land in the space that asked.
+//
+// Which space that is belongs to the VIEWER, not to this object: two windows
+// (or another device) can look at different spaces of the same host at once.
+// `scoped(id)` is how a caller says which -- every file op below resolves its
+// root through `this.active()`, and a scoped view overrides exactly that. The
+// registry's own `active` is only the space a fresh window opens on.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -176,10 +182,9 @@ function originApp(absPath) {
 class WorkspaceManager {
   constructor(configStore) {
     this.cfg = configStore;
-    this.watcher = null;
-    this.watchGen = 0;               // only the newest watch() arm may bind
+    this.watchers = new Map();       // spaceId -> { root, close } -- see watchSpaces()
+    this.watchGen = 0;               // only the newest watchSpaces() call may bind
     this.dlWatcher = null;
-    this.poller = null;
     this.conns = new Map();          // spaceId -> RemoteConn, created lazily
     this.remoteHooks = null;         // set by configureRemote() once main.js has a PtyManager
     this.ensureInbox();
@@ -283,6 +288,30 @@ class WorkspaceManager {
 
   activeId() {
     return this.cfg.getWorkspaces().active;
+  }
+
+  // One registered space with its display path, or null.
+  space(id) {
+    const w = this.cfg.getWorkspaces().list.find((x) => x.id === id);
+    return w ? { ...w, path: wsPath(w) } : null;
+  }
+
+  /* A view of this manager in which `id` is the active space. Every file op --
+   * tree, readDoc, ingest, resolveSafe, localCwd, stagingDir -- resolves its
+   * root through active()/activeId(), so overriding those two is the whole
+   * scoping, and the path-escape guard comes along unchanged.
+   *
+   * Only for file ops: they read `this` but never assign to it. Anything that
+   * stores state on the manager (watchers, the registry) must be called on the
+   * manager itself, or the assignment would land on the throwaway view. An id
+   * that no longer exists (removed by another viewer) falls back to the
+   * registry's active space rather than throwing mid-operation. */
+  scoped(id) {
+    const space = this.space(id) || this.active();
+    const view = Object.create(this);
+    view.active = () => ({ ...space });
+    view.activeId = () => space.id;
+    return view;
   }
 
   active() {
@@ -769,38 +798,60 @@ class WorkspaceManager {
     return { depth: fits, capped: false };
   }
 
-  // Re-armed on every active-space change, which is why the old watcher's close
-  // has to finish before the new one binds. Fire-and-forget held both sets of
-  // descriptors open across a switch -- and a switch is precisely when the
-  // process ran out of them. The generation guard is for a user clicking
-  // through spaces faster than a close resolves: only the newest arm may
-  // install a watcher.
-  async watch(callback) {
-    const chokidar = require('chokidar');
+  /* One watcher per space that some viewer is looking at. Called again on every
+   * change to that set -- a space switch in any window, a space added, removed
+   * or re-pointed -- with the full list of wanted ids.
+   *
+   * Closes finish before anything new binds. Fire-and-forget held both sets of
+   * descriptors open across a switch, and a switch is precisely when the
+   * process ran out of them. The generation guard is for a user clicking
+   * through spaces faster than a close resolves: only the newest call may
+   * install watchers. A space whose folder (or host) changed is closed and
+   * re-armed, which is what setPath and promote used to re-arm by hand.
+   *
+   * WATCH_BUDGET is shared, not multiplied: n watched spaces get budget/n each,
+   * because every descriptor comes out of the same process-wide pool. Usually
+   * n is 1 or 2. */
+  async watchSpaces(ids, onChange) {
     const gen = ++this.watchGen;
-    const old = this.watcher;
-    this.watcher = null;
-    clearInterval(this.poller);
-    this.poller = null;
-    if (old) {
-      try {
-        await old.close();
-      } catch {}
-      if (gen !== this.watchGen) return;   // a newer switch owns the watcher now
+    const want = [...new Set(ids)].map((id) => this.space(id)).filter(Boolean);
+    const keyOf = (w) => (w.host || '') + '\u0000' + w.path;
+    const drop = [];
+    for (const [id, entry] of this.watchers) {
+      const w = want.find((x) => x.id === id);
+      if (!w || entry.key !== keyOf(w)) drop.push(id);
     }
-    if (this.isRemote(this.active())) return this.watchRemote(callback);
+    for (const id of drop) {
+      const entry = this.watchers.get(id);
+      this.watchers.delete(id);
+      try { await entry.close(); } catch {}
+    }
+    if (gen !== this.watchGen) return;      // a newer call owns the watchers now
+    const share = Math.max(1, Math.floor(WATCH_BUDGET / Math.max(1, want.length)));
+    for (const w of want) {
+      if (this.watchers.has(w.id)) continue;
+      const entry = this.isRemote(w)
+        ? this.watchRemote(w, () => onChange(w.id))
+        : this.watchLocal(w, share, () => onChange(w.id));
+      entry.key = keyOf(w);
+      this.watchers.set(w.id, entry);
+    }
+  }
+
+  watchLocal(space, budget, callback) {
+    const chokidar = require('chokidar');
     let timer = null;
-    const root = this.getRoot();
-    const { depth, capped } = this.watchPlan(root);
+    const root = space.path;
+    const { depth, capped } = this.watchPlan(root, 5, budget);
     if (capped) {
       console.warn(
-        `[tote] ${root}: over ${WATCH_BUDGET} watchable paths, ` +
+        `[tote] ${root}: over ${budget} watchable paths, ` +
           `watching to depth ${depth} only; deeper changes will not auto-refresh. ` +
           `Add the generated cache dir to IGNORE (or IGNORE_UNITY) in workspace.js to watch fully.`,
       );
     }
     const skip = skipper();
-    this.watcher = chokidar.watch(root, {
+    const watcher = chokidar.watch(root, {
       ignoreInitial: true,
       depth,
       // The root is handed to this predicate too, and pruning it would watch
@@ -808,34 +859,34 @@ class WorkspaceManager {
       // `dist` or `Logs`.
       ignored: (p) => p !== root && skip(path.dirname(p), path.basename(p)),
     });
-    this.watcher.on('all', () => {
+    watcher.on('all', () => {
       clearTimeout(timer);
       timer = setTimeout(callback, 200);
     });
+    return { root, watcher, close: () => { clearTimeout(timer); return watcher.close(); } };
   }
 
   // A remote space has no inotify to bind and no descriptors to blow: it polls
   // a fingerprint that the remote hashes for us, so the reply is one line
-  // whatever the project's size. Only the active space polls, and only while
-  // its connection is up -- a space whose host is asleep costs nothing.
+  // whatever the project's size. Only a viewed space polls, and only while its
+  // connection is up -- a space whose host is asleep costs nothing.
   //
   // The fingerprint covers mtimes as well as names on purpose. The whole point
   // of a remote space is an agent editing files in a terminal, and an open doc
   // pane learns about that edit only through this tick.
-  watchRemote(callback) {
-    const space = this.active();
+  watchRemote(space, callback) {
     const every = Number(this.cfg.getSettings().remotePollMs) || 4000;
     let last = null;
     let busy = false;
+    let stopped = false;
     const tick = async () => {
-      if (busy) return;                       // a slow link must not stack polls
-      const R = this.backend();
-      if (!R || this.activeId() !== space.id) return;
-      if (this.conn(space).state !== 'up') return;
+      if (busy || stopped) return;            // a slow link must not stack polls
+      const R = this.backendFor(space);
+      if (!R || this.conn(space).state !== 'up') return;
       busy = true;
       try {
         const now = await R.fingerprint();
-        if (last !== null && now !== last) callback();
+        if (!stopped && last !== null && now !== last) callback();
         last = now;
       } catch {
         // A dropped connection is the RemoteConn's problem to report, not a
@@ -845,7 +896,8 @@ class WorkspaceManager {
       }
     };
     tick();
-    this.poller = setInterval(tick, every);
+    const poller = setInterval(tick, every);
+    return { root: space.path, close: async () => { stopped = true; clearInterval(poller); } };
   }
 
   // Watches the OS Downloads folder to catch files saved by native apps, so

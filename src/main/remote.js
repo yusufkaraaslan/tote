@@ -152,7 +152,9 @@ class RemoteConn {
    * The process staying alive and blocked is the whole point -- it unblocks by
    * itself the moment the browser round trip finishes.
    */
-  connect({ cols, rows, sender, mkdir }) {
+  // `owner` is opaque here: whoever wired launchPty decides what it means (the
+  // host uses it for the session id and the viewer to stream to).
+  connect({ cols, rows, owner, mkdir }) {
     if (this.connecting) return this.connecting;
     this.setState('connecting');
     let buf = '';
@@ -201,7 +203,7 @@ class RemoteConn {
 
       const args = S.connectArgs({ host: this.host, socket: this.socket, root: this.configured, mkdir });
       try {
-        this.ptyId = this.launchPty({ file: 'ssh', args, cols, rows }, sender, onData, onExit);
+        this.ptyId = this.launchPty({ file: 'ssh', args, cols, rows }, owner, onData, onExit);
       } catch (e) {
         this.setState('down', { message: e.message });
         finish(false);

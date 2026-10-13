@@ -12,19 +12,19 @@ contextBridge.exposeInMainWorld('tote', {
   // temp (scratch) spaces
   wsTempName: () => ipcRenderer.invoke('workspaces:tempName'),
   wsAddTemp: (name) => ipcRenderer.invoke('workspaces:addTemp', name),
-  wsDiscard: (id, termLabels) => ipcRenderer.invoke('workspaces:discard', id, termLabels),
+  wsDiscard: (id) => ipcRenderer.invoke('workspaces:discard', id),
   wsPromote: (id) => ipcRenderer.invoke('workspaces:promote', id),
   setWorkspacePath: (id) => ipcRenderer.invoke('workspaces:setPath', id),
 
   // remote spaces (ssh, e.g. over Tailscale)
   addRemoteWorkspace: (name, host, path) =>
     ipcRenderer.invoke('workspaces:addRemote', { name, host, path }),
-  remoteConnect: (id, cols, rows, mkdir) =>
-    ipcRenderer.invoke('remote:connect', { id, cols, rows, mkdir }),
+  remoteConnect: (id, cols, rows, mkdir, sid) =>
+    ipcRenderer.invoke('remote:connect', { id, cols, rows, mkdir, sid }),
   remoteState: (id) => ipcRenderer.invoke('remote:state', id),
   remoteDisconnect: (id) => ipcRenderer.invoke('remote:disconnect', id),
 
-  // files (active workspace)
+  // files (this window's space)
   getRoot: () => ipcRenderer.invoke('workspace:getRoot'),
   tree: () => ipcRenderer.invoke('workspace:tree'),
   readFile: (rel) => ipcRenderer.invoke('workspace:read', rel),
@@ -69,10 +69,15 @@ contextBridge.exposeInMainWorld('tote', {
   ensureLocal: (providerId) => ipcRenderer.invoke('provider:ensureLocal', providerId),
   sendFileToTab: (wcId, relPath) => ipcRenderer.invoke('tab:sendFile', { wcId, relPath }),
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),
+  newWindow: () => ipcRenderer.invoke('app:newWindow'),
 
-  // terminals
+  // terminals -- host sessions, keyed by an id the renderer picks (see sessions.js)
   ptyAvailable: () => ipcRenderer.invoke('pty:available'),
-  ptySpawn: (profileId, cols, rows) => ipcRenderer.invoke('pty:spawn', { profileId, cols, rows }),
+  ptySpawn: (sid, profileId, cols, rows) =>
+    ipcRenderer.invoke('pty:spawn', { sid, profileId, cols, rows }),
+  ptyList: () => ipcRenderer.invoke('pty:list'),
+  ptyAttach: (id) => ipcRenderer.invoke('pty:attach', id),
+  ptyDetach: (id) => ipcRenderer.send('pty:detach', { id }),
   ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
   ptyResize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),
   ptyKill: (id) => ipcRenderer.send('pty:kill', { id }),
@@ -82,6 +87,8 @@ contextBridge.exposeInMainWorld('tote', {
   onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m) => cb(m.id, m.data)),
   onPtyExit: (cb) => ipcRenderer.on('pty:exit', (e, m) => cb(m.id, m.exitCode)),
   onWorkspaceChanged: (cb) => ipcRenderer.on('workspace:changed', () => cb()),
+  onWorkspacesChanged: (cb) => ipcRenderer.on('workspaces:changed', () => cb()),
+  onViewsChanged: (cb) => ipcRenderer.on('views:changed', (e, views) => cb(views)),
   onRemoteState: (cb) => ipcRenderer.on('remote:state', (e, info) => cb(info)),
   onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),

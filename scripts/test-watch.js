@@ -150,31 +150,103 @@ describe('watchPlan', () => {
 });
 
 describe('watch', () => {
+  const bound = (w) => Object.values(w.getWatched()).reduce((a, b) => a + b.length, 0);
+
   test('binds the space even when its own folder is named like a cache', async () => {
     // chokidar hands the root itself to `ignored`, so without the p !== root
     // exemption a space living in a folder called `dist` or `out` watches
     // nothing at all and its tree silently stops refreshing.
     const h = harness(['a/f.txt'], 'dist');
     try {
-      await h.wm.watch(() => {});
-      await new Promise((r) => h.wm.watcher.on('ready', r));
-      const bound = Object.values(h.wm.watcher.getWatched()).reduce((a, b) => a + b.length, 0);
-      assert.ok(bound > 0, 'nothing was watched');
-      await h.wm.watcher.close();
+      await h.wm.watchSpaces(['s'], () => {});
+      const { watcher } = h.wm.watchers.get('s');
+      await new Promise((r) => watcher.on('ready', r));
+      assert.ok(bound(watcher) > 0, 'nothing was watched');
+      await h.wm.watchSpaces([], () => {});
     } finally { h.cleanup(); }
   });
 
-  test('re-arming closes the previous watcher before binding the new one', async () => {
+  test('re-arming a re-pointed space closes the old watcher before binding the new one', async () => {
     // Fire-and-forget held both sets of descriptors open across a space switch,
     // which is the moment the process was already closest to its limit.
+    const h = harness(['a/f.txt', 'other/b.txt']);
+    try {
+      await h.wm.watchSpaces(['s'], () => {});
+      const first = h.wm.watchers.get('s').watcher;
+      h.wm.updateSpace('s', { path: path.join(h.root, 'other') });
+      await h.wm.watchSpaces(['s'], () => {});
+      assert.notStrictEqual(h.wm.watchers.get('s').watcher, first, 'the watcher was not replaced');
+      assert.strictEqual(first.closed, true, 'the old watcher is still open');
+      await h.wm.watchSpaces([], () => {});
+    } finally { h.cleanup(); }
+  });
+
+  test('an unchanged space keeps its watcher across calls', async () => {
     const h = harness(['a/f.txt']);
     try {
-      await h.wm.watch(() => {});
-      const first = h.wm.watcher;
-      await h.wm.watch(() => {});
-      assert.notStrictEqual(h.wm.watcher, first, 'the watcher was not replaced');
-      assert.strictEqual(first.closed, true, 'the old watcher is still open');
-      await h.wm.watcher.close();
+      await h.wm.watchSpaces(['s'], () => {});
+      const first = h.wm.watchers.get('s').watcher;
+      await h.wm.watchSpaces(['s'], () => {});
+      assert.strictEqual(h.wm.watchers.get('s').watcher, first, 'rebound for nothing');
+      await h.wm.watchSpaces([], () => {});
+      assert.strictEqual(first.closed, true, 'an unwanted space is still watched');
+      assert.strictEqual(h.wm.watchers.size, 0);
+    } finally { h.cleanup(); }
+  });
+
+  test('two viewed spaces each get a watcher and report their own id', async () => {
+    // Two windows on two spaces of one host: both trees must refresh, and the
+    // ping has to say whose it is, because a viewer only refreshes its own.
+    const h = harness(['one/x.txt', 'two/y.txt']);
+    try {
+      h.wm.cfg.saveWorkspaces({ active: 'a', list: [
+        { id: 'a', name: 'A', path: path.join(h.root, 'one') },
+        { id: 'b', name: 'B', path: path.join(h.root, 'two') },
+      ] });
+      const seen = [];
+      await h.wm.watchSpaces(['a', 'b'], (id) => seen.push(id));
+      assert.deepStrictEqual([...h.wm.watchers.keys()].sort(), ['a', 'b']);
+      await Promise.all(['a', 'b'].map((id) =>
+        new Promise((r) => h.wm.watchers.get(id).watcher.on('ready', r))));
+      // macOS fs.watch reports a file written just before the watch began --
+      // the harness's own setup -- so let that settle before recording.
+      await new Promise((r) => setTimeout(r, 400));
+      seen.length = 0;
+      fs.writeFileSync(path.join(h.root, 'two', 'new.txt'), 'x');
+      for (let i = 0; i < 40 && !seen.length; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.deepStrictEqual([...new Set(seen)], ['b']);
+      await h.wm.watchSpaces([], () => {});
+    } finally { h.cleanup(); }
+  });
+});
+
+describe('scoped', () => {
+  test('a scoped view reads its own space, not the registry active one', async () => {
+    const h = harness(['one/only-in-a.txt', 'two/only-in-b.txt']);
+    try {
+      h.wm.cfg.saveWorkspaces({ active: 'a', list: [
+        { id: 'a', name: 'A', path: path.join(h.root, 'one') },
+        { id: 'b', name: 'B', path: path.join(h.root, 'two') },
+      ] });
+      assert.deepStrictEqual(paths(await h.wm.scoped('b').tree(2)), ['only-in-b.txt']);
+      assert.deepStrictEqual(paths(await h.wm.tree(2)), ['only-in-a.txt']);
+      assert.strictEqual(h.wm.scoped('b').localCwd(), path.join(h.root, 'two'));
+    } finally { h.cleanup(); }
+  });
+
+  test('the path-escape guard still holds inside a scoped view', async () => {
+    const h = harness(['f.txt']);
+    try {
+      assert.throws(() => h.wm.scoped('s').resolveSafe('../../etc/passwd'), /escapes/);
+    } finally { h.cleanup(); }
+  });
+
+  test('a scoped view never writes state back onto the manager', async () => {
+    const h = harness(['f.txt']);
+    try {
+      const v = h.wm.scoped('s');
+      v.active = () => null;                       // shadowing on the view only
+      assert.strictEqual(h.wm.active().id, 's');
     } finally { h.cleanup(); }
   });
 });

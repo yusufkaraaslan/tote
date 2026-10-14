@@ -13,17 +13,12 @@
     <!-- workspace strip: the ACTIVE space is the routing context for everything below -->
     <div id="ws-bar">
       <span id="brand" title="tote">▚ tote</span>
-      <!-- which machine's Tote this window shows (devices design) -->
-      <div id="device-wrap">
-        <button id="btn-device" title="Which machine's Tote this window shows — click for your other devices">
-          <span class="device-dot"></span><span id="device-name">this machine</span>
-        </button>
-        <div id="device-menu" class="hidden"></div>
-      </div>
+      <span class="vsep">│</span>
       <div id="ws-tabs"></div>
       <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
       <button id="btn-add-temp" class="plus" title="New temp space (deletable, swept when stale)">+t</button>
       <button id="btn-add-remote" class="plus" title="New remote space (a project on another machine, over ssh/Tailscale)">+r</button>
+      <span class="vsep">│</span>
       <!-- virtual desktops INSIDE the active space: each group owns a tiling
            tree; switching applies that tree and leaves the other groups'
            webviews and terminals running, hidden. Same line as the spaces. -->
@@ -32,26 +27,35 @@
         <div id="group-tabs"></div>
         <button id="btn-add-group" class="plus" title="New group — a fresh layout in this space">+</button>
       </div>
+      <span class="vsep">│</span>
       <div class="ws-actions">
         <div id="add-web-wrap">
-          <button id="btn-add-tab" title="Open a web LLM pane"><span class="ico">＋</span>web</button>
+          <button id="btn-add-tab" title="Open a web LLM pane"><span class="ico">+</span>web</button>
           <div id="tab-add-menu" class="hidden"></div>
         </div>
         <div id="add-term-wrap">
-          <button id="btn-new-term" title="Open an agent terminal pane (Ctrl+`)"><span class="ico">＋</span>term</button>
+          <button id="btn-new-term" title="Open an agent terminal pane (Ctrl+`)"><span class="ico">+</span>term</button>
           <div id="term-menu" class="hidden"></div>
         </div>
         <button id="btn-files" class="toggle" title="Files pane"><span class="ico">▤</span>files</button>
-        <span class="sep"></span>
         <div id="apps-wrap">
           <button id="btn-apps" title="Launch a native app into the active workspace"><span class="ico">⧉</span>apps</button>
           <div id="apps-menu" class="hidden"></div>
         </div>
+      </div>
+      <!-- right end: which machine's Tote this window shows (devices design),
+           settings, clock -->
+      <div class="ws-right">
+        <div id="device-wrap">
+          <button id="btn-device" title="Which machine's Tote this window shows — click for your other devices">
+            <span class="device-dot"></span><span id="device-name">this machine</span><span class="caret-down">▾</span>
+          </button>
+          <div id="device-menu" class="hidden"></div>
+        </div>
         <button id="btn-settings" title="Settings"><span class="ico">⚙</span></button>
+        <span id="clock"></span>
       </div>
     </div>
-
-    <!-- groups moved into #ws-bar (terminal-native: one status line) -->
 
     <div id="main">
       <!-- Flat tiling surface. Every pane is a DIRECT child, created once per
@@ -75,15 +79,16 @@
                spaces are busy, and clicking it opens a connect PANE. -->
           <div id="remote-bar" class="remote-bar hidden"></div>
           <div id="tree"></div>
+          <div id="inbox-note">drops → <b>inbox/&lt;provider&gt;/</b></div>
         </aside>
+        <!-- the empty-group state: first run and "new group" share it -->
         <div id="welcome">
-          <h1>Tote</h1>
-          <p>Pick a workspace on the top strip, then open panes with <b>+ web</b> and <b>+ term</b>.</p>
-          <p>Panes tile automatically. Drag a divider to resize, drag a pane's title bar
-          to rearrange, and press <b>Cmd/Ctrl+Alt+F</b> to zoom the focused one.</p>
-          <p>Each space keeps several <b>groups</b> — separate layouts you switch
-          between with <b>Cmd/Ctrl+Alt+1…9</b>, like desktops.</p>
-          <p class="dim">Web panes download straight into <code>&lt;workspace&gt;/inbox/&lt;provider&gt;/</code>.</p>
+          <h1>TOTE</h1>
+          <div>this group is empty — open a pane to start</div>
+          <div class="welcome-row">
+            <button id="w-web">＋ web</button>
+            <button id="w-term">＋ term</button>
+          </div>
         </div>
       </div>
     </div>
@@ -92,11 +97,11 @@
     <div id="keyline">
       <span><b>⌘⏎</b> web</span>
       <span><b>ctrl+`</b> term</span>
+      <span><b>⌘1-9</b> pane</span>
       <span><b>⌘⌥1-9</b> group</span>
-      <span><b>⌘⌥F</b> zoom</span>
-      <span><b>drag</b> retile</span>
-      <span><b>⌘S</b> save doc</span>
-      <span class="mode">tote</span>
+      <span><b>dblclick head</b> zoom</span>
+      <span><b>right-click head</b> menu</span>
+      <span class="mode">NORMAL</span>
     </div>
   </div>
 

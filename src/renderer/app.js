@@ -1,5 +1,9 @@
 /* Tote renderer. Globals from preload: window.tote; from vendor: Terminal, FitAddon. */
 const $ = (sel) => document.querySelector(sel);
+const IS_MAC = navigator.platform.startsWith('Mac');
+// Plain Cmd (macOS) / Ctrl (elsewhere): the pane keys -- ⌘1-9, ⌘⏎.
+const CMD = (e) => (IS_MAC ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey;
+const PANE_KEY = IS_MAC ? '⌘' : 'ctrl+';
 
 const state = {
   providers: [],
@@ -72,10 +76,9 @@ function renderWorkspaceSwitcher() {
     const tab = document.createElement('div');
     tab.className = 'ws-tab' + (w.id === state.workspaces.active ? ' active' : '')
       + (w.temp ? ' temp' : '') + (isRemote(w) ? ' remote' : '');
-    const glyph = document.createElement('span');
-    glyph.className = 'glyph';
-    glyph.textContent = isRemote(w) ? '⇄' : w.temp ? '◌' : w.id === 'global' ? '◈' : '◇';
-    tab.append(glyph, document.createTextNode(w.name));
+    // Plain names: a temp space reads faint (styles.css), a remote one carries
+    // its connection dot. The tooltip says the rest.
+    tab.append(document.createTextNode(w.name));
     // The dot badges from every space, so a connection that needs you is
     // visible while you are working somewhere else.
     if (isRemote(w)) {
@@ -656,6 +659,7 @@ $('#btn-add-tab').onclick = (e) => {
   const menu = $('#tab-add-menu');
   if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
   menu.innerHTML = '';
+  menu.appendChild(menuNote('web providers — each gets its own login partition'));
   for (const p of state.providers) {
     const item = document.createElement('div');
     item.className = 'term-menu-item';
@@ -722,7 +726,8 @@ function renderNodes(nodes, prefix) {
   nodes.forEach((n, i) => {
     const last = i === nodes.length - 1;
     const row = document.createElement('div');
-    row.className = 'tree-row';
+    const sel = state.treeSel && state.treeSel.ws === state.workspaces.active && state.treeSel.path === n.path;
+    row.className = 'tree-row' + (sel ? ' sel' : '');
     const guide = document.createElement('span');
     guide.className = 'guide';
     guide.textContent = prefix + (last ? '└─ ' : '├─ ');
@@ -867,6 +872,9 @@ function isDirty(id) {
 async function openFile(node, e) {
   if (!node || node.type !== 'file') return;
   if (node.kind === 'binary') { tote.openPath(node.path); return; }
+  // highlighted in the tree until another file opens (per space: paths repeat)
+  state.treeSel = { ws: state.workspaces.active, path: node.path };
+  renderTree();
   await openDoc(node.path, { newPane: !!(e && (e.metaKey || e.ctrlKey)) });
 }
 
@@ -1854,9 +1862,15 @@ function killTermByRef(sid) {
   state.sessions.delete(sid);
 }
 
+// The grey heading line at the top of the +web / +term menus.
+function menuNote(text) {
+  return Object.assign(document.createElement('div'), { className: 'menu-note', textContent: text });
+}
+
 async function renderTermMenu() {
   const menu = $('#term-menu');
   menu.innerHTML = '';
+  menu.appendChild(menuNote('agent terminals — real ptys'));
   for (const p of state.profiles) {
     // Which machine the agent must exist on depends on the space, so this is
     // cached per space: a remote host and this laptop rarely have the same set.
@@ -1875,7 +1889,11 @@ async function renderTermMenu() {
     item.appendChild(document.createTextNode(p.name));
     const cmd = document.createElement('span');
     cmd.className = 'cmd';
-    cmd.textContent = p.command || '$SHELL';
+    // What you need to know before clicking: installed, or how to install it.
+    cmd.textContent = !p.command ? '$SHELL'
+      : found ? '✓ installed'
+      : p.install ? 'install: ' + p.install : 'not found';
+    cmd.title = p.command || 'your default shell';
     item.appendChild(cmd);
     item.onclick = () => {
       menu.classList.add('hidden');
@@ -1910,9 +1928,6 @@ function acceptFileDrop(el, onPaths) {
   });
 }
 
-// A terminal pane, up to the point where something has to be attached to it.
-// Two things use this: an agent terminal, and a remote space's connect session
-// -- which is a pane rather than a modal precisely because re-authenticating is
 // One terminal palette for every xterm (agent panes and the wizard installer),
 // tuned against the Terminal Native chrome: near-black background, warm ANSI
 // colors that stay saturated on it, amber cursor. The explicit palette entries
@@ -1942,6 +1957,9 @@ const XTERM_THEME = {
   brightWhite: '#efeee8',
 };
 
+// A terminal pane, up to the point where something has to be attached to it.
+// Two things use this: an agent terminal, and a remote space's connect session
+// -- which is a pane rather than a modal precisely because re-authenticating is
 // not a one-off setup step, and must not interrupt whatever else is open.
 //
 // The session id is chosen here, before the pty exists: the pane has to be
@@ -2257,17 +2275,19 @@ function paneShell(key, titleText, dotColor) {
   title.textContent = titleText;
   const ctrls = document.createElement('span');
   ctrls.className = 'pane-ctrls';       // per-kind head controls; empty for most panes
+  const keyHint = document.createElement('span');
+  keyHint.className = 'pane-key';       // ⌘N, filled in by applyTiles
   const x = document.createElement('span');
   x.className = 'pane-x';
   x.textContent = '✕';
   x.title = 'Close pane';
-  head.append(idx, dot, title, ctrls, x);
+  head.append(idx, dot, title, ctrls, keyHint, x);
   const body = document.createElement('div');
   body.className = 'pane-body';
   el.append(head, body);
   $('#tiles').appendChild(el);
 
-  p = { el, head, body, title, dot, ctrls, idx, key };
+  p = { el, head, body, title, dot, ctrls, idx, keyHint, key };
   panes.set(key, p);
 
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
@@ -2278,6 +2298,13 @@ function paneShell(key, titleText, dotColor) {
     startPaneDrag(e, el);
   });
   head.addEventListener('contextmenu', (e) => { if (el.dataset.leaf) paneMenu(e, el.dataset.leaf); });
+  // Double-click the head to zoom (and again to unzoom). The mousedown above
+  // has already focused the leaf, which is what toggleZoom acts on.
+  head.addEventListener('dblclick', (e) => {
+    if (!el.dataset.leaf || e.target === x || (e.target.closest && e.target.closest('.pane-ctrls'))) return;
+    focusPane(el.dataset.leaf);
+    toggleZoom();
+  });
   return p;
 }
 
@@ -2359,7 +2386,8 @@ function applyTiles() {
     const p = panes.get(paneKey(lf));
     if (!p || !p.idx) return;
     p.idx.textContent = i + 1;
-    p.idx.title = i < 9 ? 'focus — ⌘' + (i + 1) : '';
+    p.keyHint.textContent = i < 9 ? PANE_KEY + (i + 1) : '';
+    p.keyHint.title = i < 9 ? 'focus this pane' : '';
   });
 
   renderDividers(S, host);
@@ -2631,7 +2659,6 @@ function renderGroupBar() {
     chip.dataset.group = g.id;
     const count = T.leaves(g.tree).length;
     chip.title = count ? g.name + ' — ' + count + ' pane(s)' : g.name + ' — empty';
-    if (count) chip.appendChild(Object.assign(document.createElement('i'), { className: 'group-dot' }));
     chip.onclick = () => switchGroup(g.id);
     chip.oncontextmenu = (e) => {
       e.preventDefault();
@@ -2713,6 +2740,9 @@ function paneMenu(e, leafId) {
   const V = wsViews();
   const menu = $('#context-menu');
   menu.innerHTML = '';
+  const zoomed = tiles().zoom === leafId;
+  menu.appendChild(ctxItem(zoomed ? 'unzoom pane' : 'zoom pane', () => { focusPane(leafId); toggleZoom(); }));
+  menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-sep' }));
   for (const g of groups()) {
     if (g.id === V.activeGroup) continue;
     menu.appendChild(ctxItem('move to group ' + g.name, () => moveToGroup(leafId, g.id)));
@@ -2805,7 +2835,7 @@ $('#btn-files').onclick = () => {
   else openFilesPane();
 };
 
-const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
+const MOD = (e) => (IS_MAC ? e.metaKey : e.ctrlKey) && e.altKey;
 const ARROW = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 
 // The focused pane's doc, if it is one -- what Cmd+S and MOD+E act on.
@@ -2838,11 +2868,29 @@ addEventListener('keydown', (e) => {
     else $('#btn-new-term').click();
     return;
   }
-  // Plain Cmd/Ctrl+1-9 focuses the Nth pane of the active group. Group
-  // switching keeps MOD+digit (Cmd/Ctrl+Alt+N), so the two never collide.
-  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
-    const lf = T.leaves(tiles().tree)[+e.key - 1];
-    if (lf) { e.preventDefault(); focusPane(lf.id); }
+  // Plain Cmd+1-9 (Ctrl elsewhere) focuses the Nth pane of the active group,
+  // and Cmd+Enter opens the web menu. Group switching keeps MOD+digit
+  // (Cmd/Ctrl+Alt+N), so the two never collide. Off macOS, Ctrl+digit and
+  // Ctrl+Enter are bytes a terminal program may want, so a focused terminal
+  // keeps them; Cmd never reaches an xterm on macOS anyway.
+  if (CMD(e) && (IS_MAC || !inTerminal(e.target))) {
+    if (e.key >= '1' && e.key <= '9') {
+      const lf = T.leaves(tiles().tree)[+e.key - 1];
+      if (lf) { e.preventDefault(); focusPane(lf.id); }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('#btn-add-tab').click();
+      return;
+    }
+  }
+  // Esc leaves zoom -- unless a terminal has the keyboard, where Esc belongs
+  // to the agent (interrupt). MOD+F and a double-click on the head still work.
+  if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && tiles().zoom
+      && !inTerminal(e.target) && !e.target.closest?.('input, textarea, .modal:not(.hidden)')) {
+    e.preventDefault();
+    toggleZoom();
     return;
   }
   if (!MOD(e)) return;
@@ -2892,21 +2940,36 @@ addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
 });
 
-/* ---------------- keyline status ---------------- */
-// The hint strip's right end is live: zoom mode, pane count of the active
-// group, dirty docs, clock. One interval reads all of them from the DOM/tree
-// instead of hunting down every mutation site.
+function inTerminal(el) {
+  return !!(el && el.closest && el.closest('.xterm'));
+}
+
+/* ---------------- keyline status + clock ---------------- */
+// The hint strip's right end is live: zoom mode, pane count and name of the
+// active group, dirty docs. The clock sits at the right of the status line.
+// One interval reads all of them from the DOM/tree instead of hunting down
+// every mutation site.
 function updateKeyline() {
   const S = tiles();
   const n = S.tree ? T.leaves(S.tree).length : 0;
   const dirty = document.querySelectorAll('.pane.doc-dirty').length;
-  const d = new Date();
-  const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   $('#keyline .mode').textContent =
     (S.zoom ? 'ZOOM' : 'NORMAL') + ' · ' + n + ' pane' + (n === 1 ? '' : 's') +
-    (dirty ? ' · ' + dirty + ' dirty' : '') + ' · ' + hm;
+    ' · grp ' + (S.name || '1') + (dirty ? ' · ' + dirty + ' dirty' : '');
+  const d = new Date();
+  $('#clock').textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 setInterval(updateKeyline, 1000);
+
+// Keyline hints name the real modifier off macOS.
+if (!IS_MAC) {
+  for (const b of document.querySelectorAll('#keyline b')) {
+    b.textContent = b.textContent.replace('⌘⌥', 'ctrl+alt+').replace('⌘', 'ctrl+');
+  }
+}
+
+$('#w-web').onclick = (e) => { e.stopPropagation(); $('#btn-add-tab').click(); };
+$('#w-term').onclick = (e) => { e.stopPropagation(); $('#btn-new-term').click(); };
 
 // Anywhere else, a dropped file is swallowed: letting it through means Chromium
 // navigates away from the app.
@@ -3455,6 +3518,9 @@ async function adoptViews(views) {
   renderGroupBar();
 }
 tote.onWindowFocus(focusActivePaneContent);
+// A pane key pressed inside a web page, caught by main before the page saw it:
+// replay it through the same keydown listener as any other keystroke.
+tote.onWindowKey((k) => dispatchEvent(new KeyboardEvent('keydown', k)));
 tote.onRemoteState((info, dev) => {
   const S = sliceFor(dev);
   if (S === state) onRemoteState(info);

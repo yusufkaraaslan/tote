@@ -571,6 +571,27 @@ app.on('web-contents-created', (event, contents) => {
     Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(owner) || undefined });
   });
   if (contents.getType() !== 'webview') return;
+  // A web page holding the keyboard swallows every keystroke, so the pane keys
+  // (⌘1-9, ctrl+`, MOD arrows/F/W/E/digits) never reached the window's keydown
+  // listener while you were in a web pane -- exactly where jumping out matters
+  // most. Catch them before the page sees them and hand them to the window.
+  // Off macOS MOD is Ctrl+Alt, which is also AltGr -- the way €, {, [ and @ are
+  // typed on many layouts -- so only the plain Ctrl keys are taken there.
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !contents.hostWebContents) return;
+    const mac = process.platform === 'darwin';
+    const cmd = mac ? input.meta : input.control;
+    const pane = cmd && !input.alt && !input.shift && /^Digit[1-9]$/.test(input.code);
+    const tick = input.control && !input.alt && !input.meta && input.key === '`';
+    const mod = mac && input.meta && input.alt
+      && /^(Arrow(Up|Down|Left|Right)|Key[FWE]|Digit[1-9])$/.test(input.code);
+    if (!pane && !tick && !mod) return;
+    event.preventDefault();
+    contents.hostWebContents.send('win:key', {
+      key: input.key, code: input.code,
+      metaKey: input.meta, ctrlKey: input.control, altKey: input.alt, shiftKey: input.shift,
+    });
+  });
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
       return {

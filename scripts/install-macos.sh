@@ -92,10 +92,30 @@ fi
 # The swap itself, used by both paths below. Staged as a script so the deferred
 # case can run it after this shell (and the app it lives in) are long gone.
 # BSD mktemp only substitutes X's at the END of the template.
+#
+# Two installs can be deferred on the same running Tote at once (upgrade from
+# two windows). Without a lock both watchers wake on the same quit and race:
+# one's rm -rf of Tote.app.incoming deletes the other's half-finished copy and
+# a bundle with no executable gets renamed into place. mkdir is the portable
+# atomic lock (macOS has no flock), and the rename is preceded by a sanity
+# check so a bad copy can never become /Applications/Tote.app.
 SWAP=$(mktemp /tmp/tote-swap.XXXXXX)
 cat > "$SWAP" <<EOF
 #!/bin/sh
 set -e
+# NOTE: this heredoc is unquoted so TARGET and APP expand -- which means a
+# backtick or an unescaped dollar in here runs at write time. Keep both out.
+LOCK=/tmp/tote-swap.lock
+n=0
+while ! mkdir "\$LOCK" 2>/dev/null; do
+  sleep 0.5
+  n=\$((n + 1))
+  if [ \$n -gt 240 ]; then
+    echo "tote swap: lock held for 2 minutes — another swap is stuck; giving up" >&2
+    exit 1
+  fi
+done
+trap 'rmdir "\$LOCK"' EXIT
 # NOTE: this heredoc is unquoted so TARGET and APP expand -- which means a
 # backtick or an unescaped dollar in here runs at write time. Keep both out.
 #
@@ -111,6 +131,12 @@ rm -rf "$TARGET.incoming"
 cp -R "$APP" "$TARGET.incoming"
 # Unsigned build (no Developer ID), so a copied bundle would be quarantined.
 xattr -dr com.apple.quarantine "$TARGET.incoming" 2>/dev/null || true
+# Never rename an incomplete bundle into place: the executable must exist.
+if [ ! -x "$TARGET.incoming/Contents/MacOS/Tote" ]; then
+  echo "staged copy is incomplete — refusing to swap" >&2
+  rm -rf "$TARGET.incoming"
+  exit 1
+fi
 if [ -d "$TARGET" ]; then
   mv "$TARGET" "$TARGET.backup-\$(date +%Y%m%d-%H%M%S)"
 fi

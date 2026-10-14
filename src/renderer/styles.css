@@ -596,9 +596,13 @@ webview.provider-view {
 .pane-mode:hover { color: var(--fg); }
 .pane-mode.on { background: var(--accent-bg); color: var(--accent); }
 
-/* rendered markdown — proportional type for readability; chrome stays mono */
+/* rendered markdown — proportional type for readability; chrome stays mono.
+   The measure is capped (and centered) so a doc alone in a wide window reads
+   like the concepts, not like a stretched browser page. */
 .doc-view {
   position: absolute; inset: 0; overflow: auto;
+  max-width: 88ch;
+  margin: 0 auto;
   padding: 14px 20px 32px;
   color: #c4c4bd;
   font: 13px/1.65 -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", sans-serif;

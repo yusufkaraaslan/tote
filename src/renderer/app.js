@@ -712,31 +712,31 @@ async function refreshTree() {
 function renderTree() {
   const host = $('#tree');
   host.innerHTML = '';
-  host.appendChild(renderNodes(state.treeData));
+  host.appendChild(renderNodes(state.treeData, ''));
 }
 
-function renderNodes(nodes) {
+// ASCII tree: rows are flat, each carrying its guide string (├─ └─ │)
+// computed from ancestor context, instead of nested indents and icons.
+function renderNodes(nodes, prefix) {
   const frag = document.createDocumentFragment();
-  for (const n of nodes) {
+  nodes.forEach((n, i) => {
+    const last = i === nodes.length - 1;
     const row = document.createElement('div');
     row.className = 'tree-row';
-    const caret = document.createElement('span');
-    caret.className = 'caret';
-    const icon = document.createElement('span');
-    icon.className = 'icon';
+    const guide = document.createElement('span');
+    guide.className = 'guide';
+    guide.textContent = prefix + (last ? '└─ ' : '├─ ');
     const name = document.createElement('span');
     name.className = 'name';
-    name.textContent = n.name;
+    name.textContent = n.type === 'dir' ? n.name + '/' : n.name;
+    row.append(guide, name);
     if (n.type === 'dir') {
-      caret.textContent = state.expanded.has(n.path) ? '▼' : '▶';
-      icon.textContent = state.expanded.has(n.path) ? '▾' : '▸';
+      row.classList.add('dir');
       row.onclick = () => {
         state.expanded.has(n.path) ? state.expanded.delete(n.path) : state.expanded.add(n.path);
         renderTree();
       };
     } else {
-      icon.textContent = n.kind === 'image' ? '▣' : n.kind === 'pdf' ? '❐'
-        : n.kind === 'html' ? '◈' : n.kind === 'binary' ? '•' : '≡';
       row.onclick = (e) => openFile(n, e);
     }
     row.oncontextmenu = (e) => {
@@ -744,15 +744,11 @@ function renderNodes(nodes) {
       e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, n);
     };
-    row.append(caret, icon, name);
     frag.appendChild(row);
     if (n.type === 'dir' && state.expanded.has(n.path) && n.children) {
-      const kids = document.createElement('div');
-      kids.className = 'tree-children';
-      kids.appendChild(renderNodes(n.children));
-      frag.appendChild(kids);
+      frag.appendChild(renderNodes(n.children, prefix + (last ? '   ' : '│  ')));
     }
-  }
+  });
   return frag;
 }
 
@@ -2251,6 +2247,8 @@ function paneShell(key, titleText, dotColor) {
   el.dataset.pane = key;
   const head = document.createElement('div');
   head.className = 'pane-head';
+  const idx = document.createElement('span');
+  idx.className = 'pane-idx';
   const dot = document.createElement('span');
   dot.className = 'pane-dot';
   if (dotColor) dot.style.background = dotColor; else dot.style.display = 'none';
@@ -2263,13 +2261,13 @@ function paneShell(key, titleText, dotColor) {
   x.className = 'pane-x';
   x.textContent = '✕';
   x.title = 'Close pane';
-  head.append(dot, title, ctrls, x);
+  head.append(idx, dot, title, ctrls, x);
   const body = document.createElement('div');
   body.className = 'pane-body';
   el.append(head, body);
   $('#tiles').appendChild(el);
 
-  p = { el, head, body, title, dot, ctrls, key };
+  p = { el, head, body, title, dot, ctrls, idx, key };
   panes.set(key, p);
 
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
@@ -2355,6 +2353,14 @@ function applyTiles() {
     p.el.style.height = r.h + 'px';
     p.el.style.zIndex = S.zoom === lf.id ? 20 : 1;
   }
+
+  // number the visible panes in leaf order — the index is what ⌘1-9 focuses
+  live.forEach((lf, i) => {
+    const p = panes.get(paneKey(lf));
+    if (!p || !p.idx) return;
+    p.idx.textContent = i + 1;
+    p.idx.title = i < 9 ? 'focus — ⌘' + (i + 1) : '';
+  });
 
   renderDividers(S, host);
   $('#welcome').style.display = S.tree ? 'none' : '';
@@ -2832,6 +2838,13 @@ addEventListener('keydown', (e) => {
     else $('#btn-new-term').click();
     return;
   }
+  // Plain Cmd/Ctrl+1-9 focuses the Nth pane of the active group. Group
+  // switching keeps MOD+digit (Cmd/Ctrl+Alt+N), so the two never collide.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+    const lf = T.leaves(tiles().tree)[+e.key - 1];
+    if (lf) { e.preventDefault(); focusPane(lf.id); }
+    return;
+  }
   if (!MOD(e)) return;
   const S = tiles();
   const dir = ARROW[e.key];
@@ -2878,6 +2891,22 @@ addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleZoom(); }
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
 });
+
+/* ---------------- keyline status ---------------- */
+// The hint strip's right end is live: zoom mode, pane count of the active
+// group, dirty docs, clock. One interval reads all of them from the DOM/tree
+// instead of hunting down every mutation site.
+function updateKeyline() {
+  const S = tiles();
+  const n = S.tree ? T.leaves(S.tree).length : 0;
+  const dirty = document.querySelectorAll('.pane.doc-dirty').length;
+  const d = new Date();
+  const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  $('#keyline .mode').textContent =
+    (S.zoom ? 'ZOOM' : 'NORMAL') + ' · ' + n + ' pane' + (n === 1 ? '' : 's') +
+    (dirty ? ' · ' + dirty + ' dirty' : '') + ' · ' + hm;
+}
+setInterval(updateKeyline, 1000);
 
 // Anywhere else, a dropped file is swallowed: letting it through means Chromium
 // navigates away from the app.

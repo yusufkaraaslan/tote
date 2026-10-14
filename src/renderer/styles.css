@@ -130,16 +130,19 @@ code {
 .ws-tab.active .glyph { color: var(--accent); }
 #btn-add-ws { flex-shrink: 0; padding: 2px 8px; }
 
-/* ---------- group strip: virtual desktops inside the active space ---------- */
+/* ---------- groups: virtual desktops, on the same status line as spaces ---------- */
+#brand {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  padding-right: 2px;
+}
 #group-bar {
-  height: 24px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  background: var(--bg-sink);
-  border-bottom: 1px solid var(--line);
+  gap: 3px;
 }
 .group-label {
   color: var(--fg-faint);
@@ -199,6 +202,11 @@ body.device-down .pane { opacity: 0.55; }
 }
 .pane.focused .pane-head { background: var(--accent-bg); color: var(--accent); }
 .pane-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.pane-idx {
+  width: 2ch; text-align: right; flex-shrink: 0;
+  color: var(--fg-faint); font-size: 10px;
+}
+.pane.focused .pane-idx { color: var(--accent); }
 .pane-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane.loading .pane-title { opacity: 0.55; }
 .pane-x { padding: 0 3px; cursor: pointer; color: var(--fg-faint); }
@@ -431,7 +439,7 @@ body.on-device .device-dot { background: var(--accent); }
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 1px 6px;
   border-radius: 2px;
   cursor: pointer;
@@ -440,8 +448,9 @@ body.on-device .device-dot { background: var(--accent); }
   color: var(--fg-dim);
 }
 .tree-row:hover { background: #131312; color: var(--fg); }
-.tree-row .caret { width: 10px; color: var(--fg-faint); font-size: 9px; flex-shrink: 0; }
-.tree-row .icon { width: 14px; text-align: center; color: var(--fg-faint); font-size: 11px; flex-shrink: 0; }
+.tree-row .guide { color: var(--fg-faint); white-space: pre; flex-shrink: 0; }
+.tree-row.dir .name { color: var(--blue); }
+.tree-row.dir:hover .name { color: var(--fg); }
 .tree-row .name { overflow: hidden; text-overflow: ellipsis; }
 .tree-children { margin-left: 12px; }
 

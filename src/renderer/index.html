@@ -12,6 +12,7 @@
   <div id="app">
     <!-- workspace strip: the ACTIVE space is the routing context for everything below -->
     <div id="ws-bar">
+      <span id="brand" title="tote">▚ tote</span>
       <!-- which machine's Tote this window shows (devices design) -->
       <div id="device-wrap">
         <button id="btn-device" title="Which machine's Tote this window shows — click for your other devices">
@@ -23,6 +24,14 @@
       <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
       <button id="btn-add-temp" class="plus" title="New temp space (deletable, swept when stale)">+t</button>
       <button id="btn-add-remote" class="plus" title="New remote space (a project on another machine, over ssh/Tailscale)">+r</button>
+      <!-- virtual desktops INSIDE the active space: each group owns a tiling
+           tree; switching applies that tree and leaves the other groups'
+           webviews and terminals running, hidden. Same line as the spaces. -->
+      <div id="group-bar">
+        <span class="group-label">grp</span>
+        <div id="group-tabs"></div>
+        <button id="btn-add-group" class="plus" title="New group — a fresh layout in this space">+</button>
+      </div>
       <div class="ws-actions">
         <div id="add-web-wrap">
           <button id="btn-add-tab" title="Open a web LLM pane"><span class="ico">＋</span>web</button>
@@ -42,14 +51,7 @@
       </div>
     </div>
 
-    <!-- group strip: virtual desktops INSIDE the active space. Each group owns a
-         tiling tree; switching applies that tree and leaves the other groups'
-         webviews and terminals running, hidden. -->
-    <div id="group-bar">
-      <span class="group-label">groups</span>
-      <div id="group-tabs"></div>
-      <button id="btn-add-group" class="plus" title="New group — a fresh layout in this space">+</button>
-    </div>
+    <!-- groups moved into #ws-bar (terminal-native: one status line) -->
 
     <div id="main">
       <!-- Flat tiling surface. Every pane is a DIRECT child, created once per

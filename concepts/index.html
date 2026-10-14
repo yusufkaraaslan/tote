@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tote — redesign concepts</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #0d0b16;
+    color: #e8e4f4;
+    font: 15px/1.6 -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px 20px;
+  }
+  .wrap { max-width: 940px; width: 100%; }
+  h1 { font-size: 26px; letter-spacing: -0.4px; margin-bottom: 6px; }
+  .sub { color: #9d94b8; margin-bottom: 36px; max-width: 62ch; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  a.card {
+    display: block; text-decoration: none; color: inherit;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 16px; padding: 20px;
+    transition: all .15s;
+  }
+  a.card:hover { transform: translateY(-3px); border-color: rgba(139,123,255,0.5); box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+  .letter {
+    width: 42px; height: 42px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 17px; margin-bottom: 14px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .a .letter { background: #161310; color: #e0a458; border: 1px solid #4d3d24; }
+  .b .letter { background: rgba(139,123,255,0.15); color: #b3a7f7; border: 1px solid rgba(139,123,255,0.35); }
+  .c .letter { background: #f4f1ec; color: #b3552e; border: 1px solid #cfc6b4; }
+  .card h2 { font-size: 16px; margin-bottom: 4px; }
+  .card .tagline { font-size: 12.5px; color: #9d94b8; margin-bottom: 12px; }
+  .card ul { list-style: none; }
+  .card li { font-size: 12px; color: #7a729a; padding: 3px 0 3px 14px; position: relative; }
+  .card li::before { content: '·'; position: absolute; left: 2px; color: #4e4768; }
+  .open { margin-top: 14px; font-size: 12px; color: #8b7bff; }
+  .card:hover .open { text-decoration: underline; }
+  .foot { margin-top: 34px; font-size: 11.5px; color: #5e5678; }
+  kbd { font: 10px "SF Mono", Menlo, monospace; border: 1px solid #33304a; border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; color: #9d94b8; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Tote, redrawn — 3 directions</h1>
+    <p class="sub">Same app, three bets on what Tote should <em>feel</em> like. Open each, click around (tabs, spaces, <kbd>⌘K</kbd> in B), and hit the <b>? why</b> button in the corner of each page for the design rationale. Nothing here is final — pick what resonates and we'll talk.</p>
+
+    <div class="grid">
+      <a class="card a" href="a-terminal-native.html">
+        <div class="letter">A</div>
+        <h2>Terminal Native</h2>
+        <div class="tagline">tmux/vim grammar — Tote stops pretending to be a web app.</div>
+        <ul>
+          <li>one status line replaces strip + group bar</li>
+          <li>monospace, one amber accent, zero rounding</li>
+          <li>numbered panes, key-hint line</li>
+        </ul>
+        <div class="open">open concept A →</div>
+      </a>
+
+      <a class="card b" href="b-command-center.html">
+        <div class="letter">B</div>
+        <h2>Command Center</h2>
+        <div class="tagline">AI OS — panes are floating cards, ⌘K is the interface.</div>
+        <ul>
+          <li>glass cards over a gradient canvas</li>
+          <li>command palette drives everything</li>
+          <li>spaces as a centered pill switcher</li>
+        </ul>
+        <div class="open">open concept B →</div>
+      </a>
+
+      <a class="card c" href="c-rail-calm.html">
+        <div class="letter">C</div>
+        <h2>Rail — light &amp; calm</h2>
+        <div class="tagline">focused workbench — tabs over tiles, paper instead of neon.</div>
+        <ul>
+          <li>spaces become colored glyphs on a rail</li>
+          <li>groups as a shelf of tabs</li>
+          <li>terminals stay dark inside a light UI</li>
+        </ul>
+        <div class="open">open concept C →</div>
+      </a>
+    </div>
+
+    <p class="foot">Static mockups — concepts/a-terminal-native.html · b-command-center.html · c-rail-calm.html. They share the same fake content (spaces tote / knit-game / api-server / scratch-7, Claude + ChatGPT panes, agent pty) so you can compare like-for-like.</p>
+  </div>
+</body>
+</html>

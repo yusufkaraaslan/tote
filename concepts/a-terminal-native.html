@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tote concept A — Terminal Native</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-raise: #101010;
+    --line: #1f1f1f;
+    --line-soft: #181818;
+    --fg: #c9c9c4;
+    --fg-dim: #6b6b66;
+    --fg-faint: #42423e;
+    --accent: #e0a458;         /* single warm accent */
+    --accent-dim: #4d3d24;
+    --green: #8faf7a;
+    --red: #c96a5a;
+    --blue: #7a9eb0;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 12px/1.55 var(--mono);
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- status line (top) ---------- */
+  #statusline {
+    height: 30px; flex-shrink: 0;
+    display: flex; align-items: center;
+    padding: 0 10px; gap: 14px;
+    background: var(--bg-raise);
+    border-bottom: 1px solid var(--line);
+    font-size: 11px;
+    white-space: nowrap; overflow: hidden;
+  }
+  #statusline .logo { color: var(--accent); font-weight: 700; letter-spacing: 1px; }
+  .spaces { display: flex; gap: 0; overflow: hidden; }
+  .space {
+    padding: 1px 8px; cursor: pointer; color: var(--fg-dim);
+    border: 1px solid transparent;
+  }
+  .space:hover { color: var(--fg); }
+  .space.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: #161310;
+  }
+  .space .temp { color: var(--fg-faint); }
+  .space.active .temp { color: var(--accent-dim); }
+  #statusline .right { margin-left: auto; display: flex; gap: 14px; color: var(--fg-dim); }
+  #statusline .right b { color: var(--fg); font-weight: 400; }
+  .dot { color: var(--green); }
+
+  /* ---------- main ---------- */
+  #main { flex: 1; display: flex; min-height: 0; }
+
+  /* files column */
+  #files {
+    width: 230px; flex-shrink: 0;
+    background: var(--bg-raise);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  #files .head {
+    padding: 6px 10px; color: var(--fg-faint);
+    border-bottom: 1px solid var(--line-soft);
+    display: flex; justify-content: space-between;
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  #files .head span:last-child { letter-spacing: 0; text-transform: none; }
+  #tree { flex: 1; overflow: auto; padding: 6px 0; font-size: 11px; }
+  .tline { padding: 0 10px; white-space: nowrap; color: var(--fg-dim); cursor: pointer; }
+  .tline:hover { background: #141414; color: var(--fg); }
+  .tline.sel { background: #171512; color: var(--accent); }
+  .tline .d { color: var(--blue); }
+  .tline.dim { color: var(--fg-faint); }
+  #inbox-note {
+    border-top: 1px solid var(--line-soft);
+    padding: 6px 10px; font-size: 10px; color: var(--fg-faint);
+  }
+  #inbox-note b { color: var(--fg-dim); font-weight: 400; }
+
+  /* tiling area */
+  #tiles { flex: 1; display: grid; min-width: 0; min-height: 0;
+    grid-template-columns: 1.25fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0; padding: 0; }
+  .pane {
+    border: 1px solid var(--line);
+    margin: -0.5px; /* collapse double borders */
+    display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    background: var(--bg);
+  }
+  .pane.focus { border-color: var(--accent-dim); z-index: 2; }
+  .pane-head {
+    height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 8px;
+    background: var(--bg-raise);
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 10px; color: var(--fg-dim);
+    cursor: pointer;
+  }
+  .pane.focus .pane-head { color: var(--accent); }
+  .pane-head .idx { color: var(--fg-faint); }
+  .pane-head .grp { margin-left: auto; color: var(--fg-faint); }
+  .pane-head .x { color: var(--fg-faint); padding: 0 2px; }
+  .pane-head .x:hover { color: var(--red); }
+  .pane-body { flex: 1; overflow: auto; padding: 8px 10px; font-size: 11px; min-height: 0; }
+
+  /* web pane fake content */
+  .urlbar {
+    display: flex; gap: 6px; align-items: center;
+    color: var(--fg-faint); font-size: 10px;
+    border-bottom: 1px solid var(--line-soft);
+    padding: 4px 8px; background: var(--bg-raise);
+  }
+  .urlbar .u { color: var(--fg-dim); }
+  .msg { margin: 8px 0; max-width: 92%; }
+  .msg .who { color: var(--fg-faint); font-size: 10px; margin-bottom: 2px; }
+  .msg.me .who { color: var(--blue); }
+  .msg.ai .who { color: var(--green); }
+  .msg .b { color: var(--fg-dim); }
+  .msg.ai .b { color: var(--fg); }
+  .composer {
+    margin-top: auto; border-top: 1px solid var(--line-soft);
+    padding: 6px 8px; color: var(--fg-faint); font-size: 11px;
+    display: flex; justify-content: space-between;
+  }
+  .composer .caret { color: var(--accent); animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* terminal pane */
+  .term { color: var(--fg-dim); white-space: pre-wrap; }
+  .term .p { color: var(--accent); }
+  .term .ok { color: var(--green); }
+  .term .err { color: var(--red); }
+  .term .cm { color: var(--fg-faint); font-style: italic; }
+  .term .hl { color: var(--fg); }
+
+  /* ---------- key line (bottom) ---------- */
+  #keyline {
+    height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 10px;
+    background: var(--bg-raise);
+    border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--fg-faint);
+  }
+  #keyline b { color: var(--fg-dim); font-weight: 400; }
+  #keyline .mode { color: var(--accent); }
+
+  /* ---------- annotations ---------- */
+  #notes-btn {
+    position: fixed; right: 12px; bottom: 34px;
+    background: var(--bg-raise); color: var(--fg-dim);
+    border: 1px solid var(--line); font: 10px var(--mono);
+    padding: 3px 8px; cursor: pointer;
+  }
+  #notes-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+  #notes {
+    position: fixed; right: 12px; bottom: 62px; width: 300px;
+    background: #0d0d0c; border: 1px solid var(--accent-dim);
+    padding: 12px 14px; font-size: 11px; color: var(--fg-dim);
+    display: none; z-index: 50;
+  }
+  #notes.open { display: block; }
+  #notes h4 { color: var(--accent); font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+  #notes li { margin: 5px 0 5px 14px; }
+  #notes .tag { color: var(--fg-faint); }
+</style>
+</head>
+<body>
+
+  <!-- tmux-style status line: EVERYTHING is one line of text -->
+  <div id="statusline">
+    <span class="logo">▚ tote</span>
+    <span style="color:var(--fg-faint)">│</span>
+    <div class="spaces">
+      <span class="space active" data-space="tote">tote</span>
+      <span class="space" data-space="knit-game">knit-game</span>
+      <span class="space" data-space="api-server">api-server</span>
+      <span class="space" data-space="scratch-7"><span class="temp">scratch-7⏱</span></span>
+    </div>
+    <span style="color:var(--fg-faint)">+ +t +r</span>
+    <div class="right">
+      <span><span class="dot">●</span> this machine</span>
+      <span>grp <b>1/3</b></span>
+      <span id="clock">14:32</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <!-- files: an ASCII tree, nothing more -->
+    <div id="files">
+      <div class="head"><span>files</span><span>+f +d ↻</span></div>
+      <div id="tree">
+        <div class="tline dim">~/github/tote</div>
+        <div class="tline">├─ <span class="d">inbox/</span></div>
+        <div class="tline">│&nbsp;&nbsp;└─ <span class="d">claude/</span> <span class="dim">2 files</span></div>
+        <div class="tline">├─ AGENTS.md</div>
+        <div class="tline">├─ CLAUDE.md</div>
+        <div class="tline">├─ package.json</div>
+        <div class="tline">├─ <span class="d">config/</span></div>
+        <div class="tline sel">├─ <span class="d">src/</span></div>
+        <div class="tline">│&nbsp;&nbsp;├─ <span class="d">host/</span></div>
+        <div class="tline">│&nbsp;&nbsp;├─ <span class="d">main/</span></div>
+        <div class="tline">│&nbsp;&nbsp;└─ <span class="d">renderer/</span></div>
+        <div class="tline">├─ <span class="d">scripts/</span></div>
+        <div class="tline">└─ <span class="d">docs/</span></div>
+      </div>
+      <div id="inbox-note">drops land in <b>inbox/&lt;provider&gt;/</b></div>
+    </div>
+
+    <!-- tiling: flat grid, hard borders, numbered like tmux windows -->
+    <div id="tiles">
+      <div class="pane focus" data-i="1">
+        <div class="pane-head"><span class="idx">1</span> claude — agent <span style="color:var(--green)">●live</span><span class="grp">⌘1</span><span class="x">×</span></div>
+        <div class="urlbar"><span>◀ ▶ ⟳</span><span class="u">claude.ai/new</span><span style="margin-left:auto">⤓ downloads → inbox/claude</span></div>
+        <div class="pane-body">
+          <div class="msg me"><div class="who">you</div><div class="b">refactor watchPlan() so the fd budget is per-space, not global</div></div>
+          <div class="msg ai"><div class="who">claude ✳</div><div class="b">Done — moved the budget into <b>watchPlan(space)</b>, each space now closes its watcher before rebinding. 41 tests pass. Want the diff in a doc pane?</div></div>
+        </div>
+        <div class="composer"><span>ask claude… <span class="caret">▊</span></span><span>⏎ send · ⇧⏏ newline</span></div>
+      </div>
+
+      <div class="pane" data-i="2">
+        <div class="pane-head"><span class="idx">2</span> term — claude <span class="grp">⌘2</span><span class="x">×</span></div>
+        <div class="pane-body term"><span class="p">tote ~/github/tote ❯</span> claude
+<span class="cm"># agent session — transcript saving on</span>
+<span class="hl">✳ Working on: redesign concepts</span>
+  ⎿ &nbsp;Read concepts/a-terminal-native.html
+  ⎿ &nbsp;Write concepts/b-command-center.html …
+
+<span class="p">tote ~/github/tote ❯</span> <span class="caret" style="color:var(--accent);animation:blink 1.1s steps(1) infinite">▊</span></div>
+      </div>
+
+      <div class="pane" data-i="3">
+        <div class="pane-head"><span class="idx">3</span> chatgpt <span class="grp">⌘3</span><span class="x">×</span></div>
+        <div class="urlbar"><span>◀ ▶ ⟳</span><span class="u">chatgpt.com/?q=tote+layout</span></div>
+        <div class="pane-body">
+          <div class="msg me"><div class="who">you</div><div class="b">compare tiling layouts vs docked panels for a multi-agent hub</div></div>
+          <div class="msg ai"><div class="who">chatgpt</div><div class="b">Tiling wins when panes are peers (your web+term mix). Docks win with a single primary surface. Hybrid: dock the tree, tile the rest — which is what you have.</div></div>
+        </div>
+        <div class="composer"><span>message chatgpt…</span><span></span></div>
+      </div>
+
+      <div class="pane" data-i="4">
+        <div class="pane-head"><span class="idx">4</span> term — npm test <span class="grp">⌘4</span><span class="x">×</span></div>
+        <div class="pane-body term"><span class="p">tote ~/github/tote ❯</span> npm test
+<span class="ok">✓ host: no electron imports</span>
+<span class="ok">✓ sshfix: 38 cases</span>
+<span class="ok">✓ layout: tile tree round-trip</span>
+<span class="ok">✓ scratch: discardTemp refuses remote</span>
+<span class="ok">✓ markdown: href filter</span>
+<span class="hl">5 suites, 0 failed</span> <span class="cm">(11.4s)</span>
+<span class="p">tote ~/github/tote ❯</span> _</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- vim-style key hint line -->
+  <div id="keyline">
+    <span><b>⌘K</b> command</span>
+    <span><b>⌘⏎</b> new web</span>
+    <span><b>ctrl+`</b> new term</span>
+    <span><b>⌘⌥1-9</b> group</span>
+    <span><b>⌘⌥F</b> zoom pane</span>
+    <span><b>drag</b> retile</span>
+    <span class="mode" style="margin-left:auto">NORMAL — 4 panes · 1 dirty</span>
+  </div>
+
+  <button id="notes-btn">? why</button>
+  <div id="notes">
+    <h4>Concept A — Terminal Native</h4>
+    <ul>
+      <li><span class="tag">Idea:</span> Tote is already 80% terminal. Stop dressing it as a web app; adopt tmux/vim grammar.</li>
+      <li>One accent color, monospace everywhere, zero rounded corners — chrome disappears, content is the UI.</li>
+      <li>Panes numbered like tmux windows; the keyline teaches the binds that already exist.</li>
+      <li>Strip + groups collapse into a single 30px status line.</li>
+      <li><span class="tag">Question it tests:</span> is maximal density + keyboard grammar freeing, or hostile to new users?</li>
+    </ul>
+  </div>
+
+<script>
+  // focus panes on click
+  document.querySelectorAll('.pane').forEach(p => {
+    p.addEventListener('mousedown', () => {
+      document.querySelectorAll('.pane').forEach(q => q.classList.remove('focus'));
+      p.classList.add('focus');
+    });
+  });
+  // fake space switching
+  document.querySelectorAll('.space').forEach(s => {
+    s.addEventListener('click', () => {
+      document.querySelectorAll('.space').forEach(q => q.classList.remove('active'));
+      s.classList.add('active');
+    });
+  });
+  document.getElementById('notes-btn').addEventListener('click', () =>
+    document.getElementById('notes').classList.toggle('open'));
+  // clock
+  setInterval(() => {
+    const d = new Date();
+    document.getElementById('clock').textContent =
+      String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }, 5000);
+</script>
+</body>
+</html>

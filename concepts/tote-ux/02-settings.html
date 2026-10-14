@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tote 02 — settings</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --raise: #0e0e0d; --sink: #0c0c0b;
+    --line: #1f1f1c; --line2: #2b2b26;
+    --fg: #c9c9c4; --dim: #77776f; --faint: #4a4a44;
+    --amber: #e0a458; --amber-dim: #4d3d24; --amber-bg: #161310;
+    --green: #8faf7a; --red: #c96a5a; --blue: #7a9eb0;
+    --warn-bg: #241a0c; --warn-line: #6b5a2b; --warn-fg: #e8d9a8;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.55 var(--mono);
+    display: flex; flex-direction: column; user-select: none;
+  }
+
+  /* top */
+  #top {
+    height: 30px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 10px;
+    background: var(--sink); border-bottom: 1px solid var(--line);
+    font-size: 11px;
+  }
+  #top .logo { color: var(--amber); font-weight: 700; }
+  #top .where { color: var(--dim); }
+  #top .x { margin-left: auto; color: var(--faint); cursor: pointer; text-decoration: none; }
+  #top .x:hover { color: var(--red); }
+
+  #body { flex: 1; display: flex; min-height: 0; }
+
+  /* left nav */
+  #nav {
+    width: 170px; flex-shrink: 0;
+    background: var(--sink); border-right: 1px solid var(--line);
+    padding: 10px 6px;
+  }
+  .ni {
+    padding: 5px 10px; border-radius: 2px; cursor: pointer;
+    color: var(--dim); font-size: 11px;
+    border-left: 2px solid transparent;
+  }
+  .ni:hover { color: var(--fg); background: #121211; }
+  .ni.active { color: var(--amber); background: var(--amber-bg); border-left-color: var(--amber); }
+  .ni .k { float: right; color: var(--faint); font-size: 9px; }
+
+  /* content */
+  #content { flex: 1; overflow: auto; padding: 18px 22px; min-width: 0; }
+  .sec { display: none; max-width: 640px; }
+  .sec.active { display: block; }
+  .sec h2 { font-size: 13px; letter-spacing: 0.06em; margin-bottom: 3px; color: var(--fg); }
+  .sec .lede { color: var(--dim); font-size: 11px; margin-bottom: 16px; max-width: 62ch; }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border: 1px solid var(--line);
+    background: var(--raise); font-size: 11px; margin-bottom: -1px;
+  }
+  .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .name { color: var(--fg); }
+  .row .sub { color: var(--faint); font-size: 10px; display: block; }
+  .row .tag { font-size: 9px; color: var(--faint); border: 1px solid var(--line2); padding: 0 5px; border-radius: 2px; }
+  .row .tag.temp { color: var(--amber); border-color: var(--amber-dim); }
+  button {
+    background: #171716; color: #8a8a82;
+    border: 1px solid #33332e; border-radius: 2px;
+    padding: 2px 9px; font: inherit; font-size: 10px; cursor: pointer;
+  }
+  button:hover { color: var(--amber); border-color: var(--amber-dim); }
+  button.primary { background: var(--amber); border-color: var(--amber); color: #14100a; font-weight: 700; }
+  button.primary:hover { background: #ecb86e; color: #14100a; }
+  button.danger:hover { color: var(--red); border-color: var(--red); }
+  .addrow { display: flex; gap: 6px; margin-top: 10px; }
+  input {
+    background: #0c0c0b; color: var(--fg);
+    border: 1px solid var(--line2); border-radius: 2px;
+    padding: 4px 8px; font: inherit; font-size: 11px; outline: none; min-width: 0;
+  }
+  input:focus { border-color: var(--amber-dim); }
+
+  /* toggle */
+  .tgl { width: 28px; height: 14px; border-radius: 8px; background: var(--line2); position: relative; cursor: pointer; flex-shrink: 0; transition: background .12s; }
+  .tgl::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--dim); transition: all .12s; }
+  .tgl.on { background: var(--amber-dim); }
+  .tgl.on::after { left: 16px; background: var(--amber); }
+
+  /* check line */
+  .chkline { display: flex; gap: 10px; align-items: center; padding: 6px 10px; color: var(--dim); font-size: 11px; cursor: pointer; }
+  .chkline:hover { color: var(--fg); }
+  .chkline input { accent-color: var(--amber); }
+
+  /* tailscale card */
+  #ts-card { border: 1px solid var(--line); background: var(--raise); padding: 12px 14px; margin-bottom: 16px; }
+  #ts-card .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  #ts-card .hd .st { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  #ts-card .hd .st.ok { background: var(--green); }
+  #ts-card .hd .st.warn { background: var(--amber); animation: pulse 0.9s infinite alternate; }
+  @keyframes pulse { from { opacity: 0.3; } to { opacity: 1; } }
+  #ts-card .hd .t { color: var(--fg); font-weight: 700; }
+  #ts-card .hd .state { margin-left: auto; font-size: 10px; color: var(--dim); }
+  #ts-card .bd { font-size: 11px; color: var(--dim); min-height: 20px; }
+  #ts-card .acts { display: flex; gap: 8px; margin-top: 10px; }
+  #ts-card .me { color: var(--amber); }
+  .devrow .ip { color: var(--blue); font-size: 10px; }
+  .devrow .you { font-size: 9px; color: var(--amber); border: 1px solid var(--amber-dim); padding: 0 4px; border-radius: 2px; }
+
+  /* keyline */
+  #keyline {
+    height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 10px;
+    background: var(--sink); border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--faint);
+  }
+  #keyline a { color: var(--dim); text-decoration: none; }
+  #keyline a:hover { color: var(--amber); }
+  #keyline .mode { margin-left: auto; color: var(--amber); letter-spacing: 0.08em; }
+
+  #notes-btn {
+    position: fixed; right: 12px; bottom: 30px;
+    background: var(--raise); color: var(--dim);
+    border: 1px solid var(--line); font: 10px var(--mono);
+    padding: 3px 8px; cursor: pointer; z-index: 60;
+  }
+  #notes-btn:hover { color: var(--amber); border-color: var(--amber-dim); }
+  #notes {
+    position: fixed; right: 12px; bottom: 58px; width: 310px;
+    background: #0d0d0c; border: 1px solid var(--amber-dim);
+    padding: 12px 14px; font-size: 11px; color: var(--dim);
+    display: none; z-index: 60;
+  }
+  #notes.open { display: block; }
+  #notes h4 { color: var(--amber); font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+  #notes li { margin: 5px 0 5px 14px; }
+  #notes b { color: var(--fg); font-weight: 400; }
+</style>
+</head>
+<body>
+
+  <div id="top">
+    <span class="logo">▚ tote</span>
+    <span class="where">settings</span>
+    <a class="x" href="01-app.html" title="close (esc)">✕ close</a>
+  </div>
+
+  <div id="body">
+    <div id="nav">
+      <div class="ni" data-sec="spaces">spaces</div>
+      <div class="ni" data-sec="providers">web providers</div>
+      <div class="ni" data-sec="agents">cli agents</div>
+      <div class="ni" data-sec="apps">native apps</div>
+      <div class="ni active" data-sec="devices">devices <span class="k">ts</span></div>
+      <div class="ni" data-sec="behavior">behavior</div>
+      <div class="ni" data-sec="about">about</div>
+    </div>
+
+    <div id="content">
+      <!-- DEVICES -->
+      <div class="sec active" data-sec="devices">
+        <h2>DEVICES</h2>
+        <p class="lede">Your other machines, reachable inside tote. Tailscale decides who is "you" — only devices on your own tailscale account can connect; a shared-in node is refused.</p>
+
+        <div id="ts-card">
+          <div class="hd">
+            <span class="st" id="ts-st"></span>
+            <span class="t">tailscale</span>
+            <span class="state" id="ts-state">checking…</span>
+          </div>
+          <div class="bd" id="ts-bd">looking for the tailscale daemon…</div>
+          <div class="acts" id="ts-acts"></div>
+        </div>
+
+        <div id="dev-list">
+          <div class="row devrow">
+            <span class="grow"><span class="name">yusufs-macbook</span> <span class="you">this machine</span><span class="sub">admits your other devices · serves this window</span></span>
+            <span class="ip">100.84.17.2</span>
+          </div>
+          <div class="row devrow">
+            <span class="grow"><span class="name">studio-mini</span><span class="sub">last seen 2m ago · tailscale ssh on</span></span>
+            <span class="ip">100.84.17.9</span>
+          </div>
+          <div class="row devrow">
+            <span class="grow"><span class="name">vps-eu-1</span><span class="sub">remote spaces only · no shared folders</span></span>
+            <span class="ip">100.84.17.14</span>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:16px">
+          <span class="grow"><span class="name">share this device</span><span class="sub">listen on your tailscale ip · same-owner nodes only, never shared-in</span></span>
+          <span class="tgl on" id="tgl-share"></span>
+        </div>
+
+        <p class="lede" style="margin-top:16px">Remote spaces ride this: <b style="color:var(--fg)">+r</b> on the strip makes a space that lives on another machine over ssh/Tailscale. Re-auth is ambient — a banner in the files pane, never a modal.</p>
+      </div>
+
+      <!-- SPACES -->
+      <div class="sec" data-sec="spaces">
+        <h2>SPACES</h2>
+        <p class="lede">Workspaces are folders tote organizes everything around. One global space plus your projects; ids are stable across renames.</p>
+        <div id="ws-list">
+          <div class="row"><span class="grow"><span class="name">global</span> <span class="tag">default</span><span class="sub">~/tote</span></span><button>rename</button><button>folder…</button></div>
+          <div class="row"><span class="grow"><span class="name">tote</span><span class="sub">~/github/tote</span></span><button>rename</button><button>folder…</button></div>
+          <div class="row"><span class="grow"><span class="name">knit-game</span><span class="sub">~/github/knit-game</span></span><button>rename</button><button>folder…</button><button class="danger">remove</button></div>
+          <div class="row"><span class="grow"><span class="name">scratch-7</span> <span class="tag temp">temp · swept when stale</span><span class="sub">~/tote/scratch/scratch-7</span></span><button class="danger">discard</button></div>
+        </div>
+        <div class="addrow"><input placeholder="name" style="width:130px"><input placeholder="/path/to/folder" style="flex:1"><button class="primary">add space</button></div>
+      </div>
+
+      <!-- PROVIDERS -->
+      <div class="sec" data-sec="providers">
+        <h2>WEB PROVIDERS</h2>
+        <p class="lede">The + web menu on the strip. Each opens in its own session partition, so logins never leak between providers.</p>
+        <div>
+          <div class="row"><span class="grow"><span class="name">Claude</span><span class="sub">https://claude.ai/new</span></span><button class="danger">remove</button></div>
+          <div class="row"><span class="grow"><span class="name">ChatGPT</span><span class="sub">https://chatgpt.com</span></span><button class="danger">remove</button></div>
+          <div class="row"><span class="grow"><span class="name">Kimi</span><span class="sub">https://www.kimi.com</span></span><button class="danger">remove</button></div>
+          <div class="row"><span class="grow"><span class="name">Gemini</span><span class="sub">https://gemini.google.com/app</span></span><button class="danger">remove</button></div>
+        </div>
+        <div class="addrow"><input placeholder="Name" style="width:130px"><input placeholder="https://…" style="flex:1"><button class="primary">add provider</button></div>
+      </div>
+
+      <!-- AGENTS -->
+      <div class="sec" data-sec="agents">
+        <h2>CLI AGENTS</h2>
+        <p class="lede">Agent terminals on <b style="color:var(--fg)">ctrl + `</b>. Each profile carries its install command — the setup checklist and "fix" flow use it.</p>
+        <div>
+          <div class="row"><span class="grow"><span class="name">claude</span><span class="sub">found · /Users/yusuf/.local/bin/claude</span></span><span class="tag" style="color:var(--green);border-color:#2e4028">ok</span></div>
+          <div class="row"><span class="grow"><span class="name">codex</span><span class="sub">found · ~/.local/bin/codex</span></span><span class="tag" style="color:var(--green);border-color:#2e4028">ok</span></div>
+          <div class="row"><span class="grow"><span class="name">gemini</span><span class="sub">missing — install with: npm i -g @google/gemini-cli</span></span><button class="primary">install</button></div>
+        </div>
+      </div>
+
+      <!-- APPS -->
+      <div class="sec" data-sec="apps">
+        <h2>NATIVE APPS</h2>
+        <p class="lede">Desktop LLM apps tote can launch into the active workspace. macOS can also bridge their Downloads into the space's inbox.</p>
+        <div>
+          <div class="row"><span class="grow"><span class="name">Claude Desktop</span><span class="sub">/Applications/Claude.app</span></span><button class="danger">remove</button></div>
+          <div class="row"><span class="grow"><span class="name">ChatGPT</span><span class="sub">/Applications/ChatGPT.app</span></span><button class="danger">remove</button></div>
+        </div>
+        <div class="addrow"><input placeholder="App name" style="width:130px"><button class="primary">pick binary &amp; add</button></div>
+      </div>
+
+      <!-- BEHAVIOR -->
+      <div class="sec" data-sec="behavior">
+        <h2>BEHAVIOR</h2>
+        <p class="lede">Defaults for downloads, devices and upgrades.</p>
+        <label class="chkline"><input type="checkbox" checked> bridge native-app downloads into the active space's inbox <span style="color:var(--faint)">· macOS only, copies, quarantine-aware</span></label>
+        <label class="chkline"><input type="checkbox" checked> share this device on tailscale when it advertises <span style="color:var(--faint)">· mirrors the devices toggle</span></label>
+        <label class="chkline"><input type="checkbox"> auto-sweep temp spaces at launch <span style="color:var(--faint)">· default: ask</span></label>
+        <label class="chkline"><input type="checkbox" checked> strip the clock</label>
+      </div>
+
+      <!-- ABOUT -->
+      <div class="sec" data-sec="about">
+        <h2>ABOUT</h2>
+        <p class="lede">tote — one window for all your agents.</p>
+        <div>
+          <div class="row"><span class="grow"><span class="name">version</span></span><span style="color:var(--dim)">0.4.0 (prototype)</span></div>
+          <div class="row"><span class="grow"><span class="name">config</span></span><span style="color:var(--dim)">~/.config/tote · data, not code</span></div>
+          <div class="row"><span class="grow"><span class="name">repository</span></span><button>open github</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="keyline">
+    <a href="01-app.html">‹ 01 app</a>
+    <span><b>esc</b> close</span>
+    <span class="mode">SETTINGS</span>
+  </div>
+
+  <button id="notes-btn">? why</button>
+  <div id="notes">
+    <h4>02 — settings</h4>
+    <ul>
+      <li><b>Nav on the left, one page of content</b> — no tabs-inside-modals. Everything fits without scrolling sideways in your head.</li>
+      <li><b>Devices is first-class</b> because the multi-machine story is tote's bet. The Tailscale card shows its real state machine — click through it.</li>
+      <li><b>States, not screens:</b> install → open → connect → devices list all live in one card; the card mutates instead of navigating.</li>
+      <li><b>Everything is resumable:</b> first-run setup maps 1:1 onto these sections, so "finish later in settings" is literally true.</li>
+      <li><b>Question it tests:</b> which of these deserve nav slots — should providers/agents live under one "services" page? is behavior too sparse?</li>
+    </ul>
+  </div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+
+  // nav switching
+  $$('.ni').forEach(ni => ni.addEventListener('click', () => {
+    $$('.ni').forEach(q => q.classList.remove('active'));
+    $$('.sec').forEach(q => q.classList.remove('active'));
+    ni.classList.add('active');
+    $(`.sec[data-sec="${ni.dataset.sec}"]`).classList.add('active');
+  }));
+
+  // toggles
+  $$('.tgl').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+
+  // tailscale state machine
+  const TS = [
+    { st: '',    state: 'not installed',
+      bd: 'tailscale is how your machines recognize each other. install it, or skip — tote works single-machine too.',
+      acts: [['install from tailscale.com', 'primary'], ['skip for now', '']] },
+    { st: 'warn', state: 'installed — not running',
+      bd: 'found /Applications/Tailscale.app. open it once so macOS starts its daemon and menu-bar app.',
+      acts: [['open tailscale', 'primary'], ['not now', '']] },
+    { st: 'warn', state: 'running — not logged in',
+      bd: 'the daemon is up. log in with the account that owns your other machines (google / github / sso).',
+      acts: [['connect…', 'primary']] },
+    { st: '',    state: 'connecting…',
+      bd: 'waiting for tailscale to finish auth — this can take a few seconds.',
+      acts: [] },
+    { st: 'ok',  state: 'connected',
+      bd: 'logged in as <span class="me">yusuf@gmail.com</span> · this device <span class="me">yusufs-macbook · 100.84.17.2</span>. other devices on your tailnet appear above; the strip\'s device chip switches between them.',
+      acts: [['disconnect', ''], ['open tailscale menu', '']] },
+  ];
+  let ts = 0;
+  function renderTs() {
+    const s = TS[ts];
+    $('#ts-st').className = 'st ' + s.st;
+    $('#ts-state').textContent = s.state;
+    $('#ts-bd').innerHTML = s.bd;
+    $('#ts-acts').innerHTML = s.acts.map(([label, cls], i) =>
+      `<button class="${cls}" data-i="${i}">${label}</button>`).join('');
+    $('#dev-list').style.opacity = ts === 4 ? 1 : 0.35;
+    $$('#ts-acts button').forEach(b => b.addEventListener('click', () => {
+      if (ts === 0 && b.dataset.i === '0') ts = 1;
+      else if (ts === 0) ts = 0;                       // skip: stays
+      else if (ts === 1 && b.dataset.i === '0') ts = 2;
+      else if (ts === 1) ts = 1;
+      else if (ts === 2) { ts = 3; renderTs(); setTimeout(() => { ts = 4; renderTs(); }, 1200); return; }
+      else if (ts === 4) ts = 1;                        // disconnect → back to running
+      renderTs();
+    }));
+  }
+  renderTs();
+
+  // esc closes
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') location.href = '01-app.html'; });
+  $('#notes-btn').addEventListener('click', () => $('#notes').classList.toggle('open'));
+</script>
+</body>
+</html>

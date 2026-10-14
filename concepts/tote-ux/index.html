@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tote — ux prototype</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --raise: #0e0e0d; --sink: #0c0c0b;
+    --line: #1f1f1c; --line2: #2b2b26;
+    --fg: #c9c9c4; --dim: #77776f; --faint: #4a4a44;
+    --amber: #e0a458; --amber-dim: #4d3d24; --amber-bg: #161310;
+    --green: #8faf7a; --red: #c96a5a; --blue: #7a9eb0;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; background: var(--bg); color: var(--fg);
+    font: 13px/1.6 var(--mono); padding: 48px 20px 60px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.1em; font-size: 15px; margin-bottom: 6px; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 8px; }
+  .sub { color: var(--dim); max-width: 66ch; margin-bottom: 36px; font-size: 12px; }
+  .flow { display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .step {
+    flex: 1; min-width: 220px; text-decoration: none; color: inherit;
+    background: var(--raise); border: 1px solid var(--line);
+    padding: 14px 16px; display: block;
+  }
+  .step:hover { border-color: var(--amber-dim); }
+  .step .n { color: var(--amber); font-size: 11px; letter-spacing: 0.1em; }
+  .step h2 { font-size: 14px; margin: 4px 0 2px; color: var(--fg); }
+  .step p { font-size: 11px; color: var(--dim); }
+  .arrow { align-self: center; color: var(--faint); }
+  .tune { border: 1px solid var(--line); background: var(--sink); padding: 14px 16px; font-size: 11px; color: var(--dim); }
+  .tune h3 { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+  .tune li { margin: 4px 0 4px 16px; }
+  .tune b { color: var(--fg); font-weight: 400; }
+  a.back { color: var(--faint); font-size: 11px; text-decoration: none; }
+  a.back:hover { color: var(--amber); }
+  .proto-nav { margin-top: 34px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; gap: 16px; font-size: 11px; }
+  .proto-nav a { color: var(--dim); text-decoration: none; }
+  .proto-nav a:hover { color: var(--amber); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">▚ tote</div>
+    <h1>UX prototype — full flow</h1>
+    <p class="sub">Terminal Native direction, all the screens a user ever meets. Walk them in order — each screen is clickable and carries a <b style="color:var(--fg)">? why</b> note. Fine-tune here, implement after.</p>
+
+    <div class="flow">
+      <a class="step" href="00-onboarding.html">
+        <div class="n">00</div>
+        <h2>landing / first-run</h2>
+        <p>what tote is · system checks · MCP bind · Tailscale · first workspace</p>
+      </a>
+      <span class="arrow">→</span>
+      <a class="step" href="01-app.html">
+        <div class="n">01</div>
+        <h2>the app</h2>
+        <p>single status line · numbered panes · ASCII tree · keyline</p>
+      </a>
+      <span class="arrow">→</span>
+      <a class="step" href="02-settings.html">
+        <div class="n">02</div>
+        <h2>settings</h2>
+        <p>spaces · providers · agents · devices (Tailscale connect)</p>
+      </a>
+    </div>
+
+    <div class="tune">
+      <h3>what to fine-tune per screen</h3>
+      <ul>
+        <li><b>00:</b> how much setup before first value — is the checklist welcoming or gatekeeping? is Tailscale optional enough?</li>
+        <li><b>01:</b> does one 30px line carry spaces + groups + device without crowding? are pane numbers useful or noise?</li>
+        <li><b>02:</b> is the Tailscale state machine (install → open → connect → devices) the right shape? which settings deserve nav, which should live in-context?</li>
+      </ul>
+    </div>
+
+    <div class="proto-nav">
+      <a href="00-onboarding.html">00 onboarding →</a>
+      <a href="01-app.html">01 app →</a>
+      <a href="02-settings.html">02 settings →</a>
+      <a href="../index.html" style="margin-left:auto">← concept directions</a>
+    </div>
+  </div>
+</body>
+</html>

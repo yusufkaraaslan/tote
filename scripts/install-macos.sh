@@ -92,12 +92,41 @@ fi
 # The swap itself, used by both paths below. Staged as a script so the deferred
 # case can run it after this shell (and the app it lives in) are long gone.
 # BSD mktemp only substitutes X's at the END of the template.
+#
+# Two installs can be deferred on the same running Tote at once (upgrade from
+# two windows). Without a lock both watchers wake on the same quit and race:
+# one's rm -rf of Tote.app.incoming deletes the other's half-finished copy and
+# a bundle with no executable gets renamed into place. mkdir is the portable
+# atomic lock (macOS has no flock), and the rename is preceded by a sanity
+# check so a bad copy can never become /Applications/Tote.app.
 SWAP=$(mktemp /tmp/tote-swap.XXXXXX)
 cat > "$SWAP" <<EOF
 #!/bin/sh
 set -e
 # NOTE: this heredoc is unquoted so TARGET and APP expand -- which means a
 # backtick or an unescaped dollar in here runs at write time. Keep both out.
+LOCK=/tmp/tote-swap.lock
+n=0
+while ! mkdir "\$LOCK" 2>/dev/null; do
+  sleep 0.5
+  n=\$((n + 1))
+  if [ \$n -gt 240 ]; then
+    echo "tote swap: lock held for 2 minutes — another swap is stuck; giving up" >&2
+    exit 1
+  fi
+done
+trap 'rmdir "\$LOCK"' EXIT
+# The lock only serializes the swaps; it does not make the second one wrong to
+# run. The watcher that got the lock first swapped AND reopened the app, so by
+# the time this one gets it the target may be live again -- and renaming it now
+# is the mixed-bundle failure described at the top of this file (seen: a Tote
+# launched at 17:13:36 had its bundle renamed to backup-171336 under it, and its
+# terminals never opened). Both watchers install the same staged build, so the
+# first one's install is this one's too: skip.
+if pgrep -a -f "^$TARGET/Contents/MacOS/Tote\$" >/dev/null 2>&1; then
+  echo "tote swap: $TARGET is running again (another swap reopened it) — skipping" >&2
+  exit 0
+fi
 #
 # Order matters: copy FIRST, then swap by rename. The copy is the slow part and
 # the only part that can realistically fail (source deleted, disk full), and
@@ -111,6 +140,18 @@ rm -rf "$TARGET.incoming"
 cp -R "$APP" "$TARGET.incoming"
 # Unsigned build (no Developer ID), so a copied bundle would be quarantined.
 xattr -dr com.apple.quarantine "$TARGET.incoming" 2>/dev/null || true
+# Never rename an incomplete bundle into place: the executable must exist.
+if [ ! -x "$TARGET.incoming/Contents/MacOS/Tote" ]; then
+  echo "staged copy is incomplete — refusing to swap" >&2
+  rm -rf "$TARGET.incoming"
+  exit 1
+fi
+# The copy takes seconds; check once more right before the rename.
+if pgrep -a -f "^$TARGET/Contents/MacOS/Tote\$" >/dev/null 2>&1; then
+  echo "tote swap: $TARGET started during the copy — skipping" >&2
+  rm -rf "$TARGET.incoming"
+  exit 0
+fi
 if [ -d "$TARGET" ]; then
   mv "$TARGET" "$TARGET.backup-\$(date +%Y%m%d-%H%M%S)"
 fi

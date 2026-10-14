@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tote 01 — the app (navigable prototype)</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --raise: #0e0e0d; --sink: #0c0c0b;
+    --line: #1f1f1c; --line2: #2b2b26;
+    --fg: #c9c9c4; --dim: #77776f; --faint: #4a4a44;
+    --amber: #e0a458; --amber-dim: #4d3d24; --amber-bg: #161310;
+    --green: #8faf7a; --red: #c96a5a; --blue: #7a9eb0;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.55 var(--mono);
+    display: flex; flex-direction: column; user-select: none;
+  }
+  a { color: var(--dim); text-decoration: none; }
+  a:hover { color: var(--amber); }
+
+  /* ---------- ONE status line ---------- */
+  #statusline {
+    height: 30px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: var(--sink);
+    border-bottom: 1px solid var(--line);
+    font-size: 11px; white-space: nowrap;
+  }
+  .logo { color: var(--amber); font-weight: 700; }
+  .vsep { color: var(--line2); }
+  #spaces { display: flex; gap: 2px; overflow: hidden; }
+  .space {
+    padding: 1px 8px; cursor: pointer; color: var(--dim);
+    border: 1px solid transparent; border-radius: 3px 3px 0 0;
+  }
+  .space:hover { color: var(--fg); }
+  .space.active { color: var(--amber); border-color: var(--amber-dim); background: var(--amber-bg); }
+  .space.temp { color: var(--faint); }
+  .space .conn { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--green); margin-left: 4px; vertical-align: 1px; }
+  .plus { color: var(--faint); cursor: pointer; padding: 0 3px; }
+  .plus:hover { color: var(--amber); }
+  #groups { display: flex; gap: 2px; align-items: center; }
+  #groups .lbl { color: var(--faint); font-size: 9px; letter-spacing: 0.1em; }
+  .grp { padding: 0 7px; cursor: pointer; color: var(--dim); border: 1px solid var(--line2); border-radius: 2px; font-size: 10px; }
+  .grp:hover { color: var(--fg); }
+  .grp.active { color: var(--amber); border-color: var(--amber-dim); background: var(--amber-bg); }
+  .addbtn { color: var(--faint); cursor: pointer; font-size: 10px; padding: 1px 5px; }
+  .addbtn:hover { color: var(--amber); }
+  #panectls { display: flex; gap: 1px; align-items: center; }
+  .right { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 10px; color: var(--dim); }
+  .right .dev { color: var(--green); cursor: pointer; }
+  .right a { font-size: 11px; }
+
+  /* ---------- main ---------- */
+  #main { flex: 1; display: flex; min-height: 0; }
+
+  /* files */
+  #files {
+    width: 226px; flex-shrink: 0;
+    background: var(--sink);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #files.off { display: none; }
+  #files .head {
+    padding: 6px 10px; color: var(--faint);
+    border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between;
+    font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  #tree { flex: 1; overflow: auto; padding: 6px 0; font-size: 11px; }
+  .tline { padding: 1px 10px; white-space: nowrap; color: var(--dim); cursor: pointer; }
+  .tline:hover { background: #131312; color: var(--fg); }
+  .tline.dir { color: var(--blue); }
+  .tline.dir:hover { color: var(--fg); }
+  .tline.sel { background: var(--amber-bg); color: var(--amber); }
+  .tline .cmt { color: var(--faint); }
+  .tline.hidden-row { display: none; }
+  #inbox-note { border-top: 1px solid var(--line); padding: 6px 10px; font-size: 9px; color: var(--faint); }
+  #inbox-note b { color: var(--dim); font-weight: 400; }
+
+  /* tiles */
+  #tiles { flex: 1; display: grid; min-width: 0; min-height: 0; position: relative; }
+  .pane {
+    border: 1px solid var(--line); margin: -0.5px;
+    display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    background: var(--raise); min-height: 0;
+  }
+  .pane.focus { border-color: var(--amber-dim); z-index: 2; }
+  .pane.zoomed { grid-column: 1 / -1 !important; grid-row: 1 / -1 !important; }
+  .pane.spacer { visibility: hidden; }
+  .pane-head {
+    height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 8px;
+    background: var(--sink); border-bottom: 1px solid var(--line);
+    font-size: 10px; color: var(--dim); cursor: grab;
+  }
+  .pane.focus .pane-head { background: var(--amber-bg); color: var(--amber); }
+  .pane-head .idx { color: var(--faint); }
+  .pane.focus .pane-head .idx { color: var(--amber); }
+  .pane-head .live { color: var(--green); }
+  .pane-head .key { margin-left: auto; color: var(--faint); }
+  .pane-head .x { color: var(--faint); padding: 0 2px; cursor: pointer; }
+  .pane-head .x:hover { color: var(--red); }
+  .pane-body { flex: 1; overflow: auto; padding: 8px 10px; font-size: 11px; min-height: 0; }
+
+  .urlbar {
+    display: flex; gap: 6px; align-items: center;
+    color: var(--faint); font-size: 9px;
+    border-bottom: 1px solid var(--line);
+    padding: 3px 8px; background: var(--sink);
+  }
+  .urlbar .u { color: var(--dim); }
+  .msg { margin: 8px 0; max-width: 92%; }
+  .msg .who { color: var(--faint); font-size: 9px; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .msg.me .who { color: var(--blue); }
+  .msg.ai .who { color: var(--green); }
+  .msg .b { color: var(--dim); }
+  .msg.ai .b { color: var(--fg); }
+  .composer {
+    margin-top: auto; border-top: 1px solid var(--line);
+    padding: 6px 8px; color: var(--faint); font-size: 10px;
+    display: flex; justify-content: space-between;
+  }
+  .caret { animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .term { color: var(--dim); white-space: pre-wrap; }
+  .term .p { color: var(--amber); }
+  .term .ok { color: var(--green); }
+  .term .hl { color: var(--fg); }
+  .term .cm { color: var(--faint); font-style: italic; }
+
+  /* doc pane */
+  .doc { color: var(--dim); font-size: 11.5px; }
+  .doc h3 { color: var(--fg); font-size: 13px; margin-bottom: 8px; }
+  .doc pre { background: #0c0c0b; border: 1px solid var(--line); padding: 8px 10px; margin: 8px 0; white-space: pre-wrap; color: #b9b9b2; }
+  .doc code { color: #d7c9a0; }
+  .doc p { margin: 6px 0; }
+
+  /* welcome state (empty group) */
+  #welcome {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; color: var(--dim); text-align: center; z-index: 5; background: var(--bg);
+  }
+  #welcome.show { display: flex; }
+  #welcome h1 { color: var(--amber); font-size: 20px; letter-spacing: 0.2em; }
+  #welcome .row { display: flex; gap: 8px; margin-top: 10px; }
+  #welcome .row span {
+    border: 1px solid var(--line2); padding: 4px 12px; cursor: pointer; font-size: 11px; color: var(--dim);
+  }
+  #welcome .row span:hover { color: var(--amber); border-color: var(--amber-dim); }
+
+  /* menus (shared) */
+  .menu {
+    position: fixed; z-index: 100; min-width: 200px;
+    background: #0f0f0e; border: 1px solid var(--line2);
+    padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    font-size: 11px;
+  }
+  .menu .mi { display: flex; gap: 8px; align-items: center; padding: 5px 9px; cursor: pointer; color: var(--dim); border-radius: 2px; }
+  .menu .mi:hover { background: var(--amber-bg); color: var(--amber); }
+  .menu .mi .hint { margin-left: auto; color: var(--faint); font-size: 9px; }
+  .menu .sep { height: 1px; background: var(--line); margin: 4px 6px; }
+  .menu .note { padding: 5px 9px; color: var(--faint); font-size: 10px; }
+
+  /* mini modal */
+  #veil {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    background: rgba(4,4,4,0.6); align-items: flex-start; justify-content: center; padding-top: 20vh;
+  }
+  #veil.open { display: flex; }
+  #veil .card {
+    width: 380px; background: #0f0f0e; border: 1px solid var(--line2);
+    padding: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+  }
+  #veil .card .t { color: var(--fg); font-size: 12px; margin-bottom: 8px; letter-spacing: 0.04em; }
+  #veil .card input {
+    width: 100%; background: #0c0c0b; color: var(--fg);
+    border: 1px solid var(--line2); padding: 6px 9px; font: inherit; font-size: 12px; outline: none;
+  }
+  #veil .card input:focus { border-color: var(--amber-dim); }
+  #veil .card .acts { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+
+  button {
+    background: #171716; color: #8a8a82;
+    border: 1px solid #33332e; border-radius: 3px;
+    padding: 3px 10px; font: inherit; font-size: 10px; cursor: pointer;
+  }
+  button:hover { color: var(--amber); border-color: var(--amber-dim); }
+  button.primary { background: var(--amber); border-color: var(--amber); color: #14100a; font-weight: 700; }
+  button.primary:hover { background: #ecb86e; color: #14100a; }
+
+  /* toasts */
+  #toasts { position: fixed; right: 12px; bottom: 34px; z-index: 300; display: flex; flex-direction: column; gap: 6px; }
+  .toast {
+    background: #0f0f0e; border: 1px solid var(--line2); border-left: 2px solid var(--amber);
+    padding: 7px 12px; font-size: 10px; color: var(--fg); max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+
+  /* keyline */
+  #keyline {
+    height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 10px;
+    background: var(--sink); border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--faint);
+  }
+  #keyline b { color: var(--dim); font-weight: 400; }
+  #keyline .mode { margin-left: auto; color: var(--amber); letter-spacing: 0.08em; }
+
+  #notes-btn {
+    position: fixed; right: 12px; bottom: 30px;
+    background: var(--raise); color: var(--dim);
+    border: 1px solid var(--line); font: 10px var(--mono);
+    padding: 3px 8px; cursor: pointer; z-index: 60;
+  }
+  #notes-btn:hover { color: var(--amber); border-color: var(--amber-dim); }
+  #notes {
+    position: fixed; right: 12px; bottom: 58px; width: 320px;
+    background: #0d0d0c; border: 1px solid var(--amber-dim);
+    padding: 12px 14px; font-size: 11px; color: var(--dim);
+    display: none; z-index: 60;
+  }
+  #notes.open { display: block; }
+  #notes h4 { color: var(--amber); font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+  #notes li { margin: 5px 0 5px 14px; }
+  #notes b { color: var(--fg); font-weight: 400; }
+</style>
+</head>
+<body>
+
+  <!-- the whole app chrome: one 30px line -->
+  <div id="statusline">
+    <span class="logo">▚ tote</span>
+    <span class="vsep">│</span>
+    <div id="spaces">
+      <span class="space active">tote</span>
+      <span class="space">knit-game</span>
+      <span class="space">api-server<span class="conn"></span></span>
+      <span class="space temp">scratch-7</span>
+      <span class="plus" id="add-space" title="add space">+</span>
+      <span class="plus" id="add-temp" title="temp space">+t</span>
+      <span class="plus" id="add-remote" title="remote space (ssh)">+r</span>
+    </div>
+    <span class="vsep">│</span>
+    <div id="groups"><span class="lbl">grp</span></div>
+    <span class="vsep">│</span>
+    <div id="panectls">
+      <span class="addbtn" id="add-web">+web</span>
+      <span class="addbtn" id="add-term">+term</span>
+      <span class="addbtn" id="toggle-files" title="toggle files pane">▤ files</span>
+    </div>
+    <div class="right">
+      <span class="dev" id="device-chip" title="switch device">● this machine ▾</span>
+      <a href="02-settings.html" title="settings">⚙</a>
+      <span id="clock">14:32</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="files">
+      <div class="head"><span>files</span><span>+f +d ↻</span></div>
+      <div id="tree"></div>
+      <div id="inbox-note">drops → <b>inbox/&lt;provider&gt;/</b></div>
+    </div>
+
+    <div id="tiles">
+      <div id="welcome">
+        <h1>TOTE</h1>
+        <div>this group is empty — open a pane to start</div>
+        <div class="row"><span id="w-web">＋ web</span><span id="w-term">＋ term</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="keyline">
+    <a href="00-onboarding.html">‹ 00</a>
+    <a href="02-settings.html">02 ›</a>
+    <span><b>⌘⏎</b> web</span>
+    <span><b>ctrl+`</b> term</span>
+    <span><b>⌘1-9</b> pane</span>
+    <span><b>⌘⌥1-9</b> group</span>
+    <span><b>dblclick head</b> zoom</span>
+    <span><b>right-click head</b> menu</span>
+    <span class="mode" id="mode">NORMAL</span>
+  </div>
+
+  <div id="toasts"></div>
+
+  <button id="notes-btn">? why</button>
+  <div id="notes">
+    <h4>01 — the app (navigable)</h4>
+    <ul>
+      <li><b>Everything on screen works.</b> +web/+term open menus that add real panes; spaces add via prompts; the device chip has a menu; tree folders collapse; files open as doc panes.</li>
+      <li><b>Groups own pane sets:</b> switch grp 1/2/3 — panes of other groups stay alive (hidden), exactly like the real engine. Right-click a pane head to move it to another group.</li>
+      <li><b>Empty group shows the welcome state</b> — so first-run and "new group" share one screen.</li>
+      <li><b>Dbl-click a pane head</b> (or the head menu) zooms it; Esc unzooms.</li>
+      <li>This is where you give UX feedback: order of controls in the status line, menu contents, what the welcome screen offers.</li>
+    </ul>
+  </div>
+
+  <!-- shared menu + modal roots -->
+  <div id="menu-root"></div>
+  <div id="veil"><div class="card"><div class="t" id="veil-t"></div><input id="veil-in" placeholder="" /><div class="acts"><button id="veil-cancel">cancel</button><button class="primary" id="veil-ok">ok</button></div></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ---------------- state ---------------- */
+let seq = 0;
+const state = {
+  groups: [ { id: 1, els: [] }, { id: 2, els: [] }, { id: 3, els: [] } ],
+  active: 1,
+  zoomEl: null,
+  files: true,
+};
+const TILES = $('#tiles');
+const WELCOME = $('#welcome');
+
+/* ---------------- helpers ---------------- */
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+function activeGroup() { return state.groups.find(g => g.id === state.active); }
+
+/* ---------------- generic menu ---------------- */
+let openMenuEl = null;
+function closeMenu() { if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; } }
+function menu(anchor, items) {
+  closeMenu();
+  const m = document.createElement('div');
+  m.className = 'menu';
+  for (const it of items) {
+    if (it.sep) { const s = document.createElement('div'); s.className = 'sep'; m.appendChild(s); continue; }
+    if (it.note) { const n = document.createElement('div'); n.className = 'note'; n.textContent = it.note; m.appendChild(n); continue; }
+    const el = document.createElement('div');
+    el.className = 'mi';
+    el.innerHTML = `<span>${it.label}</span>${it.hint ? `<span class="hint">${it.hint}</span>` : ''}`;
+    el.onclick = () => { closeMenu(); it.onclick && it.onclick(); };
+    m.appendChild(el);
+  }
+  document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = (r.bottom + 4) + 'px';
+  openMenuEl = m;
+}
+document.addEventListener('mousedown', e => { if (openMenuEl && !openMenuEl.contains(e.target)) closeMenu(); });
+
+/* ---------------- mini modal ---------------- */
+function promptCard(title, placeholder, cb) {
+  $('#veil-t').textContent = title;
+  const input = $('#veil-in');
+  input.value = ''; input.placeholder = placeholder;
+  $('#veil').classList.add('open');
+  setTimeout(() => input.focus(), 30);
+  const ok = () => { $('#veil').classList.remove('open'); const v = input.value.trim(); if (v) cb(v); };
+  $('#veil-ok').onclick = ok;
+  input.onkeydown = e => { if (e.key === 'Enter') ok(); };
+}
+$('#veil-cancel').onclick = () => $('#veil').classList.remove('open');
+$('#veil').addEventListener('mousedown', e => { if (e.target.id === 'veil') $('#veil').classList.remove('open'); });
+
+/* ---------------- pane templates ---------------- */
+function webBody(name, url) {
+  return `
+    <div class="urlbar"><span>◀ ▶ ⟳</span><span class="u">${url}</span><span style="margin-left:auto">⤓ → inbox/${name.toLowerCase()}</span></div>
+    <div class="pane-body">
+      <div class="msg me"><div class="who">you</div><div class="b">continue where we left off — summarize the open threads</div></div>
+      <div class="msg ai"><div class="who">${name.toLowerCase()}</div><div class="b">You have 3 open threads. The redesign prototype is the latest — want a diff of what changed since yesterday?</div></div>
+      <div class="composer"><span>message ${name.toLowerCase()}… <span class="caret" style="color:var(--amber)">▊</span></span><span>⏎ send</span></div>
+    </div>`;
+}
+function termBody(name) {
+  return `<div class="pane-body term"><span class="p">tote ~/github/tote ❯</span> ${name}
+<span class="cm"># agent session — transcript saving on</span>
+<span class="hl">✳ ${name} ready.</span> <span class="cm">(esc to interrupt · ⇧tab mode)</span>
+
+<span class="p">tote ~/github/tote ❯</span> <span class="caret" style="color:var(--amber)">▊</span></div>`;
+}
+const TERM_NPM = `<div class="pane-body term"><span class="p">tote ~/github/tote ❯</span> npm test
+<span class="ok">✓ host · sshfix · layout · scratch · markdown</span>
+<span class="hl">5 suites, 0 failed</span> <span class="cm">(11.4s)</span>
+
+<span class="cm"># the themed ansi palette — every agent tui keeps its colors:</span>
+<span style="color:#c96a5a">●</span><span style="color:#8faf7a">●</span><span style="color:#d7c9a0">●</span><span style="color:#7a9eb0">●</span><span style="color:#b48ead">●</span><span style="color:#88b3a0">●</span><span style="color:#4a4a44">●</span><span style="color:#e0907c">●</span><span style="color:#a9c48f">●</span><span style="color:#e0a458">●</span><span style="color:#93b7c9">●</span><span style="color:#c9a5c0">●</span><span style="color:#9ec8b5">●</span><span style="color:#efeee8">●</span>
+<span class="p">tote ~/github/tote ❯</span> _</div>`;
+const DOCS = {
+  'AGENTS.md': `<div class="pane-body doc"><h3>AGENTS.md</h3><p>The tree watcher has a <b>file-descriptor budget</b> and blowing it breaks terminals, not the tree.</p><pre>Defences: IGNORE by name, IGNORE_UNITY + skipper(),
+watchPlan() lowering depth to fit WATCH_BUDGET,
+watch() awaiting the previous watcher's close().</pre><p>A terminal printing <code>[process exited with code 0]</code> and nothing else means the main process is out of descriptors.</p></div>`,
+  'CLAUDE.md': `<div class="pane-body doc"><h3>CLAUDE.md</h3><p>Project memory for Claude sessions in this repo. Keep it short — link, don't paste.</p><pre>- terminals must stay real PTYs
+- never give the renderer nodeIntegration
+- views.json is per-space state, not global</pre></div>`,
+  'package.json': `<div class="pane-body doc"><h3>package.json</h3><pre>{ "name": "tote", "version": "0.4.0",
+  "scripts": { "start": "electron .",
+    "test": "node scripts/test-layout.js && …",
+    "pack": "electron-builder --dir" } }</pre></div>`,
+};
+function docBody(name) { return DOCS[name] || `<div class="pane-body doc"><h3>${name}</h3><p>preview not in prototype</p></div>`; }
+
+/* ---------------- pane lifecycle ---------------- */
+function makePane(o) {
+  const el = document.createElement('div');
+  el.className = 'pane';
+  el.innerHTML = `
+    <div class="pane-head"><span class="idx"></span> ${o.title}${o.live ? ' <span class="live">●live</span>' : ''}<span class="key"></span><span class="x" title="close">×</span></div>
+    ${o.body}`;
+  el.addEventListener('mousedown', () => focusPane(el));
+  el.querySelector('.x').addEventListener('click', e => { e.stopPropagation(); closePane(el); });
+  el.querySelector('.pane-head').addEventListener('dblclick', () => toggleZoom(el));
+  el.querySelector('.pane-head').addEventListener('contextmenu', e => {
+    e.preventDefault();
+    paneMenu(e, el);
+  });
+  return el;
+}
+function addPane(o) {
+  const el = makePane(o);
+  activeGroup().els.push(el);
+  renderTiles();
+  toast(`＋ ${o.title}`);
+  return el;
+}
+function closePane(el) {
+  for (const g of state.groups) g.els = g.els.filter(x => x !== el);
+  if (state.zoomEl === el) state.zoomEl = null;
+  renderTiles();
+}
+function focusPane(el) {
+  if (state.zoomEl) return;
+  $$('.pane').forEach(q => q.classList.remove('focus'));
+  el.classList.add('focus');
+}
+function toggleZoom(el) {
+  if (state.zoomEl === el) state.zoomEl = null;
+  else { state.zoomEl = el; el.classList.add('focus'); }
+  renderTiles();
+}
+function moveToGroup(el, gid) {
+  for (const g of state.groups) g.els = g.els.filter(x => x !== el);
+  state.groups.find(g => g.id === gid).els.push(el);
+  if (state.zoomEl === el) state.zoomEl = null;
+  renderTiles();
+  toast(`moved → group ${gid}`);
+}
+function paneMenu(e, el) {
+  const others = state.groups.filter(g => g.id !== state.active);
+  menuAt(e.clientX, e.clientY, [
+    { label: 'zoom pane', hint: '⌘⌥F', onclick: () => toggleZoom(el) },
+    { sep: true },
+    ...others.map(g => ({ label: `move to group ${g.id}`, onclick: () => moveToGroup(el, g.id) })),
+    { sep: true },
+    { label: 'close', hint: '⌘W', onclick: () => closePane(el) },
+  ]);
+}
+function menuAt(x, y, items) {
+  closeMenu();
+  const anchor = { getBoundingClientRect: () => ({ left: x, top: y - 4, bottom: y, right: x }) };
+  menu(anchor, items);
+}
+
+/* ---------------- tiles render ---------------- */
+function renderTiles() {
+  const g = activeGroup();
+  TILES.querySelectorAll('.pane').forEach(p => p.remove());
+  const els = state.zoomEl ? [state.zoomEl] : g.els;
+  if (state.zoomEl && !g.els.includes(state.zoomEl)) state.zoomEl = null;
+  for (const el of els) { el.classList.remove('zoomed'); TILES.appendChild(el); }
+  if (state.zoomEl) state.zoomEl.classList.add('zoomed');
+
+  const n = els.length;
+  const cols = state.zoomEl ? 1 : (n <= 1 ? 1 : 2);
+  const rows = state.zoomEl ? 1 : Math.max(1, Math.ceil(n / 2));
+  TILES.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  TILES.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+  WELCOME.classList.toggle('show', n === 0 && !state.zoomEl);
+
+  els.forEach((el, i) => {
+    el.querySelector('.idx').textContent = (i + 1);
+    el.querySelector('.key').textContent = i < 9 ? `⌘${i + 1}` : '';
+  });
+  $('#mode').textContent = (state.zoomEl ? 'ZOOM' : 'NORMAL') + ` · ${g.els.length} pane${g.els.length === 1 ? '' : 's'} · grp ${g.id}`;
+}
+
+/* ---------------- groups ---------------- */
+function renderGroups() {
+  const box = $('#groups');
+  box.querySelectorAll('.grp, .addbtn').forEach(q => q.remove());
+  for (const g of state.groups) {
+    const c = document.createElement('span');
+    c.className = 'grp' + (g.id === state.active ? ' active' : '');
+    c.textContent = g.id;
+    c.title = `${g.els.length} panes`;
+    c.onclick = () => setGroup(g.id);
+    box.appendChild(c);
+  }
+  const add = document.createElement('span');
+  add.className = 'addbtn'; add.textContent = '+'; add.title = 'new group';
+  add.onclick = () => {
+    const id = Math.max(...state.groups.map(g => g.id)) + 1;
+    state.groups.push({ id, els: [] });
+    renderGroups(); setGroup(id);
+  };
+  box.appendChild(add);
+}
+function setGroup(id) {
+  if (state.active === id) return;
+  state.active = id; state.zoomEl = null;
+  renderGroups(); renderTiles();
+}
+
+/* ---------------- spaces ---------------- */
+$('#spaces').addEventListener('click', e => {
+  const s = e.target.closest('.space');
+  if (!s) return;
+  $$('#spaces .space').forEach(q => q.classList.remove('active'));
+  s.classList.add('active');
+});
+$('#add-space').addEventListener('click', () => promptCard('new space', 'name — folder picked next', name => {
+  const el = document.createElement('span');
+  el.className = 'space'; el.textContent = name;
+  $('#spaces').insertBefore(el, $('#add-space'));
+  $$('#spaces .space').forEach(q => q.classList.remove('active'));
+  el.classList.add('active');
+  toast(`space “${name}” added`);
+}));
+let scratchN = 8;
+$('#add-temp').addEventListener('click', () => {
+  const el = document.createElement('span');
+  el.className = 'space temp'; el.textContent = 'scratch-' + (++scratchN);
+  $('#spaces').insertBefore(el, $('#add-space'));
+  toast(`temp space created — swept when stale`);
+});
+$('#add-remote').addEventListener('click', () => promptCard('remote space', 'user@host (tailscale ssh)', host => {
+  const el = document.createElement('span');
+  el.className = 'space'; el.innerHTML = `${host}<span class="conn"></span>`;
+  $('#spaces').insertBefore(el, $('#add-remote'));
+  toast(`remote space “${host}” — connecting over ssh`);
+}));
+
+/* ---------------- pane controls ---------------- */
+$('#add-web').addEventListener('click', e => menu(e.currentTarget, [
+  { note: 'web providers — each gets its own login partition' },
+  { label: 'Claude', hint: 'claude.ai', onclick: () => addPane({ title: 'claude — web', live: true, body: webBody('Claude', 'claude.ai/new') }) },
+  { label: 'ChatGPT', hint: 'chatgpt.com', onclick: () => addPane({ title: 'chatgpt', body: webBody('ChatGPT', 'chatgpt.com') }) },
+  { label: 'Kimi', hint: 'kimi.com', onclick: () => addPane({ title: 'kimi', body: webBody('Kimi', 'kimi.com') }) },
+  { label: 'Gemini', hint: 'gemini.google.com', onclick: () => addPane({ title: 'gemini', body: webBody('Gemini', 'gemini.google.com/app') }) },
+  { sep: true },
+  { label: 'custom url…', onclick: () => promptCard('custom provider', 'https://…', url => addPane({ title: url.replace(/^https?:\/\//, ''), body: webBody('web', url) })) },
+]));
+$('#add-term').addEventListener('click', e => menu(e.currentTarget, [
+  { note: 'agent terminals — real ptys' },
+  { label: 'claude', hint: '✓ installed', onclick: () => addPane({ title: 'term — claude', body: termBody('claude') }) },
+  { label: 'codex', hint: '✓ installed', onclick: () => addPane({ title: 'term — codex', body: termBody('codex') }) },
+  { label: 'gemini', hint: 'install: npm i -g @google/gemini-cli', onclick: () => addPane({ title: 'term — gemini', body: termBody('gemini') }) },
+  { sep: true },
+  { label: 'plain shell', hint: '$SHELL', onclick: () => addPane({ title: 'term — zsh', body: termBody('zsh') }) },
+]));
+$('#toggle-files').addEventListener('click', () => {
+  state.files = !state.files;
+  $('#files').classList.toggle('off', !state.files);
+});
+$('#w-web').addEventListener('click', () => $('#add-web').click());
+$('#w-term').addEventListener('click', () => $('#add-term').click());
+
+/* ---------------- device chip ---------------- */
+const DEVICES = [ { n: 'this machine', ip: 'local' }, { n: 'studio-mini', ip: '100.84.17.9' }, { n: 'vps-eu-1', ip: '100.84.17.14' } ];
+$('#device-chip').addEventListener('click', e => menu(e.currentTarget, [
+  { note: 'your tailscale devices — same owner only' },
+  ...DEVICES.map(d => ({ label: d.n, hint: d.ip, onclick: () => {
+    $('#device-chip').textContent = `● ${d.n} ▾`;
+    toast(d.n === 'this machine' ? 'viewing this machine' : `viewing ${d.n} — its spaces load in place`);
+  } })),
+  { sep: true },
+  { label: 'devices settings →', onclick: () => location.href = '02-settings.html' },
+]));
+
+/* ---------------- files tree ---------------- */
+const TREE = [
+  { d: 0, t: '<span class="cmt">~/github/tote</span>', dir: false },
+  { d: 1, t: '<span class="dir">inbox/</span>', dir: true },
+  { d: 2, t: '<span class="dir">└─ claude/</span> <span class="cmt">2 files</span>', dir: false },
+  { d: 1, t: '├─ AGENTS.md', dir: false, file: 'AGENTS.md' },
+  { d: 1, t: '├─ CLAUDE.md', dir: false, file: 'CLAUDE.md' },
+  { d: 1, t: '├─ package.json', dir: false, file: 'package.json' },
+  { d: 1, t: '<span class="dir">├─ config/</span>', dir: true },
+  { d: 1, t: '<span class="dir">├─ src/</span>', dir: true },
+  { d: 2, t: '│&nbsp;&nbsp;├─ <span class="dir">host/</span>', dir: true },
+  { d: 2, t: '│&nbsp;&nbsp;├─ <span class="dir">main/</span>', dir: true },
+  { d: 2, t: '│&nbsp;&nbsp;└─ <span class="dir">renderer/</span>', dir: true },
+  { d: 1, t: '├─ <span class="dir">scripts/</span>', dir: true },
+  { d: 1, t: '└─ <span class="dir">docs/</span>', dir: true },
+];
+const collapsed = new Set();
+function renderTree() {
+  const box = $('#tree');
+  box.innerHTML = '';
+  let hideBelow = -1;   // depth at which rows are hidden by an ancestor
+  TREE.forEach((row, i) => {
+    if (row.d <= hideBelow) hideBelow = -1;
+    const el = document.createElement('div');
+    el.className = 'tline' + (row.dir ? ' dir' : '') + (hideBelow >= 0 ? ' hidden-row' : '');
+    el.innerHTML = row.t;
+    if (row.dir) {
+      el.title = 'click to collapse/expand';
+      el.onclick = () => {
+        collapsed.has(i) ? collapsed.delete(i) : collapsed.add(i);
+        renderTree();
+      };
+    }
+    if (row.file) {
+      el.onclick = () => {
+        $$('#tree .tline').forEach(q => q.classList.remove('sel'));
+        el.classList.add('sel');
+        addPane({ title: row.file, body: docBody(row.file) });
+      };
+    }
+    box.appendChild(el);
+    if (row.dir && collapsed.has(i)) hideBelow = row.d;
+  });
+}
+renderTree();
+
+/* ---------------- keys ---------------- */
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (openMenuEl) return closeMenu();
+    if ($('#veil').classList.contains('open')) return $('#veil').classList.remove('open');
+    if (state.zoomEl) { state.zoomEl = null; renderTiles(); }
+  }
+});
+
+/* ---------------- misc ---------------- */
+$('#notes-btn').addEventListener('click', () => $('#notes').classList.toggle('open'));
+setInterval(() => {
+  const d = new Date();
+  $('#clock').textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}, 5000);
+
+/* ---------------- seed ---------------- */
+renderGroups();
+state.groups[0].els = [
+  makePane({ title: 'claude — agent', live: true, body: webBody('Claude', 'claude.ai/new') }),
+  makePane({ title: 'term — claude', body: termBody('claude') }),
+  makePane({ title: 'chatgpt', body: webBody('ChatGPT', 'chatgpt.com') }),
+  makePane({ title: 'term — npm test', body: TERM_NPM }),
+];
+state.groups[0].els[0].classList.add('focus');
+renderTiles();
+</script>
+</body>
+</html>

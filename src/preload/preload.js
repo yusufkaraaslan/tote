@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('tote', {
   ensureLocal: (providerId) => ipcRenderer.invoke('provider:ensureLocal', providerId),
   sendFileToTab: (wcId, relPath) => ipcRenderer.invoke('tab:sendFile', { wcId, relPath }),
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),
+  appVersion: () => ipcRenderer.invoke('app:version'),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
 
   // devices: other machines' Tote, over the tailnet
@@ -110,6 +111,7 @@ contextBridge.exposeInMainWorld('tote', {
   onWorkspacesSwept: (cb) => ipcRenderer.on('workspace:swept', (e, list) => cb(list)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (e, m) => cb(m)),
   onWindowFocus: (cb) => ipcRenderer.on('win:focus', () => cb()),
+  onWindowKey: (cb) => ipcRenderer.on('win:key', (e, k) => cb(k)),
   onDeviceLost: (cb) => ipcRenderer.on('devices:lost', (e, m) => cb(m)),
   onDeviceBack: (cb) => ipcRenderer.on('devices:back', (e, m) => cb(m)),
 });

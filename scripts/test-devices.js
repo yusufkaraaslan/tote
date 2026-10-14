@@ -110,7 +110,7 @@ const preloadChannels = () =>
 const mainLiterals = () =>
   new Set([...read('src/main/main.js').matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
 const EVENTS = new Set(['pty:data', 'pty:exit', 'workspace:changed', 'workspaces:changed', 'views:changed',
-                        'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'devices:lost', 'devices:back', 'remote:auth']);
+                        'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'win:key', 'devices:lost', 'devices:back', 'remote:auth']);
 
 describe('channels', () => {
   test('every channel preload uses is classified (or is an event)', () => {

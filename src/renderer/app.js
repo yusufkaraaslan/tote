@@ -1,5 +1,9 @@
 /* Tote renderer. Globals from preload: window.tote; from vendor: Terminal, FitAddon. */
 const $ = (sel) => document.querySelector(sel);
+const IS_MAC = navigator.platform.startsWith('Mac');
+// Plain Cmd (macOS) / Ctrl (elsewhere): the pane keys -- ⌘1-9, ⌘⏎.
+const CMD = (e) => (IS_MAC ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey;
+const PANE_KEY = IS_MAC ? '⌘' : 'ctrl+';
 
 const state = {
   providers: [],
@@ -72,10 +76,9 @@ function renderWorkspaceSwitcher() {
     const tab = document.createElement('div');
     tab.className = 'ws-tab' + (w.id === state.workspaces.active ? ' active' : '')
       + (w.temp ? ' temp' : '') + (isRemote(w) ? ' remote' : '');
-    const glyph = document.createElement('span');
-    glyph.className = 'glyph';
-    glyph.textContent = isRemote(w) ? '⇄' : w.temp ? '◌' : w.id === 'global' ? '◈' : '◇';
-    tab.append(glyph, document.createTextNode(w.name));
+    // Plain names: a temp space reads faint (styles.css), a remote one carries
+    // its connection dot. The tooltip says the rest.
+    tab.append(document.createTextNode(w.name));
     // The dot badges from every space, so a connection that needs you is
     // visible while you are working somewhere else.
     if (isRemote(w)) {
@@ -656,6 +659,7 @@ $('#btn-add-tab').onclick = (e) => {
   const menu = $('#tab-add-menu');
   if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
   menu.innerHTML = '';
+  menu.appendChild(menuNote('web providers — each gets its own login partition'));
   for (const p of state.providers) {
     const item = document.createElement('div');
     item.className = 'term-menu-item';
@@ -712,31 +716,32 @@ async function refreshTree() {
 function renderTree() {
   const host = $('#tree');
   host.innerHTML = '';
-  host.appendChild(renderNodes(state.treeData));
+  host.appendChild(renderNodes(state.treeData, ''));
 }
 
-function renderNodes(nodes) {
+// ASCII tree: rows are flat, each carrying its guide string (├─ └─ │)
+// computed from ancestor context, instead of nested indents and icons.
+function renderNodes(nodes, prefix) {
   const frag = document.createDocumentFragment();
-  for (const n of nodes) {
+  nodes.forEach((n, i) => {
+    const last = i === nodes.length - 1;
     const row = document.createElement('div');
-    row.className = 'tree-row';
-    const caret = document.createElement('span');
-    caret.className = 'caret';
-    const icon = document.createElement('span');
-    icon.className = 'icon';
+    const sel = state.treeSel && state.treeSel.ws === state.workspaces.active && state.treeSel.path === n.path;
+    row.className = 'tree-row' + (sel ? ' sel' : '');
+    const guide = document.createElement('span');
+    guide.className = 'guide';
+    guide.textContent = prefix + (last ? '└─ ' : '├─ ');
     const name = document.createElement('span');
     name.className = 'name';
-    name.textContent = n.name;
+    name.textContent = n.type === 'dir' ? n.name + '/' : n.name;
+    row.append(guide, name);
     if (n.type === 'dir') {
-      caret.textContent = state.expanded.has(n.path) ? '▼' : '▶';
-      icon.textContent = state.expanded.has(n.path) ? '▾' : '▸';
+      row.classList.add('dir');
       row.onclick = () => {
         state.expanded.has(n.path) ? state.expanded.delete(n.path) : state.expanded.add(n.path);
         renderTree();
       };
     } else {
-      icon.textContent = n.kind === 'image' ? '▣' : n.kind === 'pdf' ? '❐'
-        : n.kind === 'html' ? '◈' : n.kind === 'binary' ? '•' : '≡';
       row.onclick = (e) => openFile(n, e);
     }
     row.oncontextmenu = (e) => {
@@ -744,15 +749,11 @@ function renderNodes(nodes) {
       e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, n);
     };
-    row.append(caret, icon, name);
     frag.appendChild(row);
     if (n.type === 'dir' && state.expanded.has(n.path) && n.children) {
-      const kids = document.createElement('div');
-      kids.className = 'tree-children';
-      kids.appendChild(renderNodes(n.children));
-      frag.appendChild(kids);
+      frag.appendChild(renderNodes(n.children, prefix + (last ? '   ' : '│  ')));
     }
-  }
+  });
   return frag;
 }
 
@@ -871,6 +872,9 @@ function isDirty(id) {
 async function openFile(node, e) {
   if (!node || node.type !== 'file') return;
   if (node.kind === 'binary') { tote.openPath(node.path); return; }
+  // highlighted in the tree until another file opens (per space: paths repeat)
+  state.treeSel = { ws: state.workspaces.active, path: node.path };
+  renderTree();
   await openDoc(node.path, { newPane: !!(e && (e.metaKey || e.ctrlKey)) });
 }
 
@@ -1858,9 +1862,15 @@ function killTermByRef(sid) {
   state.sessions.delete(sid);
 }
 
+// The grey heading line at the top of the +web / +term menus.
+function menuNote(text) {
+  return Object.assign(document.createElement('div'), { className: 'menu-note', textContent: text });
+}
+
 async function renderTermMenu() {
   const menu = $('#term-menu');
   menu.innerHTML = '';
+  menu.appendChild(menuNote('agent terminals — real ptys'));
   for (const p of state.profiles) {
     // Which machine the agent must exist on depends on the space, so this is
     // cached per space: a remote host and this laptop rarely have the same set.
@@ -1879,7 +1889,11 @@ async function renderTermMenu() {
     item.appendChild(document.createTextNode(p.name));
     const cmd = document.createElement('span');
     cmd.className = 'cmd';
-    cmd.textContent = p.command || '$SHELL';
+    // What you need to know before clicking: installed, or how to install it.
+    cmd.textContent = !p.command ? '$SHELL'
+      : found ? '✓ installed'
+      : p.install ? 'install: ' + p.install : 'not found';
+    cmd.title = p.command || 'your default shell';
     item.appendChild(cmd);
     item.onclick = () => {
       menu.classList.add('hidden');
@@ -1914,6 +1928,35 @@ function acceptFileDrop(el, onPaths) {
   });
 }
 
+// One terminal palette for every xterm (agent panes and the wizard installer),
+// tuned against the Terminal Native chrome: near-black background, warm ANSI
+// colors that stay saturated on it, amber cursor. The explicit palette entries
+// matter — TUI chrome (Claude Code's prompt and status pills especially)
+// washes out to gray on an un-tuned pure-black theme.
+const XTERM_THEME = {
+  background: '#0a0a0a',
+  foreground: '#c9c9c4',
+  cursor: '#e0a458',
+  cursorAccent: '#0a0a0a',
+  selectionBackground: '#4d3d24',
+  black: '#1c1c1a',
+  red: '#c96a5a',
+  green: '#8faf7a',
+  yellow: '#d7c9a0',
+  blue: '#7a9eb0',
+  magenta: '#b48ead',
+  cyan: '#88b3a0',
+  white: '#c9c9c4',
+  brightBlack: '#4a4a44',
+  brightRed: '#e0907c',
+  brightGreen: '#a9c48f',
+  brightYellow: '#e0a458',
+  brightBlue: '#93b7c9',
+  brightMagenta: '#c9a5c0',
+  brightCyan: '#9ec8b5',
+  brightWhite: '#efeee8',
+};
+
 // A terminal pane, up to the point where something has to be attached to it.
 // Two things use this: an agent terminal, and a remote space's connect session
 // -- which is a pane rather than a modal precisely because re-authenticating is
@@ -1931,12 +1974,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
     fontSize: 13,
     cursorBlink: true,
-    theme: {
-      background: '#0a0d13',
-      foreground: '#dbe2f0',
-      cursor: '#2b5cff',
-      selectionBackground: '#2a3654',
-    },
+    theme: XTERM_THEME,
   });
   let fit = null;
   if (Fit) {
@@ -2227,6 +2265,8 @@ function paneShell(key, titleText, dotColor) {
   el.dataset.pane = key;
   const head = document.createElement('div');
   head.className = 'pane-head';
+  const idx = document.createElement('span');
+  idx.className = 'pane-idx';
   const dot = document.createElement('span');
   dot.className = 'pane-dot';
   if (dotColor) dot.style.background = dotColor; else dot.style.display = 'none';
@@ -2235,17 +2275,19 @@ function paneShell(key, titleText, dotColor) {
   title.textContent = titleText;
   const ctrls = document.createElement('span');
   ctrls.className = 'pane-ctrls';       // per-kind head controls; empty for most panes
+  const keyHint = document.createElement('span');
+  keyHint.className = 'pane-key';       // ⌘N, filled in by applyTiles
   const x = document.createElement('span');
   x.className = 'pane-x';
   x.textContent = '✕';
   x.title = 'Close pane';
-  head.append(dot, title, ctrls, x);
+  head.append(idx, dot, title, ctrls, keyHint, x);
   const body = document.createElement('div');
   body.className = 'pane-body';
   el.append(head, body);
   $('#tiles').appendChild(el);
 
-  p = { el, head, body, title, dot, ctrls, key };
+  p = { el, head, body, title, dot, ctrls, idx, keyHint, key };
   panes.set(key, p);
 
   el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
@@ -2256,6 +2298,13 @@ function paneShell(key, titleText, dotColor) {
     startPaneDrag(e, el);
   });
   head.addEventListener('contextmenu', (e) => { if (el.dataset.leaf) paneMenu(e, el.dataset.leaf); });
+  // Double-click the head to zoom (and again to unzoom). The mousedown above
+  // has already focused the leaf, which is what toggleZoom acts on.
+  head.addEventListener('dblclick', (e) => {
+    if (!el.dataset.leaf || e.target === x || (e.target.closest && e.target.closest('.pane-ctrls'))) return;
+    focusPane(el.dataset.leaf);
+    toggleZoom();
+  });
   return p;
 }
 
@@ -2313,9 +2362,16 @@ function applyTiles() {
   }
   const live = T.leaves(S.tree);
   if (!live.some((l) => l.id === S.focus)) S.focus = live.length ? live[0].id : null;
+  // The files dock alone is still a sidebar, never a full-window pane: it keeps
+  // its dock width and the empty-group welcome takes the rest. Applied to the
+  // rect, not the tree, so closing the last content pane lands here too.
+  const dockOnly = !!S.tree && S.tree.type === 'leaf' && S.tree.kind === 'files';
+  if (dockOnly) S.zoom = null;
   if (S.zoom && !live.some((l) => l.id === S.zoom)) S.zoom = null;
 
   const rects = T.rectsFor(S.tree, host, { gutter: GUTTER });
+  const dockW = dockOnly ? Math.round(host.w * filesRatio()) : 0;
+  if (dockOnly) rects.set(S.tree.id, { x: host.x, y: host.y, w: dockW, h: host.h });
   for (const p of panes.values()) { p.el.classList.add('hidden'); p.el.dataset.leaf = ''; }
 
   for (const lf of live) {
@@ -2332,8 +2388,19 @@ function applyTiles() {
     p.el.style.zIndex = S.zoom === lf.id ? 20 : 1;
   }
 
+  // number the visible panes in leaf order — the index is what ⌘1-9 focuses
+  live.forEach((lf, i) => {
+    const p = panes.get(paneKey(lf));
+    if (!p || !p.idx) return;
+    p.idx.textContent = i + 1;
+    p.keyHint.textContent = i < 9 ? PANE_KEY + (i + 1) : '';
+    p.keyHint.title = i < 9 ? 'focus this pane' : '';
+  });
+
   renderDividers(S, host);
-  $('#welcome').style.display = S.tree ? 'none' : '';
+  const welcome = $('#welcome');
+  welcome.style.display = live.some((l) => l.kind !== 'files') ? 'none' : '';
+  welcome.style.left = dockOnly ? dockW + GUTTER + 'px' : '';
   $('#btn-files').classList.toggle('on', live.some((l) => l.kind === 'files'));
   requestAnimationFrame(refitTerms);
 }
@@ -2601,7 +2668,6 @@ function renderGroupBar() {
     chip.dataset.group = g.id;
     const count = T.leaves(g.tree).length;
     chip.title = count ? g.name + ' — ' + count + ' pane(s)' : g.name + ' — empty';
-    if (count) chip.appendChild(Object.assign(document.createElement('i'), { className: 'group-dot' }));
     chip.onclick = () => switchGroup(g.id);
     chip.oncontextmenu = (e) => {
       e.preventDefault();
@@ -2683,6 +2749,9 @@ function paneMenu(e, leafId) {
   const V = wsViews();
   const menu = $('#context-menu');
   menu.innerHTML = '';
+  const zoomed = tiles().zoom === leafId;
+  menu.appendChild(ctxItem(zoomed ? 'unzoom pane' : 'zoom pane', () => { focusPane(leafId); toggleZoom(); }));
+  menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-sep' }));
   for (const g of groups()) {
     if (g.id === V.activeGroup) continue;
     menu.appendChild(ctxItem('move to group ' + g.name, () => moveToGroup(leafId, g.id)));
@@ -2775,7 +2844,7 @@ $('#btn-files').onclick = () => {
   else openFilesPane();
 };
 
-const MOD = (e) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey) && e.altKey;
+const MOD = (e) => (IS_MAC ? e.metaKey : e.ctrlKey) && e.altKey;
 const ARROW = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 
 // The focused pane's doc, if it is one -- what Cmd+S and MOD+E act on.
@@ -2788,6 +2857,15 @@ function focusedDoc() {
 }
 
 addEventListener('keydown', (e) => {
+  // The settings page covers the panes: Esc closes it, and no pane key acts
+  // on panes you cannot see. A prompt opened from it (.modal) handles its own Esc.
+  if (!$('#settings-modal').classList.contains('hidden')) {
+    if (e.key === 'Escape' && !document.querySelector('.modal:not(.hidden)')) {
+      e.preventDefault();
+      $('#settings-modal').classList.add('hidden');
+    }
+    return;
+  }
   // Plain Cmd/Ctrl+S. A new modifier shape in this listener -- MOD is Cmd+Alt
   // for pane keys -- but nothing else in Tote has anything to save.
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
@@ -2806,6 +2884,31 @@ addEventListener('keydown', (e) => {
     const term = T.leaves(S.tree).find((l) => l.kind === 'term');
     if (term) focusPane(term.id);
     else $('#btn-new-term').click();
+    return;
+  }
+  // Plain Cmd+1-9 (Ctrl elsewhere) focuses the Nth pane of the active group,
+  // and Cmd+Enter opens the web menu. Group switching keeps MOD+digit
+  // (Cmd/Ctrl+Alt+N), so the two never collide. Off macOS, Ctrl+digit and
+  // Ctrl+Enter are bytes a terminal program may want, so a focused terminal
+  // keeps them; Cmd never reaches an xterm on macOS anyway.
+  if (CMD(e) && (IS_MAC || !inTerminal(e.target))) {
+    if (e.key >= '1' && e.key <= '9') {
+      const lf = T.leaves(tiles().tree)[+e.key - 1];
+      if (lf) { e.preventDefault(); focusPane(lf.id); }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('#btn-add-tab').click();
+      return;
+    }
+  }
+  // Esc leaves zoom -- unless a terminal has the keyboard, where Esc belongs
+  // to the agent (interrupt). MOD+F and a double-click on the head still work.
+  if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && tiles().zoom
+      && !inTerminal(e.target) && !e.target.closest?.('input, textarea, .modal:not(.hidden)')) {
+    e.preventDefault();
+    toggleZoom();
     return;
   }
   if (!MOD(e)) return;
@@ -2855,6 +2958,37 @@ addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W') { e.preventDefault(); if (S.focus) closePane(S.focus); }
 });
 
+function inTerminal(el) {
+  return !!(el && el.closest && el.closest('.xterm'));
+}
+
+/* ---------------- keyline status + clock ---------------- */
+// The hint strip's right end is live: zoom mode, pane count and name of the
+// active group, dirty docs. The clock sits at the right of the status line.
+// One interval reads all of them from the DOM/tree instead of hunting down
+// every mutation site.
+function updateKeyline() {
+  const S = tiles();
+  const n = S.tree ? T.leaves(S.tree).length : 0;
+  const dirty = document.querySelectorAll('.pane.doc-dirty').length;
+  $('#keyline .mode').textContent =
+    (S.zoom ? 'ZOOM' : 'NORMAL') + ' · ' + n + ' pane' + (n === 1 ? '' : 's') +
+    ' · grp ' + (S.name || '1') + (dirty ? ' · ' + dirty + ' dirty' : '');
+  const d = new Date();
+  $('#clock').textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+setInterval(updateKeyline, 1000);
+
+// Keyline hints name the real modifier off macOS.
+if (!IS_MAC) {
+  for (const b of document.querySelectorAll('#keyline b')) {
+    b.textContent = b.textContent.replace('⌘⌥', 'ctrl+alt+').replace('⌘', 'ctrl+');
+  }
+}
+
+$('#w-web').onclick = (e) => { e.stopPropagation(); $('#btn-add-tab').click(); };
+$('#w-term').onclick = (e) => { e.stopPropagation(); $('#btn-new-term').click(); };
+
 // Anywhere else, a dropped file is swallowed: letting it through means Chromium
 // navigates away from the app.
 addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
@@ -2869,59 +3003,87 @@ addEventListener('resize', () => applyTiles());
   }).observe($('#tiles'));
 })();
 
-/* ---------------- settings ---------------- */
+/* ---------------- settings ----------------
+ * A full-window page over the app (concept 02): left nav, one section shown.
+ * Every section is rebuilt on open, so it never shows a stale list. */
+
+// One row: a name with optional tags, a dim sub line, then any buttons.
+function setRow(name, { tags = [], sub, title, dot } = {}) {
+  const row = document.createElement('div');
+  row.className = 'set-row';
+  if (dot) {
+    const d = document.createElement('span');
+    d.className = 'dot';
+    d.style.background = dot;
+    row.appendChild(d);
+  }
+  const grow = document.createElement('span');
+  grow.className = 'grow';
+  const nm = document.createElement('span');
+  nm.className = 'name';
+  nm.textContent = name;
+  grow.appendChild(nm);
+  for (const t of tags) {
+    const tag = document.createElement('span');
+    tag.className = 'tag' + (t.cls ? ' ' + t.cls : '');
+    tag.textContent = t.text;
+    grow.appendChild(tag);
+  }
+  const subEl = document.createElement('span');
+  subEl.className = 'sub';
+  subEl.textContent = sub || '';
+  if (sub != null) grow.appendChild(subEl);
+  if (title) grow.title = title;
+  row.appendChild(grow);
+  const button = (label, fn, cls) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    row.appendChild(b);
+    return b;
+  };
+  return { row, sub: subEl, button };
+}
+
+function showSettingsSection(sec) {
+  state.settingsSec = sec;
+  for (const n of document.querySelectorAll('#set-nav .ni')) n.classList.toggle('active', n.dataset.sec === sec);
+  for (const x of document.querySelectorAll('#set-content .sec')) x.classList.toggle('active', x.dataset.sec === sec);
+  if (sec === 'devices') renderDevicesSection();
+}
+for (const n of document.querySelectorAll('#set-nav .ni')) n.onclick = () => showSettingsSection(n.dataset.sec);
+
 function renderSettings() {
-  // workspaces (spaces)
+  // spaces
   const wHost = $('#settings-workspaces');
   wHost.innerHTML = '';
   for (const w of state.workspaces.list) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const glyph = document.createElement('span');
-    glyph.className = 'glyph';
-    glyph.textContent = w.id === 'global' ? '◈' : '◇';
-    row.appendChild(glyph);
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = w.name + (w.id === state.workspaces.active ? ' (active)' : '') + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = w.path;
-    grow.appendChild(sub);
-    grow.title = w.path;
-    row.appendChild(grow);
-    const btn = (label, fn) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.onclick = async () => { await fn(); renderSettings(); };
-      row.appendChild(b);
-    };
-    btn('rename', () => renameWorkspace(w));
-    btn('folder', () => changeWorkspaceFolder(w));
-    if (state.workspaces.list.length > 1) btn('remove', () => removeWorkspace(w));
-    wHost.appendChild(row);
+    const tags = [];
+    if (w.id === 'global') tags.push({ text: 'default' });
+    if (w.id === state.workspaces.active) tags.push({ text: 'active', cls: 'you' });
+    if (w.temp) tags.push({ text: 'temp · swept when stale', cls: 'temp' });
+    if (isRemote(w)) tags.push({ text: 'remote' });
+    const where = isRemote(w) ? w.host + ':' + w.path : w.path;
+    const r = setRow(w.name, { tags, sub: where, title: where });
+    const act = (fn) => async () => { await fn(); renderSettings(); };
+    r.button('rename', act(() => renameWorkspace(w)));
+    if (w.temp) {
+      r.button('keep…', act(() => promoteWorkspace(w)));
+      if (state.workspaces.list.length > 1) r.button('discard', act(() => discardWorkspace(w)), 'danger');
+    } else {
+      r.button('folder…', act(() => changeWorkspaceFolder(w)));
+      if (state.workspaces.list.length > 1) r.button('remove', act(() => removeWorkspace(w)), 'danger');
+    }
+    wHost.appendChild(r.row);
   }
 
   // providers
   const pHost = $('#settings-providers');
   pHost.innerHTML = '';
   for (const p of state.providers) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    row.innerHTML =
-      '<span class="dot" style="width:8px;height:8px;border-radius:50%;background:' +
-      (p.color || '#888') + '"></span>';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = p.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = p.url;
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(p.name, { sub: p.url, dot: p.color || '#888' });
+    r.button('remove', async () => {
       if (!confirm('Remove provider "' + p.name + '"?')) return;
       // close every tab of this provider in every workspace
       for (const [tabId, en] of [...state.tabs]) if (en.providerId === p.id) destroyTabWebview(tabId);
@@ -2934,36 +3096,24 @@ function renderSettings() {
       saveViews();
       showWorkspaceViews();
       renderSettings();
-    };
-    row.appendChild(del);
-    pHost.appendChild(row);
+    }, 'danger');
+    pHost.appendChild(r.row);
   }
 
-  // apps
+  // native apps
   const aHost = $('#settings-apps');
   aHost.innerHTML = '';
   for (const a of state.apps) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = a.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = a.path;
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(a.name, { sub: a.path });
+    r.button('remove', async () => {
       state.apps = await tote.removeApp(a.id);
       renderSettings();
-    };
-    row.appendChild(del);
-    aHost.appendChild(row);
+    }, 'danger');
+    aHost.appendChild(r.row);
   }
+  if (!state.apps.length) aHost.appendChild(setRow('none yet', { sub: 'add one below' }).row);
 
-  // behavior
+  // behavior + device toggles
   $('#set-bridge').checked = state.settings.bridgeDownloads !== false;
   // Keep-awake belongs to the machine on screen -- including another one, whose
   // agents are the ones that need it -- so it is read from that machine's host.
@@ -2971,31 +3121,108 @@ function renderSettings() {
   tote.deviceSettings().then((d) => { $('#set-awake').checked = d.keepAwake; }, () => {});
   $('#set-share').checked = state.settings.shareDevice === true;
 
-  // cli profiles
+  // cli agents: found / missing on the machine this space's terminals run on
   const cHost = $('#settings-clis');
   cHost.innerHTML = '';
   for (const p of state.profiles) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = p.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = (p.command || '$SHELL') + ' ' + (p.args || []).join(' ');
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(p.name, { sub: p.command ? 'checking…' : 'your default shell' });
+    if (p.command) {
+      const key = state.workspaces.active + '|' + p.id;
+      const known = state.cliAvail.has(key)
+        ? Promise.resolve(state.cliAvail.get(key))
+        : tote.checkCommand(p.command).then((f) => { state.cliAvail.set(key, f); return f; });
+      known.then((found) => {
+        const args = (p.args || []).join(' ');
+        r.sub.textContent = found
+          ? 'found · ' + p.command + (args ? ' ' + args : '')
+          : 'missing' + (p.install ? ' — install with: ' + p.install : ' — "' + p.command + '" is not on PATH');
+        if (found) {
+          const ok = Object.assign(document.createElement('span'), { className: 'tag ok', textContent: 'ok' });
+          r.row.insertBefore(ok, r.row.querySelector('button'));
+        } else if (p.install) {
+          const b = r.button('install', () => $('#btn-run-wizard').click(), 'primary');
+          r.row.insertBefore(b, r.row.querySelector('button'));
+        }
+      }, () => { r.sub.textContent = 'could not check'; });
+    }
+    r.button('remove', async () => {
       if (!confirm('Remove profile "' + p.name + '"?')) return;
       state.profiles = state.profiles.filter((x) => x.id !== p.id);
       state.cliAvail.clear();
       await tote.saveCliProfiles(state.profiles);
       renderSettings();
-    };
-    row.appendChild(del);
-    cHost.appendChild(row);
+    }, 'danger');
+    cHost.appendChild(r.row);
+  }
+
+  tote.appVersion().then((v) => { $('#set-version').textContent = v; }, () => {});
+  showSettingsSection(state.settingsSec || 'spaces');
+}
+
+// The Tailscale card and the device list, from the same discovery the device
+// chip uses. The card states follow what `tailscale status` can tell us.
+async function renderDevicesSection() {
+  const st = $('#ts-st'), stateEl = $('#ts-state'), bd = $('#ts-bd'), acts = $('#ts-acts'), list = $('#dev-list');
+  st.className = 'st warn';
+  stateEl.textContent = 'checking…';
+  bd.textContent = 'looking for the tailscale daemon…';
+  acts.innerHTML = '';
+  list.innerHTML = '';
+  let res;
+  try { res = await tote.devicesList(); } catch (e) { res = { devices: [], error: e.message }; }
+  if (state.settingsSec !== 'devices') return;
+  const act = (label, fn, cls) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    acts.appendChild(b);
+  };
+  if (!res.self) {
+    const err = res.error || 'tailscale is not reachable';
+    const missing = /not found|ENOENT|no tailscale/i.test(err);
+    st.className = 'st' + (missing ? '' : ' warn');
+    stateEl.textContent = missing ? 'not installed' : 'not connected';
+    bd.textContent = missing
+      ? 'tailscale is how your machines recognize each other. install it, or skip — tote works single-machine too.'
+      : err;
+    act(missing ? 'install from tailscale.com' : 'open tailscale.com', () => tote.openExternal('https://tailscale.com/download'), 'primary');
+    act('check again', renderDevicesSection);
+    list.style.opacity = 0.35;
+    return;
+  }
+  st.className = 'st ok';
+  stateEl.textContent = 'connected';
+  bd.textContent = '';
+  bd.append('this device ');
+  bd.appendChild(Object.assign(document.createElement('span'), {
+    className: 'me', textContent: res.self.name + (res.self.ip4 ? ' · ' + res.self.ip4 : ''),
+  }));
+  bd.append('. your other devices are below; the strip\'s device chip switches between them.');
+  act('check again', renderDevicesSection);
+  list.style.opacity = 1;
+
+  const sh = res.share || {};
+  const me = setRow(res.self.name, {
+    tags: [{ text: 'this machine', cls: 'you' }],
+    sub: sh.on ? 'shared on ' + sh.address + ' · serves this window' : sh.error ? 'sharing failed: ' + sh.error : 'not shared · serves this window',
+  });
+  me.row.classList.add('devrow');
+  me.row.appendChild(Object.assign(document.createElement('span'), { className: 'ip', textContent: res.self.ip4 || '' }));
+  list.appendChild(me.row);
+  for (const d of res.devices || []) {
+    const r = setRow(d.name, { sub: (d.os ? d.os + ' · ' : '') + (DEVICE_STATE[d.state] || d.state || 'ready') });
+    r.row.appendChild(Object.assign(document.createElement('span'), { className: 'ip', textContent: d.ip4 || '' }));
+    if (d.state === 'ready') {
+      r.button('open', () => {
+        $('#btn-settings-close').click();
+        switchDevice({ address: d.ip4, name: d.name });
+      });
+    }
+    list.appendChild(r.row);
+  }
+  if (!(res.devices || []).length) {
+    list.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: 'No other devices of yours on this tailnet.' }));
   }
 }
 
@@ -3004,6 +3231,7 @@ $('#btn-settings').onclick = () => {
   $('#settings-modal').classList.remove('hidden');
 };
 $('#btn-settings-close').onclick = () => $('#settings-modal').classList.add('hidden');
+$('#btn-repo').onclick = () => tote.openExternal('https://github.com/yusufkaraaslan/tote');
 $('#btn-open-config').onclick = () => tote.openConfigDir();
 
 $('#set-bridge').onchange = async (e) => {
@@ -3172,7 +3400,7 @@ function ensureWizTerm() {
   wizTerm = new Terminal({
     fontSize: 12,
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
-    theme: { background: '#0a0d13', foreground: '#dbe2f0', cursor: '#2b5cff' },
+    theme: XTERM_THEME,
   });
   if (Fit) {
     wizTermFit = new Fit();
@@ -3402,6 +3630,9 @@ async function adoptViews(views) {
   renderGroupBar();
 }
 tote.onWindowFocus(focusActivePaneContent);
+// A pane key pressed inside a web page, caught by main before the page saw it:
+// replay it through the same keydown listener as any other keystroke.
+tote.onWindowKey((k) => dispatchEvent(new KeyboardEvent('keydown', k)));
 tote.onRemoteState((info, dev) => {
   const S = sliceFor(dev);
   if (S === state) onRemoteState(info);

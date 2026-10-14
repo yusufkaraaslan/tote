@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tote 00 — landing / first-run</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --raise: #0e0e0d; --sink: #0c0c0b;
+    --line: #1f1f1c; --line2: #2b2b26;
+    --fg: #c9c9c4; --dim: #77776f; --faint: #4a4a44;
+    --amber: #e0a458; --amber-dim: #4d3d24; --amber-bg: #161310;
+    --green: #8faf7a; --red: #c96a5a; --blue: #7a9eb0;
+    --warn-bg: #241a0c; --warn-line: #6b5a2b; --warn-fg: #e8d9a8;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 12px/1.6 var(--mono);
+    display: flex; flex-direction: column; align-items: center;
+    overflow: auto; user-select: none;
+  }
+  #stage { width: min(660px, 94vw); padding: 7vh 0 40px; flex: 1; }
+
+  /* brand block */
+  .brand { text-align: center; margin-bottom: 34px; }
+  .brand .mark { font-size: 40px; color: var(--amber); line-height: 1; }
+  .brand h1 { font-size: 26px; letter-spacing: 0.28em; font-weight: 700; margin: 8px 0 4px; color: var(--fg); }
+  .brand .tag { color: var(--dim); font-size: 12px; }
+  .brand .ver { color: var(--faint); font-size: 10px; margin-top: 8px; letter-spacing: 0.1em; }
+
+  /* checklist */
+  #checks { border: 1px solid var(--line); background: var(--raise); }
+  .chk {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .chk:last-child { border-bottom: none; }
+  .chk .st { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--faint); }
+  .chk.run .st { background: var(--blue); animation: pulse 0.8s infinite alternate; }
+  .chk.ok .st { background: var(--green); }
+  .chk.warn .st { background: var(--amber); }
+  @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
+  .chk .body { flex: 1; min-width: 0; }
+  .chk .name { color: var(--fg); }
+  .chk:not(.ok):not(.run) .name { color: var(--dim); }
+  .chk .sub { color: var(--faint); font-size: 10px; }
+  .chk .val { color: var(--dim); font-size: 10px; margin-right: 8px; }
+  .chk .val b { color: var(--green); font-weight: 400; }
+  .chk button {
+    background: #171716; color: #8a8a82;
+    border: 1px solid #33332e; border-radius: 3px;
+    padding: 3px 10px; font: inherit; font-size: 10px; cursor: pointer;
+  }
+  .chk button:hover { color: var(--amber); border-color: var(--amber-dim); }
+  .chk button.primary { background: var(--amber); border-color: var(--amber); color: #14100a; font-weight: 700; }
+  .chk button.primary:hover { background: #ecb86e; color: #14100a; }
+  .chk .done-tag { color: var(--green); font-size: 10px; }
+
+  /* tailscale mini state machine */
+  #ts-extra { display: none; padding: 8px 14px 10px 34px; border-bottom: 1px solid var(--line); color: var(--dim); font-size: 11px; }
+  #ts-extra.show { display: block; }
+  #ts-extra .row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  #ts-extra .row span { flex: 1; }
+  #ts-extra .ip { color: var(--amber); }
+
+  /* enter */
+  #enter { margin-top: 26px; text-align: center; }
+  #enter a.big {
+    display: inline-block; padding: 10px 34px;
+    background: var(--amber); color: #14100a;
+    font-weight: 700; font-size: 13px; letter-spacing: 0.08em;
+    text-decoration: none; border-radius: 3px;
+  }
+  #enter a.big:hover { background: #ecb86e; }
+  #enter a.big.dis { opacity: 0.35; pointer-events: none; }
+  #enter .skip { display: block; margin-top: 10px; color: var(--faint); font-size: 10px; text-decoration: none; }
+  #enter .skip:hover { color: var(--dim); }
+
+  /* keyline + notes */
+  #keyline {
+    width: 100%; flex-shrink: 0;
+    display: flex; gap: 16px; align-items: center;
+    padding: 5px 12px; background: var(--sink);
+    border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--faint);
+  }
+  #keyline a { color: var(--dim); text-decoration: none; }
+  #keyline a:hover { color: var(--amber); }
+  #keyline .mode { margin-left: auto; color: var(--amber); letter-spacing: 0.08em; }
+  #notes-btn {
+    position: fixed; right: 12px; bottom: 30px;
+    background: var(--raise); color: var(--dim);
+    border: 1px solid var(--line); font: 10px var(--mono);
+    padding: 3px 8px; cursor: pointer;
+  }
+  #notes-btn:hover { color: var(--amber); border-color: var(--amber-dim); }
+  #notes {
+    position: fixed; right: 12px; bottom: 58px; width: 300px;
+    background: #0d0d0c; border: 1px solid var(--amber-dim);
+    padding: 12px 14px; font-size: 11px; color: var(--dim);
+    display: none; z-index: 50;
+  }
+  #notes.open { display: block; }
+  #notes h4 { color: var(--amber); font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+  #notes li { margin: 5px 0 5px 14px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div class="brand">
+      <div class="mark">▚</div>
+      <h1>TOTE</h1>
+      <div class="tag">one window for all your agents — web llms, cli agents, files</div>
+      <div class="ver">v0.4.0 · setup</div>
+    </div>
+
+    <div id="checks">
+      <div class="chk run" id="c-cli">
+        <span class="st"></span>
+        <div class="body"><div class="name">find your agents</div><div class="sub">claude · codex · gemini — via login shell PATH</div></div>
+        <span class="val" id="v-cli"></span>
+      </div>
+      <div class="chk run" id="c-npm">
+        <span class="st"></span>
+        <div class="body"><div class="name">npm prefix writable</div><div class="sub">global installs need a prefix you own — no sudo</div></div>
+        <span class="val" id="v-npm"></span>
+      </div>
+      <div class="chk" id="c-mcp">
+        <span class="st"></span>
+        <div class="body"><div class="name">bind tote to claude desktop</div><div class="sub">one MCP snippet — web panes can then drive this machine</div></div>
+        <button id="b-mcp">bind</button>
+      </div>
+      <div class="chk" id="c-ts">
+        <span class="st"></span>
+        <div class="body"><div class="name">tailscale <span style="color:var(--faint)">— optional, for your other machines</span></div><div class="sub">same-owner devices see each other inside tote</div></div>
+        <button id="b-ts">install</button>
+      </div>
+      <div id="ts-extra"></div>
+      <div class="chk" id="c-ws">
+        <span class="st"></span>
+        <div class="body"><div class="name">first workspace</div><div class="sub">a folder tote organizes downloads + agents around</div></div>
+        <button id="b-ws">choose…</button>
+      </div>
+    </div>
+
+    <div id="enter">
+      <a class="big dis" id="b-enter" href="01-app.html">enter tote →</a>
+      <a class="skip" href="01-app.html">skip setup — finish later in settings</a>
+    </div>
+  </div>
+
+  <div id="keyline">
+    <a href="index.html">‹ hub</a>
+    <a href="01-app.html">app ›</a>
+    <span class="mode">SETUP</span>
+  </div>
+
+  <button id="notes-btn">? why</button>
+  <div id="notes">
+    <h4>00 — landing / first-run</h4>
+    <ul>
+      <li>One screen, one list: everything resolves or offers exactly one action. No wizard steps, no modals.</li>
+      <li>Checks resolve live (top three are automatic) so the screen feels alive before the user touches anything.</li>
+      <li>Tailscale is framed as optional — it unlocks devices, not tote itself. Try its buttons: install → open → connect.</li>
+      <li>Enter unlocks only when the essentials are done — but "skip" is always there. Setup is resumable from settings.</li>
+      <li><b>Question it tests:</b> is a single checklist the right first-run, or do we want staged pages?</li>
+    </ul>
+  </div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const enterBtn = $('#b-enter');
+
+  function refreshEnter() {
+    const ok = ['c-cli','c-npm','c-ws'].every(id => $('#'+id).classList.contains('ok'));
+    enterBtn.classList.toggle('dis', !ok);
+  }
+
+  // fake auto checks resolving
+  setTimeout(() => {
+    const c = $('#c-cli'); c.classList.remove('run'); c.classList.add('ok');
+    $('#v-cli').innerHTML = '<b>claude</b> · codex · gemini';
+    refreshEnter();
+  }, 700);
+  setTimeout(() => {
+    const c = $('#c-npm'); c.classList.remove('run'); c.classList.add('ok');
+    $('#v-npm').innerHTML = '<b>~/.local</b>';
+    refreshEnter();
+  }, 1200);
+
+  // MCP bind
+  $('#b-mcp').addEventListener('click', () => {
+    const row = $('#c-mcp'); row.classList.add('ok');
+    row.querySelector('button').outerHTML = '<span class="done-tag">✓ bound</span>';
+  });
+
+  // tailscale state machine: install → open → connect → connected
+  let tsState = 0;
+  const tsBtn = $('#b-ts'), tsRow = $('#c-ts'), tsExtra = $('#ts-extra');
+  tsBtn.addEventListener('click', () => {
+    tsState++;
+    if (tsState === 1) {           // "installed"
+      tsRow.classList.remove('warn'); tsRow.classList.add('ok');
+      tsBtn.textContent = 'open tailscale';
+      tsExtra.classList.add('show');
+      tsExtra.innerHTML = `<div class="row"><span>downloaded — open the app once so macOS lets it run its daemon</span></div>`;
+    } else if (tsState === 2) {    // "opened, not logged in"
+      tsRow.classList.remove('ok'); tsRow.classList.add('warn');
+      tsBtn.textContent = 'connect…';
+      tsExtra.innerHTML = `<div class="row"><span>tailscale is running — log in with your account (google/github/sso)</span></div>`;
+    } else {                        // connected
+      tsRow.classList.remove('warn'); tsRow.classList.add('ok');
+      tsBtn.outerHTML = '<span class="done-tag">✓ connected</span>';
+      tsExtra.innerHTML = `<div class="row"><span>this device</span><span class="ip">yusufs-macbook · 100.84.17.2</span></div>
+                           <div class="row"><span>visible in settings → devices, and in the strip's device chip</span></div>`;
+    }
+  });
+
+  // workspace pick
+  $('#b-ws').addEventListener('click', () => {
+    const row = $('#c-ws'); row.classList.add('ok');
+    row.querySelector('button').outerHTML = '<span class="done-tag">~/github/tote</span>';
+    refreshEnter();
+  });
+
+  $('#notes-btn').addEventListener('click', () => $('#notes').classList.toggle('open'));
+</script>
+</body>
+</html>

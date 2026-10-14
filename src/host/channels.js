@@ -44,7 +44,7 @@ const VIEWER = new Set([
   'conn:claudeStatus', 'conn:bindClaude', 'conn:mcpSnippet',
   'pty:run', 'provider:ensureLocal',
   'workspace:openPath', 'workspace:revealPath',
-  'app:openExternal', 'app:newWindow',
+  'app:openExternal', 'app:newWindow', 'app:version',
   // Which machine this WINDOW looks at is the viewer's business by definition.
   'devices:list', 'devices:current', 'devices:view', 'devices:open',
 ]);

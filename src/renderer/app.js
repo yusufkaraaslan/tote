@@ -2362,9 +2362,16 @@ function applyTiles() {
   }
   const live = T.leaves(S.tree);
   if (!live.some((l) => l.id === S.focus)) S.focus = live.length ? live[0].id : null;
+  // The files dock alone is still a sidebar, never a full-window pane: it keeps
+  // its dock width and the empty-group welcome takes the rest. Applied to the
+  // rect, not the tree, so closing the last content pane lands here too.
+  const dockOnly = !!S.tree && S.tree.type === 'leaf' && S.tree.kind === 'files';
+  if (dockOnly) S.zoom = null;
   if (S.zoom && !live.some((l) => l.id === S.zoom)) S.zoom = null;
 
   const rects = T.rectsFor(S.tree, host, { gutter: GUTTER });
+  const dockW = dockOnly ? Math.round(host.w * filesRatio()) : 0;
+  if (dockOnly) rects.set(S.tree.id, { x: host.x, y: host.y, w: dockW, h: host.h });
   for (const p of panes.values()) { p.el.classList.add('hidden'); p.el.dataset.leaf = ''; }
 
   for (const lf of live) {
@@ -2391,7 +2398,9 @@ function applyTiles() {
   });
 
   renderDividers(S, host);
-  $('#welcome').style.display = S.tree ? 'none' : '';
+  const welcome = $('#welcome');
+  welcome.style.display = live.some((l) => l.kind !== 'files') ? 'none' : '';
+  welcome.style.left = dockOnly ? dockW + GUTTER + 'px' : '';
   $('#btn-files').classList.toggle('on', live.some((l) => l.kind === 'files'));
   requestAnimationFrame(refitTerms);
 }

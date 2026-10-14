@@ -35,10 +35,13 @@ html, body {
   user-select: none;
 }
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #232320; border: 2px solid var(--bg); }
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
-::-webkit-scrollbar-corner, ::-webkit-scrollbar-track { background: transparent; }
+/* Scrollbars stay native. A global ::-webkit-scrollbar rule was here and had
+   to go: styling scrollbars makes Chromium on macOS switch from overlay
+   scrollbars to classic ones, which CONSUME LAYOUT SPACE on every
+   overflow:scroll/auto element -- including xterm's viewport -- and the
+   resulting width/height churn resizes terminals during streaming (visible
+   as the view jumping to the top on new output). */
+
 
 button {
   background: #171716;

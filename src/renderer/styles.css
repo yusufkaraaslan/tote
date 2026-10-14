@@ -41,16 +41,16 @@ html, body {
 ::-webkit-scrollbar-corner, ::-webkit-scrollbar-track { background: transparent; }
 
 button {
-  background: #141413;
-  color: var(--fg-dim);
-  border: 1px solid var(--line-strong);
+  background: #171716;
+  color: #8a8a82;
+  border: 1px solid #33332e;
   border-radius: 3px;
   padding: 3px 9px;
   font: inherit;
   font-size: 11px;
   cursor: pointer;
 }
-button:hover { background: #1a1a18; color: var(--fg); border-color: #3a3a33; }
+button:hover { background: #1c1c1a; color: var(--fg); border-color: var(--accent-dim); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #14100a; }
 button.primary:hover { background: #ecb86e; }
 

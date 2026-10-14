@@ -1917,6 +1917,35 @@ function acceptFileDrop(el, onPaths) {
 // A terminal pane, up to the point where something has to be attached to it.
 // Two things use this: an agent terminal, and a remote space's connect session
 // -- which is a pane rather than a modal precisely because re-authenticating is
+// One terminal palette for every xterm (agent panes and the wizard installer),
+// tuned against the Terminal Native chrome: near-black background, warm ANSI
+// colors that stay saturated on it, amber cursor. The explicit palette entries
+// matter — TUI chrome (Claude Code's prompt and status pills especially)
+// washes out to gray on an un-tuned pure-black theme.
+const XTERM_THEME = {
+  background: '#0a0a0a',
+  foreground: '#c9c9c4',
+  cursor: '#e0a458',
+  cursorAccent: '#0a0a0a',
+  selectionBackground: '#4d3d24',
+  black: '#1c1c1a',
+  red: '#c96a5a',
+  green: '#8faf7a',
+  yellow: '#d7c9a0',
+  blue: '#7a9eb0',
+  magenta: '#b48ead',
+  cyan: '#88b3a0',
+  white: '#c9c9c4',
+  brightBlack: '#4a4a44',
+  brightRed: '#e0907c',
+  brightGreen: '#a9c48f',
+  brightYellow: '#e0a458',
+  brightBlue: '#93b7c9',
+  brightMagenta: '#c9a5c0',
+  brightCyan: '#9ec8b5',
+  brightWhite: '#efeee8',
+};
+
 // not a one-off setup step, and must not interrupt whatever else is open.
 //
 // The session id is chosen here, before the pty exists: the pane has to be
@@ -1931,12 +1960,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
     fontSize: 13,
     cursorBlink: true,
-    theme: {
-      background: '#0a0d13',
-      foreground: '#dbe2f0',
-      cursor: '#2b5cff',
-      selectionBackground: '#2a3654',
-    },
+    theme: XTERM_THEME,
   });
   let fit = null;
   if (Fit) {
@@ -3172,7 +3196,7 @@ function ensureWizTerm() {
   wizTerm = new Terminal({
     fontSize: 12,
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
-    theme: { background: '#0a0d13', foreground: '#dbe2f0', cursor: '#2b5cff' },
+    theme: XTERM_THEME,
   });
   if (Fit) {
     wizTermFit = new Fit();

@@ -1000,6 +1000,8 @@ ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
 
 ipcMain.handle('app:newWindow', () => { createWindow(); });
 
+ipcMain.handle('app:version', () => app.getVersion());
+
 ipcMain.on('app:openExternal', (e, url) => {
   // mailto: is here for links in a rendered doc -- the markdown parser allows
   // that scheme, so dropping it here would make those links silently dead.

@@ -737,21 +737,6 @@ webview.provider-view {
 }
 .modal-title { font-weight: 700; color: var(--fg); font-size: 12px; letter-spacing: 0.06em; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.settings-card { width: min(620px, 92vw); max-height: 85vh; overflow: auto; }
-.settings-card h3 { margin: 6px 0 0; color: var(--fg-dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 3px;
-}
-.settings-row:hover { background: #121211; }
-.settings-row .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-row .sub { color: var(--fg-faint); font-size: 10px; }
-.settings-row .glyph { color: var(--fg-dim); font-size: 11px; }
-.add-row { display: flex; gap: 6px; }
-.add-row input { flex: 1; min-width: 0; }
 .input-card { width: 380px; }
 #input-field { width: 100%; }
 
@@ -815,3 +800,102 @@ webview.provider-view {
 }
 #keyline b { color: var(--fg-dim); font-weight: 400; }
 #keyline .mode { margin-left: auto; color: var(--accent); letter-spacing: 0.08em; }
+
+/* ---------- settings: a full-window page over the app (concept 02) ---------- */
+/* Below .modal (100), so a rename or confirm prompt opened from here is on top. */
+#settings-modal {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+#settings-modal.hidden { display: none; }
+#set-top {
+  height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 10px;
+  background: var(--bg-sink); border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+#set-top .logo { color: var(--accent); font-weight: 700; letter-spacing: 0.06em; }
+#set-top .where { color: var(--fg-dim); }
+#set-top .x { margin-left: auto; background: transparent; border-color: transparent; color: var(--fg-faint); font-size: 11px; }
+#set-top .x:hover { color: var(--red); }
+#set-body { flex: 1; display: flex; min-height: 0; }
+#set-nav {
+  width: 170px; flex-shrink: 0;
+  background: var(--bg-sink); border-right: 1px solid var(--line);
+  padding: 10px 6px;
+}
+#set-nav .ni {
+  padding: 5px 10px; border-radius: 2px; cursor: pointer;
+  color: var(--fg-dim); font-size: 11px;
+  border-left: 2px solid transparent;
+}
+#set-nav .ni:hover { color: var(--fg); background: #121211; }
+#set-nav .ni.active { color: var(--accent); background: var(--accent-bg); border-left-color: var(--accent); }
+#set-nav .ni .k { float: right; color: var(--fg-faint); font-size: 9px; }
+#set-content { flex: 1; overflow: auto; padding: 18px 22px; min-width: 0; user-select: text; }
+#set-content .sec { display: none; max-width: 640px; }
+#set-content .sec.active { display: block; }
+#set-content h2 { font-size: 13px; letter-spacing: 0.06em; margin: 0 0 3px; color: var(--fg); font-weight: 700; }
+#set-content .lede { color: var(--fg-dim); font-size: 11px; margin: 0 0 16px; max-width: 62ch; }
+#set-content .lede b { color: var(--fg); font-weight: 400; }
+.set-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--line);
+  background: var(--bg-raise); font-size: 11px; margin-bottom: -1px;
+}
+.set-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-row .name { color: var(--fg); }
+.set-row .name b { font-weight: 400; color: var(--accent); }
+.set-row .sub { color: var(--fg-faint); font-size: 10px; display: block; overflow: hidden; text-overflow: ellipsis; }
+.set-row.toggle-row .grow { white-space: normal; }
+.set-row .val { color: var(--fg-dim); }
+.set-row .tag { font-size: 9px; color: var(--fg-faint); border: 1px solid var(--line-strong); padding: 0 5px; border-radius: 2px; margin-left: 6px; }
+.set-row .tag.temp { color: var(--accent); border-color: var(--accent-dim); }
+.set-row .tag.ok { color: var(--green); border-color: #2e4028; }
+.set-row .tag.you { color: var(--accent); border-color: var(--accent-dim); }
+.set-row .ip { color: var(--blue); font-size: 10px; }
+.set-row .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.set-row button { flex-shrink: 0; font-size: 10px; padding: 2px 9px; border-radius: 2px; }
+.set-row button.danger:hover { color: var(--red); border-color: var(--red); background: transparent; }
+label.set-row { cursor: pointer; }
+#set-content .addrow { display: flex; gap: 6px; margin-top: 10px; }
+#set-content .addrow input { min-width: 0; }
+/* the concept's switch: a real checkbox, so change handlers stay as they were */
+input.tgl {
+  appearance: none; -webkit-appearance: none; margin: 0;
+  width: 28px; height: 14px; border-radius: 8px; flex-shrink: 0;
+  background: var(--line-strong); position: relative; cursor: pointer;
+  transition: background .12s; border: 0; padding: 0;
+}
+input.tgl::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--fg-dim); transition: all .12s;
+}
+input.tgl:checked { background: var(--accent-dim); }
+input.tgl:checked::after { left: 16px; background: var(--accent); }
+input.tgl:focus-visible { outline: 1px solid var(--accent-dim); outline-offset: 2px; }
+#ts-card { border: 1px solid var(--line); background: var(--bg-raise); padding: 12px 14px; margin-bottom: 16px; }
+#ts-card .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+#ts-card .st { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-faint); }
+#ts-card .st.ok { background: var(--green); }
+#ts-card .st.warn { background: var(--accent); animation: ts-pulse 0.9s infinite alternate; }
+@keyframes ts-pulse { from { opacity: 0.3; } to { opacity: 1; } }
+#ts-card .t { color: var(--fg); font-weight: 700; }
+#ts-card .state { margin-left: auto; font-size: 10px; color: var(--fg-dim); }
+#ts-card .bd { font-size: 11px; color: var(--fg-dim); min-height: 20px; }
+#ts-card .me { color: var(--accent); }
+#ts-card .acts { display: flex; gap: 8px; margin-top: 10px; }
+#ts-card .acts:empty { display: none; }
+#dev-list .note { color: var(--fg-faint); font-size: 11px; padding: 6px 2px; }
+#set-keyline {
+  height: 24px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 10px;
+  background: var(--bg-sink); border-top: 1px solid var(--line);
+  font-size: 10px; color: var(--fg-faint);
+}
+#set-keyline b { color: var(--fg-dim); font-weight: 400; }
+#set-keyline .mode { margin-left: auto; color: var(--accent); letter-spacing: 0.08em; }

@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('tote', {
   ensureLocal: (providerId) => ipcRenderer.invoke('provider:ensureLocal', providerId),
   sendFileToTab: (wcId, relPath) => ipcRenderer.invoke('tab:sendFile', { wcId, relPath }),
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),
+  appVersion: () => ipcRenderer.invoke('app:version'),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
 
   // devices: other machines' Tote, over the tailnet

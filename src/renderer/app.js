@@ -2857,6 +2857,15 @@ function focusedDoc() {
 }
 
 addEventListener('keydown', (e) => {
+  // The settings page covers the panes: Esc closes it, and no pane key acts
+  // on panes you cannot see. A prompt opened from it (.modal) handles its own Esc.
+  if (!$('#settings-modal').classList.contains('hidden')) {
+    if (e.key === 'Escape' && !document.querySelector('.modal:not(.hidden)')) {
+      e.preventDefault();
+      $('#settings-modal').classList.add('hidden');
+    }
+    return;
+  }
   // Plain Cmd/Ctrl+S. A new modifier shape in this listener -- MOD is Cmd+Alt
   // for pane keys -- but nothing else in Tote has anything to save.
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
@@ -2994,59 +3003,87 @@ addEventListener('resize', () => applyTiles());
   }).observe($('#tiles'));
 })();
 
-/* ---------------- settings ---------------- */
+/* ---------------- settings ----------------
+ * A full-window page over the app (concept 02): left nav, one section shown.
+ * Every section is rebuilt on open, so it never shows a stale list. */
+
+// One row: a name with optional tags, a dim sub line, then any buttons.
+function setRow(name, { tags = [], sub, title, dot } = {}) {
+  const row = document.createElement('div');
+  row.className = 'set-row';
+  if (dot) {
+    const d = document.createElement('span');
+    d.className = 'dot';
+    d.style.background = dot;
+    row.appendChild(d);
+  }
+  const grow = document.createElement('span');
+  grow.className = 'grow';
+  const nm = document.createElement('span');
+  nm.className = 'name';
+  nm.textContent = name;
+  grow.appendChild(nm);
+  for (const t of tags) {
+    const tag = document.createElement('span');
+    tag.className = 'tag' + (t.cls ? ' ' + t.cls : '');
+    tag.textContent = t.text;
+    grow.appendChild(tag);
+  }
+  const subEl = document.createElement('span');
+  subEl.className = 'sub';
+  subEl.textContent = sub || '';
+  if (sub != null) grow.appendChild(subEl);
+  if (title) grow.title = title;
+  row.appendChild(grow);
+  const button = (label, fn, cls) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    row.appendChild(b);
+    return b;
+  };
+  return { row, sub: subEl, button };
+}
+
+function showSettingsSection(sec) {
+  state.settingsSec = sec;
+  for (const n of document.querySelectorAll('#set-nav .ni')) n.classList.toggle('active', n.dataset.sec === sec);
+  for (const x of document.querySelectorAll('#set-content .sec')) x.classList.toggle('active', x.dataset.sec === sec);
+  if (sec === 'devices') renderDevicesSection();
+}
+for (const n of document.querySelectorAll('#set-nav .ni')) n.onclick = () => showSettingsSection(n.dataset.sec);
+
 function renderSettings() {
-  // workspaces (spaces)
+  // spaces
   const wHost = $('#settings-workspaces');
   wHost.innerHTML = '';
   for (const w of state.workspaces.list) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const glyph = document.createElement('span');
-    glyph.className = 'glyph';
-    glyph.textContent = w.id === 'global' ? '◈' : '◇';
-    row.appendChild(glyph);
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = w.name + (w.id === state.workspaces.active ? ' (active)' : '') + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = w.path;
-    grow.appendChild(sub);
-    grow.title = w.path;
-    row.appendChild(grow);
-    const btn = (label, fn) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.onclick = async () => { await fn(); renderSettings(); };
-      row.appendChild(b);
-    };
-    btn('rename', () => renameWorkspace(w));
-    btn('folder', () => changeWorkspaceFolder(w));
-    if (state.workspaces.list.length > 1) btn('remove', () => removeWorkspace(w));
-    wHost.appendChild(row);
+    const tags = [];
+    if (w.id === 'global') tags.push({ text: 'default' });
+    if (w.id === state.workspaces.active) tags.push({ text: 'active', cls: 'you' });
+    if (w.temp) tags.push({ text: 'temp · swept when stale', cls: 'temp' });
+    if (isRemote(w)) tags.push({ text: 'remote' });
+    const where = isRemote(w) ? w.host + ':' + w.path : w.path;
+    const r = setRow(w.name, { tags, sub: where, title: where });
+    const act = (fn) => async () => { await fn(); renderSettings(); };
+    r.button('rename', act(() => renameWorkspace(w)));
+    if (w.temp) {
+      r.button('keep…', act(() => promoteWorkspace(w)));
+      if (state.workspaces.list.length > 1) r.button('discard', act(() => discardWorkspace(w)), 'danger');
+    } else {
+      r.button('folder…', act(() => changeWorkspaceFolder(w)));
+      if (state.workspaces.list.length > 1) r.button('remove', act(() => removeWorkspace(w)), 'danger');
+    }
+    wHost.appendChild(r.row);
   }
 
   // providers
   const pHost = $('#settings-providers');
   pHost.innerHTML = '';
   for (const p of state.providers) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    row.innerHTML =
-      '<span class="dot" style="width:8px;height:8px;border-radius:50%;background:' +
-      (p.color || '#888') + '"></span>';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = p.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = p.url;
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(p.name, { sub: p.url, dot: p.color || '#888' });
+    r.button('remove', async () => {
       if (!confirm('Remove provider "' + p.name + '"?')) return;
       // close every tab of this provider in every workspace
       for (const [tabId, en] of [...state.tabs]) if (en.providerId === p.id) destroyTabWebview(tabId);
@@ -3059,36 +3096,24 @@ function renderSettings() {
       saveViews();
       showWorkspaceViews();
       renderSettings();
-    };
-    row.appendChild(del);
-    pHost.appendChild(row);
+    }, 'danger');
+    pHost.appendChild(r.row);
   }
 
-  // apps
+  // native apps
   const aHost = $('#settings-apps');
   aHost.innerHTML = '';
   for (const a of state.apps) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = a.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = a.path;
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(a.name, { sub: a.path });
+    r.button('remove', async () => {
       state.apps = await tote.removeApp(a.id);
       renderSettings();
-    };
-    row.appendChild(del);
-    aHost.appendChild(row);
+    }, 'danger');
+    aHost.appendChild(r.row);
   }
+  if (!state.apps.length) aHost.appendChild(setRow('none yet', { sub: 'add one below' }).row);
 
-  // behavior
+  // behavior + device toggles
   $('#set-bridge').checked = state.settings.bridgeDownloads !== false;
   // Keep-awake belongs to the machine on screen -- including another one, whose
   // agents are the ones that need it -- so it is read from that machine's host.
@@ -3096,31 +3121,108 @@ function renderSettings() {
   tote.deviceSettings().then((d) => { $('#set-awake').checked = d.keepAwake; }, () => {});
   $('#set-share').checked = state.settings.shareDevice === true;
 
-  // cli profiles
+  // cli agents: found / missing on the machine this space's terminals run on
   const cHost = $('#settings-clis');
   cHost.innerHTML = '';
   for (const p of state.profiles) {
-    const row = document.createElement('div');
-    row.className = 'settings-row';
-    const grow = document.createElement('span');
-    grow.className = 'grow';
-    grow.textContent = p.name + '  ';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = (p.command || '$SHELL') + ' ' + (p.args || []).join(' ');
-    grow.appendChild(sub);
-    row.appendChild(grow);
-    const del = document.createElement('button');
-    del.textContent = 'remove';
-    del.onclick = async () => {
+    const r = setRow(p.name, { sub: p.command ? 'checking…' : 'your default shell' });
+    if (p.command) {
+      const key = state.workspaces.active + '|' + p.id;
+      const known = state.cliAvail.has(key)
+        ? Promise.resolve(state.cliAvail.get(key))
+        : tote.checkCommand(p.command).then((f) => { state.cliAvail.set(key, f); return f; });
+      known.then((found) => {
+        const args = (p.args || []).join(' ');
+        r.sub.textContent = found
+          ? 'found · ' + p.command + (args ? ' ' + args : '')
+          : 'missing' + (p.install ? ' — install with: ' + p.install : ' — "' + p.command + '" is not on PATH');
+        if (found) {
+          const ok = Object.assign(document.createElement('span'), { className: 'tag ok', textContent: 'ok' });
+          r.row.insertBefore(ok, r.row.querySelector('button'));
+        } else if (p.install) {
+          const b = r.button('install', () => $('#btn-run-wizard').click(), 'primary');
+          r.row.insertBefore(b, r.row.querySelector('button'));
+        }
+      }, () => { r.sub.textContent = 'could not check'; });
+    }
+    r.button('remove', async () => {
       if (!confirm('Remove profile "' + p.name + '"?')) return;
       state.profiles = state.profiles.filter((x) => x.id !== p.id);
       state.cliAvail.clear();
       await tote.saveCliProfiles(state.profiles);
       renderSettings();
-    };
-    row.appendChild(del);
-    cHost.appendChild(row);
+    }, 'danger');
+    cHost.appendChild(r.row);
+  }
+
+  tote.appVersion().then((v) => { $('#set-version').textContent = v; }, () => {});
+  showSettingsSection(state.settingsSec || 'spaces');
+}
+
+// The Tailscale card and the device list, from the same discovery the device
+// chip uses. The card states follow what `tailscale status` can tell us.
+async function renderDevicesSection() {
+  const st = $('#ts-st'), stateEl = $('#ts-state'), bd = $('#ts-bd'), acts = $('#ts-acts'), list = $('#dev-list');
+  st.className = 'st warn';
+  stateEl.textContent = 'checking…';
+  bd.textContent = 'looking for the tailscale daemon…';
+  acts.innerHTML = '';
+  list.innerHTML = '';
+  let res;
+  try { res = await tote.devicesList(); } catch (e) { res = { devices: [], error: e.message }; }
+  if (state.settingsSec !== 'devices') return;
+  const act = (label, fn, cls) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    acts.appendChild(b);
+  };
+  if (!res.self) {
+    const err = res.error || 'tailscale is not reachable';
+    const missing = /not found|ENOENT|no tailscale/i.test(err);
+    st.className = 'st' + (missing ? '' : ' warn');
+    stateEl.textContent = missing ? 'not installed' : 'not connected';
+    bd.textContent = missing
+      ? 'tailscale is how your machines recognize each other. install it, or skip — tote works single-machine too.'
+      : err;
+    act(missing ? 'install from tailscale.com' : 'open tailscale.com', () => tote.openExternal('https://tailscale.com/download'), 'primary');
+    act('check again', renderDevicesSection);
+    list.style.opacity = 0.35;
+    return;
+  }
+  st.className = 'st ok';
+  stateEl.textContent = 'connected';
+  bd.textContent = '';
+  bd.append('this device ');
+  bd.appendChild(Object.assign(document.createElement('span'), {
+    className: 'me', textContent: res.self.name + (res.self.ip4 ? ' · ' + res.self.ip4 : ''),
+  }));
+  bd.append('. your other devices are below; the strip\'s device chip switches between them.');
+  act('check again', renderDevicesSection);
+  list.style.opacity = 1;
+
+  const sh = res.share || {};
+  const me = setRow(res.self.name, {
+    tags: [{ text: 'this machine', cls: 'you' }],
+    sub: sh.on ? 'shared on ' + sh.address + ' · serves this window' : sh.error ? 'sharing failed: ' + sh.error : 'not shared · serves this window',
+  });
+  me.row.classList.add('devrow');
+  me.row.appendChild(Object.assign(document.createElement('span'), { className: 'ip', textContent: res.self.ip4 || '' }));
+  list.appendChild(me.row);
+  for (const d of res.devices || []) {
+    const r = setRow(d.name, { sub: (d.os ? d.os + ' · ' : '') + (DEVICE_STATE[d.state] || d.state || 'ready') });
+    r.row.appendChild(Object.assign(document.createElement('span'), { className: 'ip', textContent: d.ip4 || '' }));
+    if (d.state === 'ready') {
+      r.button('open', () => {
+        $('#btn-settings-close').click();
+        switchDevice({ address: d.ip4, name: d.name });
+      });
+    }
+    list.appendChild(r.row);
+  }
+  if (!(res.devices || []).length) {
+    list.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: 'No other devices of yours on this tailnet.' }));
   }
 }
 
@@ -3129,6 +3231,7 @@ $('#btn-settings').onclick = () => {
   $('#settings-modal').classList.remove('hidden');
 };
 $('#btn-settings-close').onclick = () => $('#settings-modal').classList.add('hidden');
+$('#btn-repo').onclick = () => tote.openExternal('https://github.com/yusufkaraaslan/tote');
 $('#btn-open-config').onclick = () => tote.openConfigDir();
 
 $('#set-bridge').onchange = async (e) => {

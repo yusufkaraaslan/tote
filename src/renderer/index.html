@@ -106,58 +106,113 @@
   </div>
 
   <!-- inline file editor -->
-  <!-- settings -->
-  <div id="settings-modal" class="modal hidden">
-    <div class="modal-card settings-card">
-      <div class="modal-title">Settings</div>
-      <h3>Workspaces (spaces)</h3>
-      <div id="settings-workspaces"></div>
-      <div class="add-row">
-        <button id="nw-add">name &amp; pick folder → add space</button>
+  <!-- settings: a full-window page over the app (concept 02) -- left nav, one
+       section at a time. Under .modal (z-index) so rename/confirm prompts
+       opened from here still land on top. -->
+  <div id="settings-modal" class="hidden">
+    <div id="set-top">
+      <span class="logo">▚ tote</span>
+      <span class="where">settings</span>
+      <button id="btn-settings-close" class="x" title="Close (Esc)">✕ close</button>
+    </div>
+    <div id="set-body">
+      <nav id="set-nav">
+        <div class="ni" data-sec="spaces">spaces</div>
+        <div class="ni" data-sec="providers">web providers</div>
+        <div class="ni" data-sec="agents">cli agents</div>
+        <div class="ni" data-sec="apps">native apps</div>
+        <div class="ni" data-sec="devices">devices <span class="k">ts</span></div>
+        <div class="ni" data-sec="behavior">behavior</div>
+        <div class="ni" data-sec="about">about</div>
+      </nav>
+      <div id="set-content">
+        <section class="sec" data-sec="devices">
+          <h2>DEVICES</h2>
+          <p class="lede">Your other machines, reachable inside tote. Tailscale decides who is "you" — only
+            devices on your own tailscale account can connect; a shared-in node is refused.</p>
+          <div id="ts-card">
+            <div class="hd"><span class="st" id="ts-st"></span><span class="t">tailscale</span><span class="state" id="ts-state">checking…</span></div>
+            <div class="bd" id="ts-bd">looking for the tailscale daemon…</div>
+            <div class="acts" id="ts-acts"></div>
+          </div>
+          <div id="dev-list"></div>
+          <label class="set-row toggle-row" style="margin-top:16px">
+            <span class="grow"><span class="name">share this device</span><span class="sub">your other devices can open this machine's Tote — spaces, files, running agents · listens on this machine's tailscale ip only · same-owner nodes only, never shared-in</span></span>
+            <input type="checkbox" class="tgl" id="set-share" />
+          </label>
+          <label class="set-row toggle-row">
+            <span class="grow"><span class="name">keep <b id="awake-who">this machine</b> awake</span><span class="sub">so its agents keep working and stay reachable · stops idle sleep only — a closed lid still sleeps unless on power with an external display</span></span>
+            <input type="checkbox" class="tgl" id="set-awake" />
+          </label>
+          <p class="lede" style="margin-top:16px">Remote spaces ride this: <b>+r</b> on the strip makes a space that lives on
+            another machine over ssh/Tailscale. Re-auth is ambient — a banner in the files pane, never a modal.</p>
+        </section>
+
+        <section class="sec" data-sec="spaces">
+          <h2>SPACES</h2>
+          <p class="lede">Workspaces are the folders tote organizes everything around. One global space plus your
+            projects; ids are stable across renames.</p>
+          <div id="settings-workspaces"></div>
+          <div class="addrow"><button id="nw-add" class="primary">name &amp; pick folder → add space</button></div>
+        </section>
+
+        <section class="sec" data-sec="providers">
+          <h2>WEB PROVIDERS</h2>
+          <p class="lede">The +web menu on the strip. Each opens in its own session partition, so logins never
+            leak between providers.</p>
+          <div id="settings-providers"></div>
+          <div class="addrow">
+            <input id="np-name" placeholder="Name" style="width:130px" />
+            <input id="np-url" placeholder="https://…" style="flex:1" />
+            <button id="np-add" class="primary">add provider</button>
+          </div>
+        </section>
+
+        <section class="sec" data-sec="agents">
+          <h2>CLI AGENTS</h2>
+          <p class="lede">Agent terminals on <b>+term</b> and <b>ctrl+`</b>. Each profile carries its install
+            command — the setup wizard uses it.</p>
+          <div id="settings-clis"></div>
+          <div class="addrow">
+            <input id="nc-name" placeholder="Name" style="width:130px" />
+            <input id="nc-cmd" placeholder="command (e.g. claude)" style="flex:1" />
+            <button id="nc-add" class="primary">add agent</button>
+          </div>
+        </section>
+
+        <section class="sec" data-sec="apps">
+          <h2>NATIVE APPS</h2>
+          <p class="lede">Desktop LLM apps tote can launch into the active workspace. macOS can also bridge their
+            Downloads into the space's inbox (behavior).</p>
+          <div id="settings-apps"></div>
+          <div class="addrow">
+            <input id="na-name" placeholder="App name (e.g. Kimi)" style="width:200px" />
+            <button id="na-add" class="primary">pick binary &amp; add</button>
+          </div>
+        </section>
+
+        <section class="sec" data-sec="behavior">
+          <h2>BEHAVIOR</h2>
+          <p class="lede">Defaults for downloads. Sharing and keep-awake are device settings — see devices.</p>
+          <label class="set-row toggle-row">
+            <span class="grow"><span class="name">bridge native-app downloads</span><span class="sub">copy downloads made by native LLM apps (Claude, ChatGPT, Kimi…) from system Downloads into the active space's inbox · originals stay · macOS only</span></span>
+            <input type="checkbox" class="tgl" id="set-bridge" />
+          </label>
+        </section>
+
+        <section class="sec" data-sec="about">
+          <h2>ABOUT</h2>
+          <p class="lede">tote — one window for all your agents.</p>
+          <div class="set-row"><span class="grow"><span class="name">version</span></span><span class="val" id="set-version"></span></div>
+          <div class="set-row"><span class="grow"><span class="name">config</span><span class="sub">providers, agents, apps, spaces — data, not code</span></span><button id="btn-open-config">open config folder</button></div>
+          <div class="set-row"><span class="grow"><span class="name">setup</span><span class="sub">system checks, agent installs, Claude Desktop binding</span></span><button id="btn-run-wizard">run setup wizard</button></div>
+          <div class="set-row"><span class="grow"><span class="name">repository</span></span><button id="btn-repo">open github</button></div>
+        </section>
       </div>
-      <h3>Web providers</h3>
-      <div id="settings-providers"></div>
-      <div class="add-row">
-        <input id="np-name" placeholder="Name" />
-        <input id="np-url" placeholder="https://..." />
-        <button id="np-add">add</button>
-      </div>
-      <h3>Native apps</h3>
-      <div id="settings-apps"></div>
-      <div class="add-row">
-        <input id="na-name" placeholder="App name (e.g. Kimi)" />
-        <button id="na-add">pick binary &amp; add</button>
-      </div>
-      <h3>Behavior</h3>
-      <label class="settings-check">
-        <input type="checkbox" id="set-bridge" />
-        Copy downloads made by native LLM apps (Claude, ChatGPT, Kimi…) from system Downloads
-        into the active workspace inbox. Originals stay in Downloads. macOS only.
-      </label>
-      <label class="settings-check">
-        <input type="checkbox" id="set-share" />
-        Share this machine with my other devices: they can open its Tote — spaces, files,
-        running agents — over Tailscale. Only your own devices are let in, and only on this
-        machine's Tailscale address.
-      </label>
-      <label class="settings-check">
-        <input type="checkbox" id="set-awake" />
-        Keep <b id="awake-who">this machine</b> awake while Tote runs, so its agents keep working and stay
-        reachable. Stops idle sleep only — closing a laptop lid still sleeps it unless
-        it is on power with an external display.
-      </label>
-      <h3>CLI profiles</h3>
-      <div id="settings-clis"></div>
-      <div class="add-row">
-        <input id="nc-name" placeholder="Name" />
-        <input id="nc-cmd" placeholder="command (e.g. claude)" />
-        <button id="nc-add">add</button>
-      </div>
-      <div class="modal-actions">
-        <button id="btn-run-wizard">run setup wizard</button>
-        <button id="btn-open-config">open config folder</button>
-        <button id="btn-settings-close" class="primary">done</button>
-      </div>
+    </div>
+    <div id="set-keyline">
+      <span><b>esc</b> close</span>
+      <span class="mode">SETTINGS</span>
     </div>
   </div>
 

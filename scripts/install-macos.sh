@@ -116,8 +116,17 @@ while ! mkdir "\$LOCK" 2>/dev/null; do
   fi
 done
 trap 'rmdir "\$LOCK"' EXIT
-# NOTE: this heredoc is unquoted so TARGET and APP expand -- which means a
-# backtick or an unescaped dollar in here runs at write time. Keep both out.
+# The lock only serializes the swaps; it does not make the second one wrong to
+# run. The watcher that got the lock first swapped AND reopened the app, so by
+# the time this one gets it the target may be live again -- and renaming it now
+# is the mixed-bundle failure described at the top of this file (seen: a Tote
+# launched at 17:13:36 had its bundle renamed to backup-171336 under it, and its
+# terminals never opened). Both watchers install the same staged build, so the
+# first one's install is this one's too: skip.
+if pgrep -a -f "^$TARGET/Contents/MacOS/Tote\$" >/dev/null 2>&1; then
+  echo "tote swap: $TARGET is running again (another swap reopened it) — skipping" >&2
+  exit 0
+fi
 #
 # Order matters: copy FIRST, then swap by rename. The copy is the slow part and
 # the only part that can realistically fail (source deleted, disk full), and
@@ -136,6 +145,12 @@ if [ ! -x "$TARGET.incoming/Contents/MacOS/Tote" ]; then
   echo "staged copy is incomplete — refusing to swap" >&2
   rm -rf "$TARGET.incoming"
   exit 1
+fi
+# The copy takes seconds; check once more right before the rename.
+if pgrep -a -f "^$TARGET/Contents/MacOS/Tote\$" >/dev/null 2>&1; then
+  echo "tote swap: $TARGET started during the copy — skipping" >&2
+  rm -rf "$TARGET.incoming"
+  exit 0
 fi
 if [ -d "$TARGET" ]; then
   mv "$TARGET" "$TARGET.backup-\$(date +%Y%m%d-%H%M%S)"

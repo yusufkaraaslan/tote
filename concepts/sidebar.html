@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tote</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0a0a;--surface:#10100f;--line:#292925;--fg:#c9c9c4;--muted:#929289;--accent:#e0a458;--green:#8faf7a;--mono:"SF Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:12px/1.6 var(--mono)}button,input,select{font:inherit;color:inherit}button{cursor:pointer;background:none;border:0;text-align:left}button:hover{background:#20201c;color:#fff}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}button[aria-pressed=true]{color:var(--accent)}.concept{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px}.concept b{color:var(--fg);font-weight:500}.controls{display:flex;align-items:center;gap:16px}.controls button{padding:3px 8px;border:1px solid var(--line)}.shell{height:calc(100dvh - 40px);display:flex}.sidebar{width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:0 10px}.brand{height:56px;display:flex;align-items:center;gap:10px;padding:0 8px}.logo{font-size:19px;color:var(--accent)}.brand strong{font-size:16px;font-weight:500;letter-spacing:-1px}.collapse{margin-left:auto;font-size:18px;padding:3px 6px}.device{border:1px solid var(--line);padding:9px 10px;display:flex;align-items:center;gap:9px}.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}.device select{width:100%;background:none;border:0;min-width:0;font-size:11px}.device option{background:var(--surface)}.section-label{display:flex;justify-content:space-between;align-items:center;color:var(--muted);padding:22px 9px 9px;font-size:11px}.section-label button{font-size:18px;line-height:1}.spaces{overflow:auto;flex:1;min-height:120px}.space{display:flex;align-items:center;width:100%;gap:11px;padding:9px 10px;border-left:2px solid transparent}.space.active{background:#211b13;color:var(--accent);border-left-color:var(--accent)}.symbol{width:20px;text-align:center;flex-shrink:0;color:var(--muted)}.active .symbol{color:var(--accent)}.badge{margin-left:auto;color:var(--muted);font-size:10px}.groups{margin:7px 0 12px 21px;padding-left:13px;border-left:1px solid #393126}.group{display:flex;align-items:center;gap:8px;width:100%;padding:5px 9px;color:var(--muted);font-size:11px}.group.active{color:var(--fg);background:#20201b}.group.active:before{content:'';width:4px;height:4px;background:var(--accent)}.group small{margin-left:auto;color:var(--muted)}.group.new{margin-top:4px;color:var(--muted)}.scratch{margin-top:22px;color:var(--muted);font-size:11px;padding:0 10px 6px}.actions{border-top:1px solid var(--line);padding:12px 0}.action{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px}.action kbd{margin-left:auto;color:var(--muted);font:10px var(--mono)}.bottom{border-top:1px solid var(--line);padding:10px 0}.canvas{flex:1;min-width:0;display:flex;flex-direction:column}.context{height:42px;display:flex;align-items:center;gap:12px;padding:0 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:11px}.context strong{color:var(--fg);font-weight:500}.context .right{margin-left:auto}.work{display:flex;flex:1;min-height:0;padding:8px;gap:8px}.files{width:170px;flex-shrink:0;border:1px solid var(--line);background:#0d0d0c}.pane-head{height:34px;display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}.pane-head span:last-child{margin-left:auto}.file-root{padding:15px 12px 10px;color:var(--muted);font-size:10px}.file{padding:5px 12px;color:#aaa99f;font-size:11px;white-space:nowrap}.file.indent{padding-left:26px}.file.selected{background:#211d15;color:var(--accent)}.panes{flex:1;display:grid;grid-template-columns:1.05fr 1fr;gap:8px;min-width:0}.pane{border:1px solid var(--line);min-width:0;overflow:auto;display:flex;flex-direction:column}.pane.focused{border-color:#655033}.pane.focused .pane-head{color:var(--accent)}.terminal{padding:23px 22px;font-size:12px;line-height:1.85;flex:1}.terminal h1{font-size:15px;font-weight:500;margin:0 0 2px}.dim{color:var(--muted)}.orange{color:var(--accent)}.green{color:var(--green)}.terminal p{margin:23px 0}.prompt{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin-top:28px}.cursor{display:inline-block;background:var(--accent);width:7px;height:14px;vertical-align:middle}.term-foot{display:flex;justify-content:space-between;margin-top:10px;font-size:10px;color:var(--muted)}.code{white-space:pre-wrap;font:11px/1.8 var(--mono);color:#acb6ba;border-left:2px solid #3a444a;padding-left:13px;margin:22px 0}.chat{background:#141413}.chat-body{padding:25px 24px;flex:1;font:14px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.chat-title{font-size:12px;color:var(--muted);margin-bottom:25px}.user{background:#242420;padding:13px 16px;margin:0 0 28px 28px;border-radius:10px}.chat-body h2{font-size:19px;line-height:1.4;font-weight:500}.chat-body p{color:#bcbcb4}.chat-body li{margin:9px 0;padding-left:4px}.composer{margin:20px 0 0;padding:13px;border:1px solid #3b3b34;border-radius:10px;color:var(--muted);font-size:12px}.composer small{display:block;margin-top:22px;font:10px var(--mono)}.keyline{display:flex;gap:23px;padding:7px 16px;color:var(--muted);font-size:10px;border-top:1px solid var(--line)}.keyline b{color:var(--fg);font-weight:400}.keyline span:last-child{margin-left:auto}.hidden{display:none!important}.compact .sidebar{width:62px;padding:0 6px}.compact .label,.compact .badge,.compact .groups,.compact .section-label,.compact .scratch,.compact .device,.compact .brand strong,.compact kbd{display:none}.compact .brand{height:56px;justify-content:center;padding:0}.compact .logo{display:none}.compact .collapse{margin:0}.compact .space,.compact .action{justify-content:center;padding:11px 0}.compact .spaces{padding-top:12px}.notice{position:fixed;bottom:42px;left:50%;transform:translateX(-50%);background:#29251d;border:1px solid #655033;padding:12px 18px;z-index:10;max-width:90vw}dialog{background:var(--surface);color:var(--fg);border:1px solid #655033;padding:24px;width:360px}dialog::backdrop{background:#0009}dialog h2{margin-top:0;font-size:17px}dialog label{display:block;margin:14px 0}dialog input{width:100%;background:var(--bg);border:1px solid var(--line);padding:8px;margin-top:6px}dialog button{padding:7px 12px;border:1px solid var(--line);margin-right:8px}dialog .primary{background:var(--accent);color:#15110b}
+@media(min-width:1600px){.sidebar{width:250px}.terminal,.chat-body{padding:35px}.files{width:200px}}
+@media(max-width:1100px){.files{display:none}.sidebar{width:210px}.terminal,.chat-body{padding:18px}.panes{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.concept{height:auto;min-height:56px;gap:8px;flex-wrap:wrap;padding:8px 12px}.shell{height:calc(100dvh - 64px)}.sidebar{width:180px}.panes{display:flex;flex-direction:column;overflow:auto}.pane{overflow:visible;flex-shrink:0}.context{padding:0 10px}.context .right,.keyline{display:none}.controls{gap:5px;font-size:10px}.chat-body{font-size:13px}}
+
+/* Full-window demo; navigation is the same surface as the app. */
+.shell{height:100dvh}.panes{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));grid-auto-rows:minmax(240px,1fr);overflow:auto}.pane-head{flex-shrink:0}.pane-head .pane-close{margin-left:auto;padding:2px 7px}.pane.zoomed{position:fixed;inset:8px 8px 8px 238px;z-index:5;background:var(--bg)}.compact .pane.zoomed{left:70px}.files.shown{display:block}.demo-form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}.demo-form input{width:100%;min-width:0;background:transparent;border:0;outline:none}.demo-form button,.empty-panes button{border:1px solid var(--line);padding:5px 12px}.demo-output{white-space:pre-wrap;overflow-wrap:anywhere}.empty-panes{grid-column:1/-1;align-self:center;text-align:center;color:var(--muted)}.empty-panes h2{color:var(--accent);font-weight:400}.picker button{display:block;width:100%;margin:8px 0;text-align:left}.picker p{color:var(--muted)}dialog{max-height:90dvh;overflow:auto;max-width:95vw}#settings{width:850px;height:620px;padding:0}#settings header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:16px 22px}#settings h2{margin:0}#settings-layout{display:grid;grid-template-columns:165px minmax(0,1fr);min-height:440px}#settings-nav{padding:16px 10px;border-right:1px solid var(--line)}#settings-nav button{display:block;width:100%;margin:0 0 4px;border:0}#settings-nav button.active{color:var(--accent);background:#211b13}#settings-content{padding:22px;min-width:0}#settings-content h3{margin:0 0 12px;font-size:16px}#settings-content input[type=checkbox]{width:auto}.setting-row{display:flex;align-items:center;gap:8px;margin:10px 0}.setting-row input{margin:0;min-width:0}.setting-row button{margin:0;white-space:nowrap}.editor{flex:1;min-height:220px;resize:none;border:0;padding:18px;background:var(--bg);color:var(--fg);font:12px/1.8 var(--mono)}.compact .groups{display:block;margin-left:0;padding:0;border:0}.compact .group{font-size:0;justify-content:center}.compact .group small{font-size:11px;margin:0}.compact .group.new{font-size:11px}.compact .device{display:flex;padding:6px 0}.compact .device select{width:30px}.compact .device .dot{display:none}@media(max-width:760px){.shell{height:100dvh}.pane.zoomed{left:8px}#settings-layout{grid-template-columns:120px minmax(0,1fr)}#settings-content{padding:14px}.panes{display:flex}.files.shown{width:140px}.setting-row{flex-wrap:wrap}}
+
+/* Files retain the current Tote theme and ASCII tree grammar. */
+#files{background:#0c0c0b;border-color:#1f1f1c;display:flex;flex-direction:column;min-width:190px}
+#files .pane-head{height:24px;padding:0 6px 0 8px;background:#0c0c0b;border-bottom:1px solid #181816;color:#77776f;font-size:10px}
+#close-files{margin-left:auto;color:#77776f}
+.file-toolbar{display:flex;gap:4px;padding:0 10px 5px}
+.file-toolbar button{background:#171716;color:#8a8a82;border:1px solid #33332e;border-radius:3px;padding:3px 9px;font-size:11px}
+.file-toolbar button:hover{background:#1c1c1a;color:#c9c9c4;border-color:#4d3d24}
+#files .file-root{padding:0 10px 6px;font-size:10px;color:#4a4a44;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid #181816}
+#file-tree{flex:1;overflow:auto;padding:5px 4px 20px}
+.tree-row{display:flex;align-items:center;gap:7px;padding:1px 6px;border-radius:2px;cursor:pointer;white-space:nowrap;font-size:11px;color:#77776f;line-height:1.55}
+.tree-row:hover{background:#131312;color:#c9c9c4}.tree-row .guide{color:#4a4a44;white-space:pre;flex-shrink:0}.tree-row.dir .name{color:#7a9eb0}.tree-row.dir:hover .name{color:#c9c9c4}.tree-row .name{overflow:hidden;text-overflow:ellipsis}.tree-row.sel{background:#161310}.tree-row.sel .name{color:#e0a458}.tree-row:focus-visible{outline:1px solid #e0a458;outline-offset:-1px}
+.inbox-note{flex-shrink:0;border-top:1px solid #1f1f1c;padding:6px 10px;font-size:9px;color:#4a4a44}.inbox-note b{color:#77776f;font-weight:400}
+@media(max-width:1100px){#files:not(.shown){display:none}}
+</style>
+</head>
+<body>
+<div class="shell" id="shell">
+<aside class="sidebar" aria-label="Workspace navigation">
+<div class="brand"><span class="logo">▚</span><strong>tote</strong><button class="collapse" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">⇤</button></div>
+<div class="device"><i class="dot"></i><select aria-label="Device"><option>MacBook Pro · local</option><option>Mac mini · online</option></select></div>
+<div class="section-label"><span>Spaces</span><button class="add-space" title="New space" aria-label="New space">+</button></div>
+<nav class="spaces" aria-label="Spaces" id="spaces"></nav>
+<div class="actions"><button class="action" data-demo="Web provider picker" title="Open web pane"><span class="symbol">⊕</span><span class="label">Open web</span><kbd>⌘↵</kbd></button><button class="action" data-demo="Terminal profile picker" title="New terminal"><span class="symbol">›_</span><span class="label">New terminal</span><kbd>⌃`</kbd></button><button class="action" id="files-toggle" title="Toggle files" aria-pressed="true"><span class="symbol">▤</span><span class="label">Files</span><kbd>⌘⇧E</kbd></button><button class="action" data-demo="Native app launcher" title="Open apps"><span class="symbol">⧉</span><span class="label">Apps</span></button></div>
+<div class="bottom"><button class="action add-space" title="New space"><span class="symbol">+</span><span class="label">New space</span></button><button class="action" data-demo="Settings" title="Settings"><span class="symbol">⚙</span><span class="label">Settings</span><span class="badge">⌘,</span></button></div>
+</aside>
+<main class="canvas"><header class="context"><strong id="space-name">tote</strong><span>/</span><span id="group-name">Build</span><span class="right" id="device-context">MacBook Pro &nbsp; <span class="green">●</span></span></header>
+<div class="work"><aside class="files" id="files"><div class="pane-head">▤ files <button id="close-files" aria-label="Close files pane">×</button></div><div class="file-toolbar"><button id="new-file">+file</button><button id="new-dir">+dir</button><button id="refresh-files" aria-label="Refresh files">↻</button></div><div class="file-root" id="file-root">~/Github/tote</div><div id="file-tree"></div><div class="inbox-note">drops → <b>inbox/&lt;provider&gt;/</b></div></aside>
+<div class="panes"><section class="pane focused"><div class="pane-head"><i class="dot"></i>codex <span>1 &nbsp; ⤢</span></div><div class="terminal"><h1>›_ OpenAI Codex</h1><div class="dim" id="terminal-path">~/Github/tote</div><p><span class="orange">›</span> <span id="task">Move the workspace strip into a sidebar.</span></p><p>I’ll keep the workspace hierarchy visible and give the panes more vertical room.</p><div class="dim">Explored</div><div>&nbsp; Read <span class="orange">app.js</span>, <span class="orange">styles.css</span><br>&nbsp; Found workspace and group controls</div><pre class="code">sidebar
+  device
+  spaces
+    active space
+      groups
+  pane actions
+  settings</pre><div class="green">✓ Layout concept ready to review</div><div class="prompt"><span class="orange">›</span> &nbsp;<span class="cursor"></span></div><div class="term-foot"><span>Preview session</span><span>100% context left</span></div></div></section>
+<section class="pane chat"><div class="pane-head">◎ ChatGPT <span>2 &nbsp; ⤢</span></div><div class="chat-body"><div class="chat-title">Layout exploration</div><div class="user">How should spaces and groups work in the sidebar?</div><div class="orange">◎</div><h2>One place to orient yourself.</h2><p>Keep the device at the top. List its spaces below, and reveal groups inside the space you’re using.</p><ol><li><b>Spaces stay in sight.</b> Longer project names have room to breathe.</li><li><b>Groups belong to a space.</b> Indentation makes that relationship clear.</li><li><b>Actions stay within reach.</b> Web, terminal, files and apps sit together near the bottom.</li></ol><p>Collapse the sidebar to a narrow rail when you need more room for your panes.</p><div class="composer">Message ChatGPT<small>Preview only &nbsp; · &nbsp; No messages are sent</small></div></div></section></div></div>
+<footer class="keyline"><span><b>⌘1–9</b> pane</span><span><b>⌘⌥1–9</b> group</span><span><b>Double-click head</b> zoom</span><span>Concept / no live sessions</span></footer></main></div>
+<dialog id="new-space"><form method="dialog" id="space-form"><h2>New space</h2><p class="dim">Add a space to this preview.</p><label>Name<input name="name" required maxlength="32" autocomplete="off"></label><button class="primary" value="add">Add space</button><button type="button" id="cancel">Cancel</button></form></dialog>
+<dialog id="new-entry"><form id="entry-form"><h2 id="entry-title">New file</h2><label>Name<input name="name" required maxlength="80" autocomplete="off"></label><button type="submit" class="primary">Create</button><button type="button" id="entry-cancel">Cancel</button></form></dialog>
+<dialog id="picker" class="picker"><h2 id="picker-title"></h2><div id="picker-options"></div><button id="picker-close">Cancel</button></dialog>
+<dialog id="settings"><header><h2>Settings</h2><button id="settings-close" aria-label="Close settings">✕ Close</button></header><div id="settings-layout"><nav id="settings-nav" aria-label="Settings sections"></nav><section id="settings-content"></section></div></dialog>
+<div class="notice hidden" role="status" id="notice"></div>
+<script>
+const $=s=>document.querySelector(s);
+let device=0; const paneSets=new Map();
+const spaces=[{name:'Global',icon:'◎',groups:['General']},{name:'tote',icon:'▚',groups:['Build','Research','Review']},{name:'KnitGame',icon:'K',groups:['Gameplay','Art']},{name:'Genesis',icon:'G',groups:['Build','Notes']},{name:'Scratch',icon:'◌',groups:['Explore'],temp:true}];
+let active=1,group='Build',timer;
+function render(){
+ $('#spaces').replaceChildren();
+ spaces.forEach((space,i)=>{
+ if(space.temp){const label=document.createElement('div');label.className='scratch label';label.textContent='Temporary';$('#spaces').append(label)}
+ const button=document.createElement('button');button.className='space'+(active===i?' active':'');button.title=space.name;button.setAttribute('aria-current',active===i?'page':'false');
+ const icon=document.createElement('span');icon.className='symbol';icon.textContent=space.icon;
+ const label=document.createElement('span');label.className='label';label.textContent=space.name;
+ const count=document.createElement('span');count.className='badge';count.textContent=space.groups.length;
+ button.append(icon,label,count);button.onclick=()=>{active=i;group=space.groups[0];render()};$('#spaces').append(button);
+ if(active===i){const list=document.createElement('div');list.className='groups';space.groups.forEach((name,index)=>{const b=document.createElement('button');b.className='group'+(name===group?' active':'');b.setAttribute('aria-pressed',String(name===group));b.textContent=name;const key=document.createElement('small');key.textContent=index+1;b.append(key);b.onclick=()=>{group=name;render()};list.append(b)});const add=document.createElement('button');add.className='group new';add.textContent='+ New group';add.onclick=()=>{group='Group '+(space.groups.length+1);space.groups.push(group);render()};list.append(add);$('#spaces').append(list)}
+ });
+ $('#space-name').textContent=spaces[active].name;$('#group-name').textContent=group;
+ const path=spaces[active].temp?'~/tote/scratch':spaces[active].name==='Global'?'~/tote/global':'~/Github/'+spaces[active].name;
+ $('#file-root').textContent=path;
+ showPanes();
+
+}
+function collapse(){const compact=$('#shell').classList.toggle('compact');$('.collapse').textContent=compact?'⇥':'⇤';$('.collapse').setAttribute('aria-expanded',String(!compact));$('.collapse').setAttribute('aria-label',compact?'Expand sidebar':'Collapse sidebar');$('.collapse').title=compact?'Expand sidebar':'Collapse sidebar'}
+$('.collapse').onclick=collapse;
+$('#files-toggle').onclick=()=>{const hidden=$('#files').classList.toggle('hidden');$('#files').classList.toggle('shown',!hidden);$('#files-toggle').setAttribute('aria-pressed',String(!hidden))};
+function notice(text){clearTimeout(timer);$('#notice').textContent=text;$('#notice').classList.remove('hidden');timer=setTimeout(()=>$('#notice').classList.add('hidden'),3200)}
+
+document.querySelectorAll('.add-space').forEach(b=>b.onclick=()=>$('#new-space').showModal());$('#cancel').onclick=()=>$('#new-space').close();
+$('#space-form').onsubmit=e=>{e.preventDefault();const input=e.target.elements.name;const name=input.value.trim();if(!name)return;spaces.push({name,icon:name.slice(0,1).toUpperCase(),groups:['Build']});active=spaces.length-1;group='Build';render();$('#new-space').close();e.target.reset()};
+$('.device select').onchange=e=>{device=e.target.selectedIndex;$('#device-context').textContent=device?'Mac mini · demo':'MacBook Pro · demo';render()};
+const providers=['ChatGPT','Claude','Gemini'];
+const agents=['Codex','Claude Code','Shell'];
+const apps=['Visual Studio Code','Finder'];
+function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node}
+function action(text,fn){const b=el('button','',text);b.type='button';b.onclick=fn;return b}
+function paneKey(){return JSON.stringify([device,active,group])}
+function currentPanes(){if(!paneSets.has(paneKey()))paneSets.set(paneKey(),[]);return paneSets.get(paneKey())}
+function decoratePane(pane){
+ const head=pane.querySelector('.pane-head');
+ head.append(action('×',()=>{const panes=currentPanes();panes.splice(panes.indexOf(pane),1);pane.remove();showPanes()}));head.lastChild.className='pane-close';head.lastChild.setAttribute('aria-label','Close pane');
+ head.ondblclick=()=>pane.classList.toggle('zoomed');
+ pane.onpointerdown=()=>{document.querySelectorAll('.pane.focused').forEach(p=>p.classList.remove('focused'));pane.classList.add('focused')};
+}
+function showPanes(){
+ const host=$('.panes');host.replaceChildren(...currentPanes());
+ if(!currentPanes().length){const empty=el('div','empty-panes');empty.append(el('h2','','TOTE'),el('p','','This group is empty.'),action('+ Web',()=>pick('web')),action('+ Terminal',()=>pick('terminal')));host.append(empty)}
+}
+function addPane(title,kind){
+ const pane=el('section','pane'+(kind==='web'?' chat':''));pane.append(el('div','pane-head',title));decoratePane(pane);currentPanes().push(pane);showPanes();return pane;
+}
+function addSession(title,kind){
+ const pane=addPane(title,kind),body=el('div',kind==='web'?'chat-body':'terminal');
+ body.append(el('h2','',title),el('p','dim',kind==='web'?'Demo conversation. Messages stay in this page; no provider is contacted.':'Demo shell. Try help, pwd, ls, echo hello, or clear. No commands run on your machine.'));
+ const output=el('div','demo-output');body.append(output);pane.append(body);
+ const form=el('form','demo-form'),input=el('input');input.placeholder=kind==='web'?'Write a message…':'Enter a demo command…';input.setAttribute('aria-label',input.placeholder);const send=el('button','',kind==='web'?'Send':'Run');send.type='submit';form.append(input,send);pane.append(form);
+ form.onsubmit=e=>{e.preventDefault();const value=input.value.trim();if(!value)return;input.value='';output.append(el('p','', (kind==='web'?'You: ':'› ')+value));
+ if(kind==='web')output.append(el('p','dim','Demo: message added to this conversation. Live replies are available in the Tote app.'));
+ else if(value==='clear')output.replaceChildren();
+ else {const result=value==='help'?'Commands: help, pwd, ls, echo <text>, clear':value==='pwd'?$('#file-root').textContent:value==='ls'?'src/  config/  docs/  scripts/  package.json  AGENTS.md':value.startsWith('echo ')?value.slice(5):'Demo shell: unsupported command. Type help.';output.append(el('p','green',result))}
+ output.lastChild?.scrollIntoView({block:'nearest'});
+ };input.focus();
+}
+function pick(kind){
+ const options=kind==='web'?providers:kind==='terminal'?agents:apps;$('#picker-title').textContent=kind==='web'?'Open web':kind==='terminal'?'New terminal':'Apps';$('#picker-options').replaceChildren();
+ for(const name of options)$('#picker-options').append(action(name,()=>{$('#picker').close();if(kind==='app'){const pane=addPane(name,'app');const body=el('div','terminal');body.append(el('h2','',name),el('p','dim','Native app preview'),el('p','','Workspace: '+$('#file-root').textContent),el('p','','The installed Tote app opens this folder in '+name+'. A browser demo cannot launch native apps.'));pane.append(body)}else addSession(name,kind)}));
+ $('#picker').showModal();
+}
+$('#picker-close').onclick=()=>$('#picker').close();
+const buttons=[...document.querySelectorAll('[data-demo]')];buttons[0].onclick=()=>pick('web');buttons[1].onclick=()=>pick('terminal');buttons[2].onclick=()=>pick('app');buttons[3].onclick=()=>openSettings('Spaces');
+buttons.forEach(b=>{b.setAttribute('aria-label',b.title);b.removeAttribute('data-demo')});
+$('#settings-close').onclick=()=>$('#settings').close();
+function openSettings(section='Spaces'){
+ const nav=$('#settings-nav');nav.replaceChildren();
+ for(const name of ['Spaces','Web providers','CLI agents','Apps','Devices','Appearance','About']){const b=action(name,()=>renderSettings(name));b.dataset.section=name;nav.append(b)}
+ renderSettings(section);$('#settings').showModal();
+}
+function renderSettings(section){
+ document.querySelectorAll('#settings-nav button').forEach(b=>b.classList.toggle('active',b.dataset.section===section));const host=$('#settings-content');host.replaceChildren(el('h3','',section));
+ if(section==='Spaces'){
+  host.append(el('p','dim','Rename spaces in this demo. Your actual folders are unchanged.'));
+  spaces.forEach((space,i)=>{const row=el('div','setting-row'),input=el('input');input.value=space.name;input.setAttribute('aria-label','Space name '+space.name);row.append(input,action('Save',()=>{if(!input.value.trim())return;space.name=input.value.trim();render();renderSettings(section)}));host.append(row)});
+  host.append(action('+ New space',()=>{$('#settings').close();$('#new-space').showModal()}));
+ }else if(['Web providers','CLI agents','Apps'].includes(section)){
+  const list=section==='Web providers'?providers:section==='CLI agents'?agents:apps;
+  host.append(el('p','dim','These entries appear in the sidebar picker. Changes last for this page session.'));
+  list.forEach((name,i)=>{const row=el('div','setting-row'),input=el('input');input.value=name;input.setAttribute('aria-label',section+' name');row.append(input,action('Save',()=>{if(input.value.trim())list[i]=input.value.trim();renderSettings(section)}),action('Remove',()=>{list.splice(i,1);renderSettings(section)}));host.append(row)});
+  const row=el('form','setting-row'),input=el('input');input.placeholder='Name';input.required=true;input.setAttribute('aria-label','New '+section+' entry');const b=el('button','','Add');row.append(input,b);row.onsubmit=e=>{e.preventDefault();if(input.value.trim())list.push(input.value.trim());renderSettings(section)};host.append(row);
+ }else if(section==='Devices'){
+  host.append(el('p','dim','Two sample devices. Each keeps its own demo panes. No remote connection is made.'));
+  ['MacBook Pro','Mac mini'].forEach((name,i)=>host.append(action(name+(device===i?' — selected':''),()=>{device=i;$('.device select').selectedIndex=i;$('#device-context').textContent=name+' · demo';render();renderSettings(section)})));
+ }else if(section==='Appearance'){
+  const label=el('label'),checkbox=el('input');checkbox.type='checkbox';checkbox.checked=$('#shell').classList.contains('compact');checkbox.onchange=collapse;label.append(checkbox,document.createTextNode(' Compact sidebar'));host.append(label);
+  const size=el('label','','Interface text size'),select=el('select');for(const n of [11,12,13,14]){const option=el('option','',n+' px');option.value=n;select.append(option)}select.value=parseInt(document.body.style.fontSize)||12;select.onchange=()=>document.body.style.fontSize=select.value+'px';size.append(select);host.append(size);
+ }else host.append(el('p','','Tote brings spaces, web conversations, files and agent terminals into one window.'),el('p','dim','This browser demo lets you explore navigation and pane workflows. Real terminals, provider sessions and native apps run in the Electron app.'));
+}
+// Seed the first group with the original design, then keep independent pane
+// lists per device/space/group. Elements retain their buffers while hidden.
+const initial=[...document.querySelectorAll('.panes > .pane')];initial.forEach(decoratePane);paneSets.set(paneKey(),initial);
+const oldComposer=$('.composer');oldComposer.replaceChildren(action('Start a demo conversation',()=>addSession('ChatGPT','web')));
+const savedFiles=new Map();
+const fileNodes=[{name:'src',children:[{name:'host',children:[]},{name:'main',children:[]},{name:'renderer',children:[{name:'app.js'},{name:'styles.css'}]}]},{name:'config',children:[]},{name:'docs',children:[]},{name:'scripts',children:[]},{name:'package.json'},{name:'AGENTS.md'}];
+const expandedDirs=new Set(['src','src/renderer']);let selectedFile='src/renderer/app.js',entryIsDir=false;
+function renderFiles(){
+ const host=$('#file-tree');host.replaceChildren();
+ function walk(nodes,prefix='',parent=''){
+  nodes.forEach((node,index)=>{
+   const last=index===nodes.length-1,path=parent+node.name,dir=!!node.children;
+   const row=el('div','tree-row'+(dir?' dir':'')+(selectedFile===path?' sel':''));row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-label',node.name);if(dir)row.setAttribute('aria-expanded',String(expandedDirs.has(path)));
+   row.append(el('span','guide',prefix+(last?'└─ ':'├─ ')),el('span','name',node.name+(dir?'/':'')));
+   const open=()=>{if(dir){expandedDirs.has(path)?expandedDirs.delete(path):expandedDirs.add(path);renderFiles();return}selectedFile=path;renderFiles();const pane=addPane(node.name,'doc'),text=el('textarea','editor');text.setAttribute('aria-label',node.name+' editor');text.value=savedFiles.get(path)||'// '+path+'\n// Demo file — edits stay in this page.\n';pane.append(text,action('Save',()=>{savedFiles.set(path,text.value);notice(node.name+' saved in the demo.')}))};
+   row.onclick=open;row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}};host.append(row);
+   if(dir&&expandedDirs.has(path))walk(node.children,prefix+(last?'   ':'│  '),path+'/');
+  });
+ }
+ walk(fileNodes);
+}
+$('#close-files').onclick=()=>$('#files-toggle').click();$('#refresh-files').onclick=renderFiles;
+function createEntry(dir){entryIsDir=dir;$('#entry-title').textContent=dir?'New folder':'New file';$('#entry-form').reset();$('#new-entry').showModal()}
+$('#new-file').onclick=()=>createEntry(false);$('#new-dir').onclick=()=>createEntry(true);$('#entry-cancel').onclick=()=>$('#new-entry').close();
+$('#entry-form').onsubmit=e=>{e.preventDefault();const input=e.target.elements.name,name=input.value.trim();if(!name)return;if(fileNodes.some(n=>n.name===name)){input.setCustomValidity('This name already exists.');input.reportValidity();return}fileNodes.push(entryIsDir?{name,children:[]}:{name});renderFiles();$('#new-entry').close()};
+$('#entry-form input').oninput=e=>e.target.setCustomValidity('');
+renderFiles();
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.pane.zoomed').forEach(p=>p.classList.remove('zoomed'));if((e.metaKey||e.ctrlKey)&&e.key===','){e.preventDefault();if(!$('#settings').open)openSettings()}});
+
+render();
+</script>
+</body>
+</html>

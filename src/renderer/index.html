@@ -10,52 +10,49 @@
 </head>
 <body>
   <div id="app">
-    <!-- workspace strip: the ACTIVE space is the routing context for everything below -->
-    <div id="ws-bar">
-      <span id="brand" title="tote">▚ tote</span>
-      <span class="vsep">│</span>
-      <div id="ws-tabs"></div>
-      <button id="btn-add-ws" class="plus" title="Add project workspace">+</button>
-      <button id="btn-add-temp" class="plus" title="New temp space (deletable, swept when stale)">+t</button>
-      <button id="btn-add-remote" class="plus" title="New remote space (a project on another machine, over ssh/Tailscale)">+r</button>
-      <span class="vsep">│</span>
-      <!-- virtual desktops INSIDE the active space: each group owns a tiling
-           tree; switching applies that tree and leaves the other groups'
-           webviews and terminals running, hidden. Same line as the spaces. -->
-      <div id="group-bar">
-        <span class="group-label">grp</span>
-        <div id="group-tabs"></div>
-        <button id="btn-add-group" class="plus" title="New group — a fresh layout in this space">+</button>
+    <aside id="ws-bar" aria-label="Workspace navigation">
+      <div class="sidebar-brand">
+        <span id="brand"><span class="brand-mark">▚</span> <span class="nav-label">tote</span></span>
+        <button id="btn-sidebar" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">⇤</button>
       </div>
-      <span class="vsep">│</span>
+      <div id="device-wrap">
+        <button id="btn-device" title="Switch device" aria-label="Switch device">
+          <span class="device-dot"></span><span id="device-name">this machine</span><span class="caret-down">▾</span>
+        </button>
+        <div id="device-menu" class="hidden"></div>
+      </div>
+      <div class="spaces-heading"><span class="nav-label">Spaces</span><button id="btn-add-ws" class="plus" title="Add project workspace" aria-label="Add project workspace">+</button></div>
+      <nav id="ws-tabs" aria-label="Spaces"></nav>
+      <!-- Only these navigation controls move under the active workspace. -->
+      <div id="group-bar" aria-label="Groups">
+        <div id="group-tabs"></div>
+        <button id="btn-add-group" class="plus" title="New group" aria-label="New group">+<span class="nav-label"> New group</span></button>
+      </div>
       <div class="ws-actions">
         <div id="add-web-wrap">
-          <button id="btn-add-tab" title="Open a web LLM pane"><span class="ico">+</span>web</button>
+          <button id="btn-add-tab" aria-label="Open web pane" title="Open a web LLM pane"><span class="ico">⊕</span><span class="nav-label">Open web</span></button>
           <div id="tab-add-menu" class="hidden"></div>
         </div>
         <div id="add-term-wrap">
-          <button id="btn-new-term" title="Open an agent terminal pane (Ctrl+`)"><span class="ico">+</span>term</button>
+          <button id="btn-new-term" aria-label="New terminal" title="Open an agent terminal pane (Ctrl+`)"><span class="ico">›_</span><span class="nav-label">New terminal</span></button>
           <div id="term-menu" class="hidden"></div>
         </div>
-        <button id="btn-files" class="toggle" title="Files pane"><span class="ico">▤</span>files</button>
+        <button id="btn-files" aria-label="Toggle files pane" class="toggle" title="Files pane"><span class="ico">▤</span><span class="nav-label">Files</span></button>
         <div id="apps-wrap">
-          <button id="btn-apps" title="Launch a native app into the active workspace"><span class="ico">⧉</span>apps</button>
+          <button id="btn-apps" aria-label="Open apps" title="Launch a native app into the active workspace"><span class="ico">⧉</span><span class="nav-label">Apps</span></button>
           <div id="apps-menu" class="hidden"></div>
         </div>
       </div>
-      <!-- right end: which machine's Tote this window shows (devices design),
-           settings, clock -->
+      <div class="sidebar-create">
+        <button id="btn-add-temp" aria-label="New temporary space" title="New temporary space"><span class="ico">◌</span><span class="nav-label">New temp space</span></button>
+        <button id="btn-add-remote" aria-label="New remote space" title="New remote space over SSH"><span class="ico">⇄</span><span class="nav-label">New remote space</span></button>
+      </div>
       <div class="ws-right">
-        <div id="device-wrap">
-          <button id="btn-device" title="Which machine's Tote this window shows — click for your other devices">
-            <span class="device-dot"></span><span id="device-name">this machine</span><span class="caret-down">▾</span>
-          </button>
-          <div id="device-menu" class="hidden"></div>
-        </div>
-        <button id="btn-settings" title="Settings"><span class="ico">⚙</span></button>
+        <button id="btn-settings" aria-label="Settings" title="Settings"><span class="ico">⚙</span><span class="nav-label">Settings</span></button>
         <span id="clock"></span>
       </div>
-    </div>
+    </aside>
+    <header id="workspace-context"><span id="context-space"></span><span class="context-sep">/</span><span id="context-group"></span><span id="context-device">this machine</span></header>
 
     <div id="main">
       <!-- Flat tiling surface. Every pane is a DIRECT child, created once per
@@ -109,25 +106,32 @@
   <!-- settings: a full-window page over the app (concept 02) -- left nav, one
        section at a time. Under .modal (z-index) so rename/confirm prompts
        opened from here still land on top. -->
+  <div id="pane-picker" class="modal hidden">
+    <section class="picker-card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+      <h2 id="picker-title">Open web</h2>
+      <div id="picker-options"></div>
+      <button id="picker-cancel">Cancel</button>
+    </section>
+  </div>
   <div id="settings-modal" class="hidden">
+    <section id="settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div id="set-top">
-      <span class="logo">▚ tote</span>
-      <span class="where">settings</span>
-      <button id="btn-settings-close" class="x" title="Close (Esc)">✕ close</button>
+      <h2 id="settings-title">Settings</h2>
+      <button id="btn-settings-close" class="x" title="Close (Esc)">✕ Close</button>
     </div>
     <div id="set-body">
       <nav id="set-nav">
-        <div class="ni" data-sec="spaces">spaces</div>
-        <div class="ni" data-sec="providers">web providers</div>
-        <div class="ni" data-sec="agents">cli agents</div>
-        <div class="ni" data-sec="apps">native apps</div>
-        <div class="ni" data-sec="devices">devices <span class="k">ts</span></div>
-        <div class="ni" data-sec="behavior">behavior</div>
-        <div class="ni" data-sec="about">about</div>
+        <button class="ni" data-sec="spaces">Spaces</button>
+        <button class="ni" data-sec="providers">Web providers</button>
+        <button class="ni" data-sec="agents">CLI agents</button>
+        <button class="ni" data-sec="apps">Apps</button>
+        <button class="ni" data-sec="devices">Devices</button>
+        <button class="ni" data-sec="behavior">Behavior</button>
+        <button class="ni" data-sec="about">About</button>
       </nav>
       <div id="set-content">
         <section class="sec" data-sec="devices">
-          <h2>DEVICES</h2>
+          <h2>Devices</h2>
           <p class="lede">Your other machines, reachable inside tote. Tailscale decides who is "you" — only
             devices on your own tailscale account can connect; a shared-in node is refused.</p>
           <div id="ts-card">
@@ -144,12 +148,12 @@
             <span class="grow"><span class="name">keep <b id="awake-who">this machine</b> awake</span><span class="sub">so its agents keep working and stay reachable · stops idle sleep only — a closed lid still sleeps unless on power with an external display</span></span>
             <input type="checkbox" class="tgl" id="set-awake" />
           </label>
-          <p class="lede" style="margin-top:16px">Remote spaces ride this: <b>+r</b> on the strip makes a space that lives on
+          <p class="lede" style="margin-top:16px">Remote spaces ride this: <b>New remote space</b> in the sidebar makes a space that lives on
             another machine over ssh/Tailscale. Re-auth is ambient — a banner in the files pane, never a modal.</p>
         </section>
 
         <section class="sec" data-sec="spaces">
-          <h2>SPACES</h2>
+          <h2>Spaces</h2>
           <p class="lede">Workspaces are the folders tote organizes everything around. One global space plus your
             projects; ids are stable across renames.</p>
           <div id="settings-workspaces"></div>
@@ -157,8 +161,8 @@
         </section>
 
         <section class="sec" data-sec="providers">
-          <h2>WEB PROVIDERS</h2>
-          <p class="lede">The +web menu on the strip. Each opens in its own session partition, so logins never
+          <h2>Web providers</h2>
+          <p class="lede">The Open web menu in the sidebar. Each opens in its own session partition, so logins never
             leak between providers.</p>
           <div id="settings-providers"></div>
           <div class="addrow">
@@ -169,7 +173,7 @@
         </section>
 
         <section class="sec" data-sec="agents">
-          <h2>CLI AGENTS</h2>
+          <h2>CLI agents</h2>
           <p class="lede">Agent terminals on <b>+term</b> and <b>ctrl+`</b>. Each profile carries its install
             command — the setup wizard uses it.</p>
           <div id="settings-clis"></div>
@@ -181,7 +185,7 @@
         </section>
 
         <section class="sec" data-sec="apps">
-          <h2>NATIVE APPS</h2>
+          <h2>Apps</h2>
           <p class="lede">Desktop LLM apps tote can launch into the active workspace. macOS can also bridge their
             Downloads into the space's inbox (behavior).</p>
           <div id="settings-apps"></div>
@@ -192,7 +196,7 @@
         </section>
 
         <section class="sec" data-sec="behavior">
-          <h2>BEHAVIOR</h2>
+          <h2>Behavior</h2>
           <p class="lede">Defaults for downloads. Sharing and keep-awake are device settings — see devices.</p>
           <label class="set-row toggle-row">
             <span class="grow"><span class="name">bridge native-app downloads</span><span class="sub">copy downloads made by native LLM apps (Claude, ChatGPT, Kimi…) from system Downloads into the active space's inbox · originals stay · macOS only</span></span>
@@ -201,7 +205,7 @@
         </section>
 
         <section class="sec" data-sec="about">
-          <h2>ABOUT</h2>
+          <h2>About</h2>
           <p class="lede">tote — one window for all your agents.</p>
           <div class="set-row"><span class="grow"><span class="name">version</span></span><span class="val" id="set-version"></span></div>
           <div class="set-row"><span class="grow"><span class="name">config</span><span class="sub">providers, agents, apps, spaces — data, not code</span></span><button id="btn-open-config">open config folder</button></div>
@@ -212,8 +216,9 @@
     </div>
     <div id="set-keyline">
       <span><b>esc</b> close</span>
-      <span class="mode">SETTINGS</span>
+      <span class="mode">Settings</span>
     </div>
+    </section>
   </div>
 
   <!-- generic input prompt (Electron has no window.prompt) -->

@@ -23,7 +23,7 @@ const state = {
   expanded: new Set(['inbox']),
   docs: new Map(), // docId -> { path, kind, text, savedText, dataUrl, fileUrl, mtimeMs, size, error, stale }
   docOrder: [], // doc leaf ids, least recently focused first -- which pane a click retargets
-  wsDrag: null, // id of the workspace tab being dragged along the strip
+  wsDrag: null, // id of the workspace tab being dragged along the sidebar
   remote: {}, // spaceId -> { state, host, root, message, url } pushed from main
   treeWs: null, // which space state.treeData belongs to -- see refreshTree
 };
@@ -66,19 +66,30 @@ function activeWorkspace() {
   return state.workspaces.list.find((w) => w.id === state.workspaces.active);
 }
 
-// Workspace strip (top of window). Kept under the old name because the
-// wizard and boot code call it.
+// Sidebar workspace list. Only navigation is reparented; panes stay in #tiles.
 function renderWorkspaceSwitcher() {
   const bar = $('#ws-tabs');
-  bar.innerHTML = '';
+  const groupBar = $('#group-bar');
+  groupBar.remove();
+  bar.replaceChildren();
   let active = null;
   for (const w of state.workspaces.list) {
-    const tab = document.createElement('div');
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.setAttribute('aria-current', w.id === state.workspaces.active ? 'page' : 'false');
+    tab.setAttribute('aria-label', w.name);
     tab.className = 'ws-tab' + (w.id === state.workspaces.active ? ' active' : '')
       + (w.temp ? ' temp' : '') + (isRemote(w) ? ' remote' : '');
     // Plain names: a temp space reads faint (styles.css), a remote one carries
     // its connection dot. The tooltip says the rest.
-    tab.append(document.createTextNode(w.name));
+    const icon = document.createElement('span');
+    icon.className = 'ws-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = w.temp ? '◌' : isRemote(w) ? '⇄' : w.id === 'global' ? '◎' : w.name.slice(0, 1).toUpperCase();
+    const name = document.createElement('span');
+    name.className = 'ws-name';
+    name.textContent = w.name;
+    tab.append(icon, name);
     // The dot badges from every space, so a connection that needs you is
     // visible while you are working somewhere else.
     if (isRemote(w)) {
@@ -139,9 +150,8 @@ function renderWorkspaceSwitcher() {
       if (!state.wsDrag || state.wsDrag === w.id) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      wsDragScroll(bar, e.clientX); // a tab past the visible edge must be reachable
       const r = tab.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
+      const after = e.clientY > r.top + r.height / 2;
       clearWsDropMark();
       tab.classList.add(after ? 'drop-after' : 'drop-before');
     };
@@ -156,10 +166,14 @@ function renderWorkspaceSwitcher() {
     };
     if (w.id === state.workspaces.active) active = tab;
     bar.appendChild(tab);
+    if (w.id === state.workspaces.active) bar.appendChild(groupBar);
   }
-  // Empty strip space past the last tab: drop there means "move to the end".
+  if (!groupBar.isConnected) bar.appendChild(groupBar);
+  // Empty sidebar space past the last tab: drop there means "move to the end".
   bar.ondragover = (e) => {
-    if (!state.wsDrag || e.target !== bar) return;
+    if (!state.wsDrag) return;
+    wsDragScroll(bar, e.clientY);
+    if (e.target !== bar) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     clearWsDropMark();
@@ -175,46 +189,52 @@ function renderWorkspaceSwitcher() {
   const label = ws ? (isRemote(ws) ? ws.host + ':' + ws.path : ws.path) : '';
   $('#workspace-root').textContent = label;
   $('#workspace-root').title = label;
+  $('#context-space').textContent = ws ? ws.name : '';
 }
 
-/* The strip overflows once a user collects spaces, and a hidden scrollbar plus
-   a wheel that only scrolls vertically means "the rest of my spaces are
-   unreachable". These four keep the whole list in reach without changing the
-   tabs themselves: the fade marks which edge has more, the wheel maps either
-   axis onto scrollLeft, a render reveals the active tab, and a drag scrolls
-   when it nears an edge. Measured in clientX/rect space, never offsetLeft --
-   the tabs' offsetParent is not the strip. */
+/* Native vertical scrolling keeps long workspace lists reachable. */
 function updateWsOverflow() {
   const bar = $('#ws-tabs');
-  const max = bar.scrollWidth - bar.clientWidth;
-  bar.classList.toggle('ovf-l', max > 1 && bar.scrollLeft > 1);
-  bar.classList.toggle('ovf-r', max > 1 && bar.scrollLeft < max - 1);
+  const max = bar.scrollHeight - bar.clientHeight;
+  bar.classList.toggle('ovf-top', max > 1 && bar.scrollTop > 1);
+  bar.classList.toggle('ovf-bottom', max > 1 && bar.scrollTop < max - 1);
 }
 
 function revealWsTab(bar, el) {
   const r = el.getBoundingClientRect();
   const b = bar.getBoundingClientRect();
-  if (r.left < b.left) bar.scrollLeft -= b.left - r.left + 8;
-  else if (r.right > b.right) bar.scrollLeft += r.right - b.right + 8;
+  if (r.top < b.top) bar.scrollTop -= b.top - r.top + 8;
+  else if (r.bottom > b.bottom) bar.scrollTop += r.bottom - b.bottom + 8;
 }
 
-function wsDragScroll(bar, clientX) {
+function wsDragScroll(bar, clientY) {
   const b = bar.getBoundingClientRect();
-  if (clientX < b.left + 36) bar.scrollLeft -= 14;
-  else if (clientX > b.right - 36) bar.scrollLeft += 14;
+  if (clientY < b.top + 36) bar.scrollTop -= 14;
+  else if (clientY > b.bottom - 36) bar.scrollTop += 14;
 }
 
 $('#ws-tabs').addEventListener('scroll', updateWsOverflow);
-// A vertical wheel is what a mouse has, so it drives the horizontal strip.
-$('#ws-tabs').addEventListener('wheel', (e) => {
-  const bar = $('#ws-tabs');
-  if (bar.scrollWidth <= bar.clientWidth) return;
-  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-  if (!d) return;
-  e.preventDefault();
-  bar.scrollLeft += d;
-}, { passive: false });
 new ResizeObserver(updateWsOverflow).observe($('#ws-tabs'));
+
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const button = $('#btn-sidebar');
+  button.textContent = collapsed ? '⇥' : '⇤';
+  button.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  // Viewer preference, not part of any device's workspace registry.
+  try { localStorage.setItem('tote.sidebarCollapsed', String(collapsed)); } catch {}
+  requestAnimationFrame(() => {
+    const active = $('#ws-tabs .ws-tab.active');
+    if (active) revealWsTab($('#ws-tabs'), active);
+    updateWsOverflow();
+  });
+}
+let sidebarCollapsed = false;
+try { sidebarCollapsed = localStorage.getItem('tote.sidebarCollapsed') === 'true'; } catch {}
+setSidebarCollapsed(sidebarCollapsed);
+$('#btn-sidebar').onclick = () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
 
 function clearWsDropMark() {
   for (const el of document.querySelectorAll('.ws-tab.drop-before, .ws-tab.drop-after')) {
@@ -222,7 +242,7 @@ function clearWsDropMark() {
   }
 }
 
-// Reorder the strip. targetId null means "to the end"; `after` picks the side
+// Reorder the sidebar. targetId null means "to the end"; `after` picks the side
 // of the target the dragged tab lands on. The order is persisted in
 // workspaces.json, so it survives a restart; nothing else about a space moves.
 async function moveWorkspace(srcId, targetId, after) {
@@ -559,6 +579,43 @@ function onRemoteState(info) {
   }
 }
 
+/* Shared centered pickers from the approved sidebar concept. Existing menu
+ * handlers still own provider, PTY and app actions. Only menu DOM moves. */
+const pickerMenus = ['tab-add-menu', 'term-menu', 'apps-menu'].map(id => document.getElementById(id));
+for (const menu of pickerMenus) {
+  $('#picker-options').appendChild(menu);
+  new MutationObserver(() => {
+    if (pickerMenus.every(node => node.classList.contains('hidden'))) $('#pane-picker').classList.add('hidden');
+  }).observe(menu, { attributes: true, attributeFilter: ['class'] });
+}
+function closePanePicker() {
+  for (const menu of pickerMenus) menu.classList.add('hidden');
+  $('#pane-picker').classList.add('hidden');
+  pickerTrigger?.focus();
+}
+let pickerTrigger = null;
+function showPanePicker(menu, title, trigger) {
+  pickerTrigger = trigger;
+  for (const other of pickerMenus) if (other !== menu) other.classList.add('hidden');
+  $('#picker-title').textContent = title;
+  menu.classList.remove('hidden');
+  $('#pane-picker').classList.remove('hidden');
+  $('#picker-cancel').focus();
+}
+$('#picker-cancel').onclick = closePanePicker;
+$('#pane-picker').onclick = e => { if (e.target === $('#pane-picker')) closePanePicker(); e.stopPropagation(); };
+// Keep keyboard navigation within the visible dialog, including shift-tab.
+document.addEventListener('keydown', e => {
+  const scope = !$('#pane-picker').classList.contains('hidden') ? $('#pane-picker')
+    : !$('#settings-modal').classList.contains('hidden') && !document.querySelector('.modal:not(.hidden)') ? $('#settings-modal') : null;
+  if (!scope || e.key !== 'Tab') return;
+  const targets = [...scope.querySelectorAll('button, input, select, textarea, [tabindex="0"]')].filter(node => !node.disabled && node.getClientRects().length);
+  if (!targets.length) return;
+  const first = targets[0], last = targets[targets.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !scope.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !scope.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+});
+
 /* ---------------- web tabs (per workspace) ----------------
  * A workspace owns a list of tab instances (several of the same provider are
  * fine — they share the provider's login partition). The list + active tab is
@@ -661,7 +718,7 @@ $('#btn-add-tab').onclick = (e) => {
   menu.innerHTML = '';
   menu.appendChild(menuNote('web providers — each gets its own login partition'));
   for (const p of state.providers) {
-    const item = document.createElement('div');
+    const item = document.createElement('button');
     item.className = 'term-menu-item';
     const dot = document.createElement('span');
     dot.className = 'avail';
@@ -675,7 +732,7 @@ $('#btn-add-tab').onclick = (e) => {
     item.onclick = () => { menu.classList.add('hidden'); openTab(p.id); };
     menu.appendChild(item);
   }
-  menu.classList.remove('hidden');
+  showPanePicker(menu, 'Open web', $('#btn-add-tab'));
 };
 document.addEventListener('click', () => $('#tab-add-menu').classList.add('hidden'));
 
@@ -1552,6 +1609,7 @@ async function reattachSlice() {
 function renderDeviceChip() {
   const d = state.device;
   $('#device-name').textContent = d ? d.name : 'this machine';
+  $('#context-device').textContent = d ? d.name : 'this machine';
   $('#btn-device').title = d
     ? 'This window shows ' + d.name + "'s Tote — click to switch"
     : "This window shows this machine's Tote — click for your other devices";
@@ -1739,7 +1797,7 @@ async function renderAppsMenu() {
     menu.appendChild(empty);
   }
   for (const a of state.apps) {
-    const item = document.createElement('div');
+    const item = document.createElement('button');
     item.className = 'term-menu-item';
     item.appendChild(document.createTextNode(a.name));
     const cmd = document.createElement('span');
@@ -1762,7 +1820,7 @@ async function renderAppsMenu() {
   menu.appendChild(sep);
   menu.appendChild(
     (() => {
-      const add = document.createElement('div');
+      const add = document.createElement('button');
       add.className = 'term-menu-item';
       add.textContent = '+ add app…';
       add.onclick = async () => {
@@ -1786,7 +1844,7 @@ $('#btn-apps').onclick = async (e) => {
   if (menu.classList.contains('hidden')) {
     state.apps = await tote.listApps();
     await renderAppsMenu();
-    menu.classList.remove('hidden');
+    showPanePicker(menu, 'Apps', $('#btn-apps'));
   } else {
     menu.classList.add('hidden');
   }
@@ -1878,7 +1936,7 @@ async function renderTermMenu() {
     if (!state.cliAvail.has(key)) {
       state.cliAvail.set(key, await tote.checkCommand(p.command));
     }
-    const item = document.createElement('div');
+    const item = document.createElement('button');
     item.className = 'term-menu-item';
     const dot = document.createElement('span');
     const found = state.cliAvail.get(key);
@@ -2187,7 +2245,7 @@ $('#btn-new-term').onclick = async (e) => {
   const menu = $('#term-menu');
   if (menu.classList.contains('hidden')) {
     await renderTermMenu();
-    menu.classList.remove('hidden');
+    showPanePicker(menu, 'New terminal', $('#btn-new-term'));
   } else {
     menu.classList.add('hidden');
   }
@@ -2586,7 +2644,7 @@ function startPaneDrag(e, el) {
 
   let drop = null, chip = null;
   const move = (ev) => {
-    // Over the group strip: a chip takes the pane to that group, + to a new one.
+    // Over the group list: a chip takes the pane to that group, + to a new one.
     const over = ev.target.closest && ev.target.closest('.group-chip:not(.active), #btn-add-group');
     if (over !== chip) {
       if (chip) chip.classList.remove('drop-into');
@@ -2661,10 +2719,19 @@ function renderGroupBar() {
   host.innerHTML = '';
   const V = wsViews();
   const gs = groups();
-  for (const g of gs) {
+  $('#context-group').textContent = (gs.find((g) => g.id === V.activeGroup) || {}).name || '';
+  for (const [index, g] of gs.entries()) {
     const chip = document.createElement('button');
     chip.className = 'group-chip' + (g.id === V.activeGroup ? ' active' : '');
-    chip.textContent = g.name;
+    const name = document.createElement('span');
+    name.className = 'nav-label';
+    name.textContent = g.name;
+    const number = document.createElement('span');
+    number.className = 'group-number';
+    number.textContent = index + 1;
+    chip.append(name, number);
+    chip.setAttribute('aria-label', g.name);
+    chip.setAttribute('aria-pressed', String(g.id === V.activeGroup));
     chip.dataset.group = g.id;
     const count = T.leaves(g.tree).length;
     chip.title = count ? g.name + ' — ' + count + ' pane(s)' : g.name + ' — empty';
@@ -2698,7 +2765,7 @@ function switchGroup(id) {
   saveViews();
 }
 
-// An empty group at the end of the strip; the caller decides whether to go there.
+// An empty group at the end of the list; the caller decides whether to go there.
 function newGroup() {
   const gs = groups();
   const g = { id: newGroupId(), name: nextGroupName(gs), tree: null, focus: null, zoom: null };
@@ -2798,7 +2865,7 @@ function closeGroup(id) {
 
 // Put keyboard focus INSIDE the focused pane. The `focused` class is only a
 // border: a pane that is hidden by a space switch (display:none) drops its DOM
-// focus, a click on the workspace strip lands focus on body, and a window that
+// focus, a click on the workspace sidebar lands focus on body, and a window that
 // was blurred hands Electron's webview host back its focus but not the guest
 // page inside it -- the next keystroke goes nowhere until the user clicks a
 // second time. So this runs after every space or group switch and on every
@@ -2857,6 +2924,10 @@ function focusedDoc() {
 }
 
 addEventListener('keydown', (e) => {
+  if (!$('#pane-picker').classList.contains('hidden')) {
+    if (e.key === 'Escape') { e.preventDefault(); closePanePicker(); }
+    return;
+  }
   // The settings page covers the panes: Esc closes it, and no pane key acts
   // on panes you cannot see. A prompt opened from it (.modal) handles its own Esc.
   if (!$('#settings-modal').classList.contains('hidden')) {
@@ -2964,7 +3035,7 @@ function inTerminal(el) {
 
 /* ---------------- keyline status + clock ---------------- */
 // The hint strip's right end is live: zoom mode, pane count and name of the
-// active group, dirty docs. The clock sits at the right of the status line.
+// active group, dirty docs. The clock sits at the bottom of the sidebar.
 // One interval reads all of them from the DOM/tree instead of hunting down
 // every mutation site.
 function updateKeyline() {
@@ -3198,7 +3269,7 @@ async function renderDevicesSection() {
   bd.appendChild(Object.assign(document.createElement('span'), {
     className: 'me', textContent: res.self.name + (res.self.ip4 ? ' · ' + res.self.ip4 : ''),
   }));
-  bd.append('. your other devices are below; the strip\'s device chip switches between them.');
+  bd.append('. your other devices are below; the sidebar\'s device chip switches between them.');
   act('check again', renderDevicesSection);
   list.style.opacity = 1;
 
@@ -3229,6 +3300,7 @@ async function renderDevicesSection() {
 $('#btn-settings').onclick = () => {
   renderSettings();
   $('#settings-modal').classList.remove('hidden');
+  $('#btn-settings-close').focus();
 };
 $('#btn-settings-close').onclick = () => $('#settings-modal').classList.add('hidden');
 $('#btn-repo').onclick = () => tote.openExternal('https://github.com/yusufkaraaslan/tote');

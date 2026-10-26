@@ -163,10 +163,15 @@ echo
 if [ -n "$TARGET_PID" ]; then
   # The target is live -- from this terminal or any other. Defer everything
   # until it exits, then swap and reopen.
-  nohup sh -c "while kill -0 $TARGET_PID 2>/dev/null; do sleep 1; done; sleep 1; \
-               sh '$SWAP' && open '$TARGET'; rm -f '$SWAP'" >/dev/null 2>&1 &
+  LOG="$HOME/Library/Logs/Tote/install.log"
+  JOB=$(bash scripts/defer-macos.sh "$TARGET_PID" "$LOG" /bin/sh -c '
+    sh "$1" && open "$2"
+    result=$?
+    rm -f "$1"
+    exit "$result"
+  ' tote-swap "$SWAP" "$TARGET")
   echo "Staged. Quit Tote (Cmd+Q) — it will swap in the new build and reopen."
-  echo "(Watcher on pid $TARGET_PID; nothing on disk changes until you quit.)"
+  echo "(macOS job $JOB; log: $LOG; nothing on disk changes until you quit.)"
 else
   sh "$SWAP"; rm -f "$SWAP"
   echo "installed ✓  $(du -sh "$TARGET" | cut -f1)"
@@ -174,8 +179,7 @@ else
   # single-instance lock, so the fresh copy cannot start until that one goes.
   OTHER_PID=$(pgrep -a -f "Tote\.app/Contents/MacOS/Tote$" 2>/dev/null | head -1)
   if [ -n "$OTHER_PID" ]; then
-    nohup sh -c "while kill -0 $OTHER_PID 2>/dev/null; do sleep 1; done; sleep 1; open '$TARGET'" \
-      >/dev/null 2>&1 &
+    bash scripts/defer-macos.sh "$OTHER_PID" "$HOME/Library/Logs/Tote/install.log" /usr/bin/open "$TARGET"
     echo "Another Tote is running and holds the single-instance lock."
     echo "Quit it and the new build opens automatically."
   else

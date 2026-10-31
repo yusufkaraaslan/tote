@@ -20,7 +20,7 @@ const HOST = new Set([
   // path: a native picker can only browse THIS machine's disk, so on another
   // machine the path is typed instead.
   'workspaces:addLocal', 'workspaces:setPathTo', 'workspaces:promoteTo',
-  'device:settings', 'device:setKeepAwake',
+  'device:settings', 'device:setKeepAwake', 'device:peers',
   'remote:connect', 'remote:state', 'remote:disconnect',
   'workspace:getRoot', 'workspace:tree', 'workspace:read', 'workspace:readDoc',
   'workspace:write', 'workspace:createFile', 'workspace:createFolder', 'workspace:rename',

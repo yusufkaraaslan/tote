@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('tote', {
   deviceCurrent: () => ipcRenderer.invoke('devices:current'),
   deviceView: (target) => ipcRenderer.invoke('devices:view', target),
   devicesOpen: () => ipcRenderer.invoke('devices:open'),
+  devicePeers: () => ipcRenderer.invoke('device:peers'),
   deviceSettings: () => ipcRenderer.invoke('device:settings'),
   setKeepAwake: (on) => ipcRenderer.invoke('device:setKeepAwake', on),
 

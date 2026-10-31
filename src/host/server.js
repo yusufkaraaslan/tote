@@ -14,11 +14,13 @@ const TS = require('./tailscale');
 class DeviceServer {
   // authorize(ip) -> { ok, name, reason }. Injected so the tests can run the
   // whole thing over loopback; the real one asks `tailscale whois`.
-  constructor({ host, device, tote, authorize }) {
+  constructor({ host, device, tote, authorize, advertise = false }) {
     this.host = host;
     this.device = device;
     this.tote = tote;
     this.authorize = authorize;
+    this.advertise = advertise;
+    this.stopAdvertising = null;
     this.wss = null;
     this.seq = 0;
     this.address = null;
@@ -51,6 +53,7 @@ class DeviceServer {
         this.address = bind + ':' + wss.address().port;   // port 0 means "pick one" (tests)
         wss.off('error', reject);
         wss.on('error', (e) => console.error('[tote] device server:', e.message));
+        if (this.advertise) this.stopAdvertising = require('./discovery').advertise({ address: bind, port: wss.address().port, name: this.device, version: this.tote });
         resolve(this.address);
       });
       wss.once('error', reject);
@@ -99,6 +102,7 @@ class DeviceServer {
   }
 
   stop() {
+    this.stopAdvertising?.(); this.stopAdvertising = null;
     const wss = this.wss;
     this.wss = null;
     this.address = null;

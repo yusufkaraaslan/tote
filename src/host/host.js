@@ -337,6 +337,7 @@ function methods(host) {
     // Keep-awake is about the machine that stays awake, so it is set THERE --
     // including from another machine that is looking at it. Sharing is not
     // here on purpose: exposing a machine is decided at that machine.
+    'device:peers': () => require('./discovery').discoverPeers(Number(cfg.getSettings().devicePort) || 47821),
     'device:settings': () => ({ keepAwake: cfg.getSettings().keepAwake === true }),
     'device:setKeepAwake': (ctx, on) => {
       cfg.saveSettings({ ...cfg.getSettings(), keepAwake: !!on });

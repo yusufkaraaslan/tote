@@ -226,3 +226,14 @@ Design rules:
 ## License
 
 MIT
+
+## Android client
+
+The client-only Android app lives in [`mobile/`](mobile/README.md). It connects to your desktop Tote through Tailscale and supports workspaces, groups, live terminals, file previews, and voice-to-draft input.
+
+```sh
+npm ci --prefix mobile
+npm run mobile:apk
+```
+
+Requires JDK 21 and Android SDK 36. The debug APK is written to `mobile/android/app/build/outputs/apk/debug/app-debug.apk`. See the mobile README for connection setup, tests, and current limitations.

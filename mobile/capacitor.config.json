@@ -1,0 +1,6 @@
+{
+  "appId": "com.tote.mobile",
+  "appName": "Tote",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#0c0d0b" }
+}

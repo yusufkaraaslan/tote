@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tote / Mobile directions</title>
+<style>
+:root{color-scheme:dark;--bg:#10110f;--panel:#181a16;--line:#34372e;--text:#e4e5db;--dim:#969b8b;--accent:#e0a458;--green:#b2c897}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}button,textarea{font:inherit}button{cursor:pointer;color:inherit;touch-action:manipulation}button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}a{color:var(--accent)}.wrap{max-width:1320px;margin:auto;padding:44px 36px}.mast{display:flex;justify-content:space-between;gap:20px;align-items:center;font:12px monospace;color:var(--dim)}.brand{font:24px monospace;letter-spacing:-2px;color:var(--text)}.brand b{color:var(--accent)}.intro{display:flex;justify-content:space-between;gap:35px;align-items:end;margin:54px 0 42px}h1{font-size:clamp(38px,5vw,68px);line-height:1.05;letter-spacing:-3px;font-weight:500;margin:10px 0}.eyebrow{font:11px monospace;text-transform:uppercase;letter-spacing:2px;color:var(--accent)}.intro p{max-width:320px;color:var(--dim);line-height:1.7}.board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px;max-width:820px;margin:auto}.label{display:flex;justify-content:space-between;color:var(--dim);font:11px monospace;margin-bottom:14px}.phone{border:1px solid #44483d;border-radius:32px;padding:8px;background:#23251f;box-shadow:0 24px 50px #0004}.screen{height:720px;border-radius:24px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}.status{display:flex;justify-content:space-between;padding:15px 21px 12px;font:11px monospace}.status span:last-child{color:var(--dim)}header{padding:12px 19px 19px;border-bottom:1px solid var(--line)}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.pill{border:1px solid var(--line);border-radius:20px;padding:5px 9px;font:10px monospace;color:var(--green)}h2{font-size:26px;font-weight:500;letter-spacing:-1px;margin:13px 0 5px}h3{font-size:16px;font-weight:550;margin:0}.sub{font:11px/1.6 monospace;color:var(--dim)}.body{padding:20px;overflow:auto;flex:1;min-height:0}.section{font:10px monospace;letter-spacing:1.5px;color:var(--dim);margin:0 0 12px}.device{width:100%;text-align:left;background:#20231c;border:1px solid var(--line);padding:16px;margin-bottom:10px;border-radius:12px}.device.active{border-color:#87976a;background:#262d20}.device .sub{margin-top:7px}.dot{color:var(--green)}.off{opacity:.55}.spaces{margin-top:25px}.space{width:100%;padding:15px 0;border:0;border-bottom:1px solid var(--line);display:flex;text-align:left;justify-content:space-between;background:none}.space span{color:var(--dim);font:11px monospace}.bottom{padding:16px 20px;border-top:1px solid var(--line);color:var(--dim);font:10px monospace}.accent{color:var(--accent)}.terminal{background:#0c0d0b;color:#c6ccbb;flex:1;min-height:0;overflow:auto;padding:20px 18px;font:11px/1.85 monospace;white-space:pre-wrap}.terminal p{margin:0 0 20px}.muted{color:#848e77}.good{color:var(--green)}.question{border-left:2px solid var(--accent);padding-left:12px;color:#e6c99d}.toolbar{display:flex;gap:5px;padding:9px 12px;background:#20231d}.toolbar button{border:1px solid var(--line);background:#161913;border-radius:5px;min-width:36px;min-height:44px;font:11px monospace}.toolbar button:last-child{margin-left:auto;color:#e7ae9c}.compose{padding:14px}textarea{width:100%;resize:vertical;min-height:62px;max-height:150px;background:#10120e;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}.actions{display:flex;justify-content:space-between;gap:10px;margin-top:10px}.btn{border:1px solid var(--line);background:transparent;border-radius:7px;min-height:44px;padding:9px 13px;font-size:12px}.primary{background:var(--accent);border-color:var(--accent);color:#221809}button:disabled{opacity:.4;cursor:default}.hint{font:10px/1.5 monospace;color:var(--dim);min-height:30px;margin-top:10px}.caption{color:var(--dim);font-size:13px;line-height:1.65;margin:20px 0 0}.caption strong{color:var(--text);font-weight:500}.foot{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);margin-top:42px;padding-top:22px;color:var(--dim);font-size:12px}.banner{padding:8px 15px;background:#3b2c1a;color:#edc996;font:10px/1.5 monospace}.switch{background:none;border:0;color:var(--accent);padding:0;min-height:32px;font:11px monospace}@media(max-width:1050px){.board{gap:18px}.wrap{padding:30px 20px}.toolbar{gap:3px;padding:8px}.toolbar button{min-width:31px}}@media(max-width:820px){.board{grid-template-columns:1fr;max-width:410px;margin:auto;gap:36px}.intro{display:block;margin-top:35px}.intro p{max-width:500px}.foot{flex-direction:column}.mast{flex-wrap:wrap}h1{letter-spacing:-2px}}
+
+/* Keep the terminal chrome to two compact rows; tools appear on request. */
+#terminal-concept .screen{position:relative;background:#0c0d0b}
+#terminal-concept header{padding:6px 12px;display:flex;align-items:center;gap:10px;min-height:52px;flex-shrink:0}
+#terminal-concept header h2{font:13px monospace;letter-spacing:0;margin:0}
+#terminal-concept header .sub{font-size:10px}
+#terminal-concept .session-title{flex:1;min-width:0}
+#terminal-concept .session-title .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#terminal-concept .pill{border:0;padding:0;font-size:10px}
+#terminal-concept .terminal{padding:14px 12px;font-size:12px;line-height:1.7}
+#terminal-concept .terminal p{margin-bottom:16px}
+#terminal-concept .compose{padding:8px;display:flex;align-items:end;gap:6px;border-top:1px solid var(--line);flex-shrink:0}
+#terminal-concept textarea{min-height:44px;height:44px;max-height:110px;resize:none;flex:1;min-width:0;padding:11px 10px;line-height:20px}
+#terminal-concept .compose .btn{padding:0;width:44px;flex:0 0 44px;font-size:18px}
+#terminal-concept .toolbar{flex-wrap:wrap;padding:8px;flex-shrink:0;border-top:1px solid var(--line)}
+#terminal-concept .toolbar[hidden]{display:none}
+#terminal-concept .toolbar .switch{padding:0 8px;min-height:44px}
+#terminal-concept .feedback{position:absolute;bottom:65px;left:12px;right:12px;padding:8px 10px;background:#262d20;border:1px solid var(--line);border-radius:6px;font:10px/1.5 monospace;pointer-events:none}
+#terminal-concept .feedback:empty{display:none}
+
+#recording{width:min(300px,calc(100vw - 32px));padding:26px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--text);text-align:center;box-shadow:0 20px 80px #0008}
+#recording::backdrop{background:#0008}
+#recording h2{font-size:22px;margin:14px 0 6px}
+#recording .actions{margin-top:22px}
+#recording .actions button{flex:1}
+.recording-dot{width:12px;height:12px;border-radius:50%;background:#df836e;margin:0 auto}
+#dictate svg{vertical-align:middle}
+#terminal-concept textarea{font-size:16px}
+
+#terminal-concept header select{font:12px monospace;color:var(--text);background:transparent;border:0;min-height:44px;max-width:140px;cursor:pointer}
+#terminal-concept header select option{background:var(--panel);color:var(--text)}
+#terminal-concept header #group-picker{color:var(--accent);max-width:110px}
+#terminal-concept .session-title select{min-height:26px;max-width:100%}
+</style></head><body><main class="wrap">
+<div class="mast"><div class="brand"><b>▣</b> tote</div><span>FIELD NOTES / MOBILE CLIENT / 01</span><a href="tote-mobile.html">Earlier light concept ↗</a></div>
+<section class="intro"><div><span class="eyebrow">Your computers. A little closer.</span><h1>Take the workspace.<br>Leave the work running.</h1></div><p>A pocket window into your own machines. Open a space, check a terminal, give direction. The session stays at your desk.</p></section>
+<div class="board">
+<section><div class="label"><span>01 / CONNECT</span><span>DEVICE → SPACE</span></div><div class="phone"><div class="screen"><div class="status"><b>9:41</b><span>▥ ▰</span></div><header><div class="row"><span class="brand">tote</span><span class="pill">● Client only</span></div><h2>Back at your desk.</h2><div class="sub">Choose where you want to work.</div></header><div class="body"><p class="section">YOUR DEVICES</p><button class="device active" data-device="Studio" aria-pressed="true"><div class="row"><h3>▣ &nbsp; Studio</h3><span class="dot">●</span></div><div class="sub">Mac · 3 live terminals<br>Tote / Website / Global</div></button><button class="device" data-device="Workshop" aria-pressed="false"><div class="row"><h3>▣ &nbsp; Workshop</h3><span class="dot">●</span></div><div class="sub">Linux · 2 live terminals<br>Game / Global</div></button><div class="device off"><h3>▱ &nbsp; MacBook Air</h3><div class="sub">Offline · reconnect when available</div></div><div class="spaces"><p class="section" id="space-label">SPACES ON STUDIO</p><div id="spaces"></div></div></div><div class="bottom">↗ Connected through your private network</div></div></div><p class="caption"><strong>A. Familiar navigation.</strong> Device first, then space. No sharing switch on the phone. Tap an online machine and open a space.</p></section>
+<section id="terminal-concept"><div class="label"><span>02 / WORK</span><span>ONE PANE, FULL FOCUS</span></div><div class="phone"><div class="screen"><div class="status"><b>9:41</b><span>▥ ▰</span></div><header><div class="session-title"><select id="pane-picker" aria-label="Terminal in selected group"></select><div class="sub" id="location">Studio / Tote</div></div><select id="group-picker" aria-label="Workspace group"></select><span class="pill" id="live" title="Attached">●</span></header><div class="banner" id="banner" hidden>Connection lost. Last screen retained. Reconnect to continue.</div><div class="terminal" id="output" tabindex="0" aria-label="Sample terminal output"><p class="muted">CODEX / EXISTING SESSION</p><p>› Make the file browser easier to use on smaller screens.</p><p class="good">✓ Read src/renderer/app.js
+✓ Read src/renderer/styles.css</p><p>The file list can use the whole pane while you browse. Opening a file would switch to its preview.</p><p class="question">Keep the desktop sidebar unchanged?
+
+› Yes, add a mobile layout only.</p><p class="muted">Desktop size preserved · scroll to inspect</p></div><div class="toolbar" id="terminal-tools" aria-label="Sample terminal shortcuts" hidden><button data-key="Esc">Esc</button><button data-key="Tab">Tab</button><button data-key="↑" aria-label="Up">↑</button><button data-key="↓" aria-label="Down">↓</button><button data-key="Enter">↵</button><button data-key="Ctrl+C">Ctrl C</button><button type="button" class="switch" id="connection">Simulate drop</button></div><form class="compose" id="compose"><button type="button" class="btn" id="tools-toggle" aria-label="Show terminal keys" aria-expanded="false" aria-controls="terminal-tools">⌘</button><textarea id="draft" aria-label="Terminal input draft" placeholder="Message…" rows="1"></textarea><button type="button" class="btn" id="dictate" aria-label="Start voice recording" aria-haspopup="dialog"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button><button class="btn primary" id="send" aria-label="Send draft" disabled>↑</button><div class="feedback" id="feedback" role="status"></div></form></div></div><p class="caption"><strong>B. Output takes the screen.</strong> Choose a group from the amber dropdown and a terminal from its name. Both fit in the compact header above the log. Tap the microphone, speak, then Stop. Your words appear in the input, ready to edit. Extra terminal keys stay under ⌘.</p></section>
+
+</div><footer class="foot"><span>Interactive design study · All devices, output and network states are simulated.</span><span>Existing sessions / local drafts / no automatic submission</span></footer></main>
+<dialog id="recording" aria-labelledby="recording-title" aria-describedby="recording-note">
+<div class="recording-dot" aria-hidden="true"></div><h2 id="recording-title">Recording…</h2>
+<p class="sub" id="recording-time" aria-label="Elapsed recording time">0:00</p>
+<p class="sub" id="recording-note">Demo recording · sample transcript</p>
+<div class="actions"><button class="btn" id="cancel-recording">Cancel</button><button class="btn primary" id="stop-recording" autofocus>■ Stop</button></div>
+</dialog>
+<script>
+const $=id=>document.getElementById(id);
+let machine='Studio',space='Tote',online=true;
+const drafts=new Map(),logs=new Map(),initial=$('output').cloneNode(true),sample='Yes, keep the desktop sidebar as it is. Add a mobile layout where I can browse files and return to the terminal with one tap.';
+const groups={Build:['Codex','Shell'],Review:['Claude'],Explore:['Research shell']};
+let group='Build',pane='Codex';
+const selections=new Map();
+const spaceKey=()=>machine+'/'+space;
+const key=()=>spaceKey()+'/'+group+'/'+pane;
+function renderPickers(){
+  for(const [id,values,selected] of [['group-picker',Object.keys(groups),group],['pane-picker',groups[group],pane]]){
+    $(id).replaceChildren(...values.map(value=>{const option=document.createElement('option');option.value=value;option.textContent=value;option.selected=value===selected;return option;}));
+  }
+}
+function restoreSelection(){const saved=selections.get(spaceKey());group=saved?.group||'Build';pane=saved?.pane||groups[group][0];renderPickers();}
+$('group-picker').onchange=()=>{remember();group=$('group-picker').value;pane=groups[group][0];renderPickers();restore();};
+$('pane-picker').onchange=()=>{remember();pane=$('pane-picker').value;restore();};
+function fitDraft(){const d=$('draft');d.style.height='44px';d.style.height=Math.min(110,Math.max(44,d.scrollHeight+2))+'px';}
+function sync(){fitDraft();$('location').textContent=machine+' / '+space;$('send').disabled=!online||!$('draft').value.trim();document.querySelectorAll('[data-key]').forEach(b=>b.disabled=!online);}
+function remember(){selections.set(spaceKey(),{group,pane});drafts.set(key(),$('draft').value);logs.set(key(),[...$('output').childNodes].map(n=>n.cloneNode(true)));}
+function restore(){selections.set(spaceKey(),{group,pane});$('draft').value=drafts.get(key())||'';$('output').replaceChildren(...(logs.get(key())||[...initial.childNodes]).map(n=>n.cloneNode(true)));if(!logs.has(key())&&(group!=='Build'||pane!=='Codex')){const line=document.createElement('p');line.className='muted';line.textContent=pane+' / '+group+' — sample session';const prompt=document.createElement('p');prompt.textContent=group==='Review'?'Ready to review the mobile layout.':'$ Ready for input';$('output').replaceChildren(line,prompt);}sync();}
+function renderSpaces(){$('space-label').textContent='SPACES ON '+machine.toUpperCase();$('spaces').replaceChildren();for(const name of machine==='Studio'?['Tote','Website','Global']:['Game','Global']){const b=document.createElement('button');b.className='space';b.textContent=name;const note=document.createElement('span');note.textContent='Open space ↗';b.append(note);b.onclick=()=>{remember();space=name;restoreSelection();restore();$('feedback').textContent='Sample space opened. No device connection.';$('terminal-concept').scrollIntoView({block:'start'});};$('spaces').append(b);}}
+document.querySelectorAll('[data-device]').forEach(b=>b.onclick=()=>{remember();machine=b.dataset.device;space=machine==='Studio'?'Tote':'Game';document.querySelectorAll('[data-device]').forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b));});renderSpaces();restoreSelection();restore();});
+$('draft').oninput=()=>{remember();sync();};
+$('compose').onsubmit=e=>{e.preventDefault();if(!online||!$('draft').value.trim())return;const p=document.createElement('p');p.className='good';p.textContent='[Demo input → '+machine+' / '+space+' / '+group+' / '+pane+']\n› '+$('draft').value;$('output').append(p);$('draft').value='';remember();sync();$('output').scrollTop=$('output').scrollHeight;$('feedback').textContent='Simulated send. Nothing was sent to a device.';};
+$('connection').onclick=()=>{online=!online;$('banner').hidden=online;$('connection').textContent=online?'Simulate drop':'Reconnect';$('live').textContent=online?'●':'○';$('live').title=online?'Attached':'Offline';$('feedback').textContent=online?'Sample reconnected. Your draft was preserved.':'Draft kept locally. Terminal input paused.';sync();};
+document.querySelectorAll('[data-key]').forEach(b=>b.onclick=()=>{$('feedback').textContent='Demo: '+b.dataset.key+' would go to '+machine+' / '+space+' / '+group+' / '+pane+'.';});
+let recordingTimer,recordingStarted;
+function clearRecording(){clearInterval(recordingTimer);}
+$('dictate').onclick=()=>{
+  $('feedback').textContent='';
+  recordingStarted=Date.now();$('recording-time').textContent='0:00';
+  $('recording').showModal();
+  recordingTimer=setInterval(()=>{const seconds=Math.floor((Date.now()-recordingStarted)/1000);$('recording-time').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');},250);
+};
+$('recording').addEventListener('close',clearRecording);
+$('recording').addEventListener('cancel',clearRecording);
+$('cancel-recording').onclick=()=>{clearRecording();$('recording').close();};
+$('stop-recording').onclick=()=>{
+  clearRecording();$('recording').close();
+  const draft=$('draft');draft.value=[draft.value,sample].filter(Boolean).join('\n');
+  remember();sync();
+  // Keep focus in the Stop gesture so mobile browsers can show the keyboard.
+  draft.focus();draft.setSelectionRange(draft.value.length,draft.value.length);
+  draft.scrollTop=draft.scrollHeight;
+};
+$('tools-toggle').onclick=()=>{const open=$('terminal-tools').hidden;$('terminal-tools').hidden=!open;$('tools-toggle').setAttribute('aria-expanded',String(open));$('tools-toggle').setAttribute('aria-label',open?'Hide terminal tools':'Show terminal keys');};
+let feedbackTimer;
+new MutationObserver(()=>{clearTimeout(feedbackTimer);if($('feedback').textContent)feedbackTimer=setTimeout(()=>{$('feedback').textContent='';},3200);}).observe($('feedback'),{childList:true});
+renderSpaces();renderPickers();sync();
+</script></body></html>

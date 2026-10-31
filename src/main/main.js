@@ -220,7 +220,7 @@ async function applyShareSetting() {
   try {
     const bind = await TS.ip4();
     const server = new DeviceServer({
-      host, device: await selfName(), tote: app.getVersion(), authorize: tailnetAuthorizer(),
+      host, device: await selfName(), tote: app.getVersion(), authorize: tailnetAuthorizer(), advertise: true,
     });
     await server.start({ bind, port });
     deviceServer = server;

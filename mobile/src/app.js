@@ -1,6 +1,8 @@
 import { version } from '../package.json';
 import { Terminal } from '@xterm/xterm';
 import { App } from '@capacitor/app';
+import { readableTerminal } from './reading.js';
+import { createNavigation } from './navigation.js';
 import { ComputerSearch } from './discovery.js';
 import { DeviceClient } from './client.js';
 import { Native, Speech, Discovery, initNative, socketFactory } from './native.js';
@@ -12,12 +14,14 @@ $('build-version').textContent = 'Android ' + version;
 const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { notify('Phone storage is full. Preferences could not be saved.'); } };
 let devices = load('tote.devices', []), selectedDevice = null, client = null;
+let spaces = [];
 let wsId = null, views = {}, sessions = [], groups = [], group = null, pane = null;
 let selection = load('tote.selection', {}), drafts = new Map();
 const sending = new Set(); // Terminal drafts stay in memory, never on the host.
 let spaceEpoch = 0;
 let connectionEpoch = 0, paneEpoch = 0, refreshEpoch = 0, reconnectTimer, retry = 0, paused = false, busy = false, attached = null;
-let lastOutputTop = 0;
+let lastOutputTop = 0, readingTimer;
+let wrapped = load('tote.wrapText', true);
 let term = null, terminalSession = null, ready = false, polling, refreshTimer, messageTimer;
 let discoveryInitialized = false, scanning = false, pendingProbes = 0, activeScan = null, discoveryTimer;
 const availability = new Map();
@@ -74,7 +78,7 @@ function controls() {
   const writable = ready && !busy && pane?.kind === 'term' && pane.session?.alive && attached === pane.ref;
   $('send').disabled = !writable || sending.has(inputKey()) || !$('draft').value.trim();
   document.querySelectorAll('[data-key]').forEach(b => b.disabled = !writable);
-  $('spaces').disabled = busy || !ready; $('groups').disabled = busy || !ready; $('panes').disabled = busy || !ready;
+  renderNavigation();
   $('new-terminal').disabled = busy || !ready; $('fit').disabled = !writable;
   $('mic').disabled = pane?.kind !== 'term'; $('draft').disabled = pane?.kind !== 'term';
   fitDraft();
@@ -115,7 +119,7 @@ function stopConnection() {
 function openDevice(device) {
   stopSearch(); rememberDraft(); stopConnection(); selectedDevice = device; wsId = null; group = null; pane = null; retry = 0;
   terminalSession = null; $('draft').value = ''; $('terminal-scroll').hidden = true; $('file-view').hidden = true; $('composer').hidden = true; $('keys').hidden = true;
-  options('spaces', [], null); options('groups', [], null); options('panes', [], null); showEmpty('Connecting to ' + device.name + '…');
+  spaces = []; groups = []; renderNavigation(); showEmpty('Connecting to ' + device.name + '…');
   $('home').hidden = true; $('workspace').hidden = false; $('device-label').textContent = device.name;
   connect();
 }
@@ -153,7 +157,7 @@ async function refresh(forceAttach = false) {
   views = nextViews || {}; sessions = nextSessions || [];
   const preferred = selection[JSON.stringify([selectedDevice.id, 'space'])];
   const nextWs = registry.list.find(w => w.id === wsId)?.id || registry.list.find(w => w.id === preferred)?.id || registry.active;
-  options('spaces', registry.list, nextWs);
+  spaces = registry.list;
   if (nextWs !== wsId || forceAttach) { await changeSpace(nextWs, forceAttach); return; }
   await renderGroups(forceAttach);
 }
@@ -179,17 +183,27 @@ async function renderGroups(force = false) {
   groups = workspaceGroups(views[wsId], sessions, wsId);
   const saved = selection[selectionKey()] || {};
   const chosen = chooseSelection(groups, group?.id || saved.group || views[wsId]?.activeGroup, pane?.id || saved.pane, force);
-  group = chosen.group; options('groups', groups, group?.id); options('panes', group.panes, chosen.pane?.id);
+  group = chosen.group;
   if (force || chosen.pane?.id !== pane?.id || chosen.pane?.ref !== pane?.ref || (chosen.pane?.kind === 'term' && !chosen.pane.unavailable && attached !== chosen.pane.ref)) await showPane(chosen.pane);
   else { pane = chosen.pane; if (pane?.session && term) setTerminalSize(pane.session.cols || 80, pane.session.rows || 24); controls(); }
 }
-$('spaces').onchange = () => changeSpace($('spaces').value).catch(e => notify(e.message));
-$('groups').onchange = async () => {
-  const g = groups.find(g => g.id === $('groups').value); if (!g) return;
-  group = g; const chosen = g.panes.find(p => !p.unavailable) || g.panes[0]; options('panes', g.panes, chosen?.id);
-  try { await showPane(chosen); } catch (e) { notify(e.message); }
-};
-$('panes').onchange = () => showPane(group.panes.find(p => p.id === $('panes').value)).catch(e => notify(e.message));
+const navigation = createNavigation({
+  onSpace: id => changeSpace(id).catch(e => notify(e.message)),
+  onGroup: id => changeGroup(id).catch(e => notify(e.message)),
+  onPane: id => showPane(group?.panes.find(p => p.id === id)).catch(e => notify(e.message)),
+});
+function renderNavigation() {
+  $('space-label').textContent = spaces.find(w => w.id === wsId)?.name || 'Connecting…';
+  $('pane-label').textContent = pane?.title || 'No terminal selected';
+  $('group-label').textContent = group?.name || '';
+  Object.assign($('workspace').dataset,{space:wsId || '',group:group?.id || '',pane:pane?.id || '',ready:String(ready && !busy)});
+  navigation.update({ spaces, groups, wsId, groupId:group?.id, paneId:pane?.id, device:selectedDevice?.name, disabled:busy || !ready });
+}
+async function changeGroup(id) {
+  const g = groups.find(g => g.id === id); if (!g || busy || !ready) return;
+  group = g; const chosen = g.panes.find(p => !p.unavailable) || g.panes[0];
+  await showPane(chosen);
+}
 async function showPane(next) {
   rememberDraft(); const token = ++paneEpoch, c = client;
   const old = attached; attached = null; pane = next;
@@ -216,6 +230,7 @@ async function showPane(next) {
   if (token !== paneEpoch || c !== client) return;
   if (terminalSession !== pane.ref) term.reset();
   terminalSession = pane.ref;
+  clearTimeout(readingTimer); readingTimer = null; $('terminal-text').textContent = '';
   $('terminal-scroll').scrollTop = 0; $('terminal-scroll').scrollLeft = 0; lastOutputTop = 0;
   setTerminalSize(pane.session.cols || 80, pane.session.rows || 24);
   attached = pane.ref; // replay may arrive before attach's return frame
@@ -236,11 +251,13 @@ function showEmpty(text) { $('empty').textContent = text; $('empty').hidden = fa
 // A desktop terminal can be much taller than the phone. Follow the active
 // output row in the outer scroller as well as xterm's own scrollback viewport.
 function followingOutput() {
+  if (wrapped) { const el = $('terminal-scroll'); return el.scrollHeight - el.clientHeight - el.scrollTop < 36; }
   return term && Math.abs($('terminal-scroll').scrollTop - lastOutputTop) < 24 &&
     term.buffer.active.viewportY >= term.buffer.active.baseY;
 }
 function revealOutput() {
   if (!term || $('terminal-scroll').hidden) return;
+  if (wrapped) { $('terminal-scroll').scrollTop = $('terminal-scroll').scrollHeight; return; }
   term.scrollToBottom();
   const screen = $('terminal').querySelector('.xterm-screen');
   const rowHeight = screen?.getBoundingClientRect().height / term.rows || cellSize().height;
@@ -248,12 +265,36 @@ function revealOutput() {
   scroller.scrollTop = Math.max(0, (term.buffer.active.cursorY + 2) * rowHeight + 16 - scroller.clientHeight);
   lastOutputTop = scroller.scrollTop;
 }
+function renderReading(forceFollow = false) {
+  if (!term || !wrapped) return;
+  const follow = forceFollow || followingOutput();
+  const text = readableTerminal(term.buffer.active);
+  if ($('terminal-text').textContent !== text) $('terminal-text').textContent = text;
+  if (follow) revealOutput();
+}
+function scheduleReading() {
+  if (!wrapped || readingTimer) return;
+  const token = paneEpoch;
+  readingTimer = setTimeout(() => { readingTimer = null; if (token === paneEpoch) renderReading(); }, 60);
+}
+function applyReadingMode() {
+  $('terminal-scroll').classList.toggle('reading', wrapped);
+  $('terminal-text').hidden = !wrapped;
+  $('reading-mode').setAttribute('aria-pressed', String(wrapped));
+  renderReading(true); if (!wrapped) { term?.refresh(0, term.rows - 1); revealOutput(); }
+}
+$('reading-mode').onclick = () => { wrapped = !wrapped; save('tote.wrapText', wrapped); applyReadingMode(); };
+applyReadingMode();
 new ResizeObserver(() => { if (followingOutput()) revealOutput(); }).observe($('stage'));
 function hostEvent(event, p) {
   if (event === 'pty:data' && p.id === attached && term) {
     const token = paneEpoch, follow = p.replay || followingOutput();
     if (p.replay) term.reset();
-    term.write(p.data, () => { if (token === paneEpoch && p.id === attached && follow) revealOutput(); });
+    term.write(p.data, () => {
+      if (token !== paneEpoch || p.id !== attached) return;
+      if (wrapped) { if (p.replay) renderReading(true); else scheduleReading(); }
+      else if (follow) revealOutput();
+    });
   } else if (event === 'pty:exit' && p.id === attached) {
     if (pane?.session) pane.session.alive = false;
     notify('Terminal exited' + (p.exitCode == null ? '.' : ' with code ' + p.exitCode + '.')); controls();
@@ -343,7 +384,7 @@ $('mic').onclick = async () => {
 $('stop-voice').onclick = () => { $('stop-voice').disabled = true; $('recording-title').textContent = 'Transcribing…'; Speech.stop().catch(e => { cancelVoice(); notify(e.message); }); };
 $('cancel-voice').onclick = cancelVoice;
 $('recording').addEventListener('cancel', e => { e.preventDefault(); cancelVoice(); });
-function home() { cancelVoice(); rememberDraft(); selectedDevice = null; stopConnection(); $('workspace').hidden = true; $('home').hidden = false; findComputers(); }
+function home() { navigation.close(); cancelVoice(); rememberDraft(); selectedDevice = null; stopConnection(); $('workspace').hidden = true; $('home').hidden = false; findComputers(); }
 $('back').onclick = home;
 async function init() {
   renderDevices();
@@ -356,6 +397,6 @@ async function init() {
   discoveryInitialized = true; findComputers();
   await Speech.addListener('state', event => { if (!$('recording').open) return; $('recording-title').textContent = event.listening ? 'Recording…' : 'Transcribing…'; $('stop-voice').disabled = !event.listening; if (event.text) $('partial').textContent = event.text; });
   await App.addListener('appStateChange', ({ isActive }) => { paused = !isActive; if (paused) { stopSearch(); cancelVoice(); rememberDraft(); stopConnection(); } else if (selectedDevice) connect(); else findComputers(); });
-  await App.addListener('backButton', () => { if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
+  await App.addListener('backButton', () => { if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
 }
 init().catch(e => notify('Android initialization failed: ' + e.message));

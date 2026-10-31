@@ -6,7 +6,13 @@ app.whenReady().then(async()=>{
  const errors=[];win.webContents.on('console-message',(_e,_l,m)=>{if(/Uncaught|TypeError|ReferenceError/.test(m))errors.push(m);});
  const run=code=>win.webContents.executeJavaScript(code,true);
  async function until(code){for(let i=0;i<100;i++){if(await run(code))return;await new Promise(r=>setTimeout(r,30));}throw Error('Timed out: '+code);}
- const select=async(id,value)=>run(`document.querySelector('#${id}').value='${value}';document.querySelector('#${id}').dispatchEvent(new Event('change'))`);
+ const select=async(id,value)=>{
+  const kind={spaces:'space',groups:'group',panes:'pane'}[id];
+  await run("document.querySelector('#nav-toggle').click()");
+  await run(`document.querySelector('button[data-${kind}="${value}"]').click()`);
+  await until("document.querySelector('#workspace').dataset.ready==='true'");
+  await run("document.querySelector('#nav-close').click()");
+ };
  try{
   await win.loadFile(path.join(dir,'index.html'));
   await run("window.testErrors=[];window.addEventListener('error',e=>testErrors.push(e.error?.stack||e.message))");
@@ -14,28 +20,41 @@ app.whenReady().then(async()=>{
   assert.equal(await run("document.querySelector('#manual-setup').open"),false);
   assert(await run("testCalls.some(c=>c.t==='hello'&&c.role==='probe')"));
   await run("document.querySelectorAll('#devices .connect')[1].click()");
-  await until("document.querySelector('#groups').options.length===2 && !document.querySelector('#spaces').disabled");
-  assert.equal(await run("document.querySelector('#groups').value"),'build');
+  await until("document.querySelectorAll('.nav-group').length===2 && document.querySelector('#workspace').dataset.ready==='true'");
+  assert.equal(await run("document.querySelector('#workspace').dataset.group"),'build');
   assert.match(await run('testState.lastUrl'),/^100\.64\.1\.3$/);
-  await run("window.originalSpaceOption=document.querySelector('#spaces').options[0];document.querySelector('#refresh').click()");
+  await run("document.querySelector('#nav-toggle').click();window.originalSpaceOption=document.querySelector('.nav-space');document.querySelector('#refresh').click()");
   await new Promise(r=>setTimeout(r,100));
-  assert(await run("document.querySelector('#spaces').options[0]===originalSpaceOption"),'polling preserves native picker options');
+  assert(await run("document.querySelector('.nav-space')===originalSpaceOption"),'polling preserves drawer focus targets');
+  assert(await run("!document.querySelector('#navigation').hidden && document.querySelector('#workspace').inert"));
+  assert.equal(await run("document.querySelectorAll('#workspace select').length"),0);
+  await run("document.querySelector('#nav-close').click()");
   await until("terminalText().includes('Restored Codex') && document.querySelector('#terminal-scroll').scrollTop>300");
+  assert(await run("document.querySelector('#terminal-scroll').scrollWidth<=document.querySelector('#terminal-scroll').clientWidth"),'wrapped output fits the phone');
+  await run("emitOutput('s1','\\r\\n'+ 'A long line with readable words. '.repeat(30))");
+  await until("document.querySelector('#terminal-text').textContent.includes('A long line with readable words.')");
+  assert(await run("document.querySelector('#terminal-scroll').scrollWidth<=document.querySelector('#terminal-scroll').clientWidth"),'long paragraphs wrap instead of scrolling sideways');
+  await run("document.querySelector('#reading-mode').click()");
+  assert.equal(await run("document.querySelector('#terminal-text').hidden"),true);
+  await run("document.querySelector('#reading-mode').click()");
+  assert.equal(await run("document.querySelector('#terminal-text').hidden"),false);
   await run("emitOutput('s1','\\x1b[6n\\x1b[c\\r\\nLIVE_FIRST')");await until("terminalText().includes('LIVE_FIRST')");
   await run("document.querySelector('#terminal-scroll').scrollTop=0;emitOutput('s1','\\r\\nREADING_HISTORY')");await until("terminalText().includes('READING_HISTORY')");
   assert.equal(await run("document.querySelector('#terminal-scroll').scrollTop"),0,'incoming output preserves manual scroll');
-  await select('spaces','second');await until("!document.querySelector('#spaces').disabled && terminalText().includes('Restored Second workspace')");
+  await select('spaces','second');await until("document.querySelector('#workspace').dataset.ready==='true' && terminalText().includes('Restored Second workspace')");
   assert.equal(await run("terminalText().includes('LIVE_FIRST')"),false);
+  await until("document.querySelector('#terminal-text').textContent.includes('Restored Second workspace')");
+  assert.equal(await run("document.querySelector('#terminal-text').textContent.includes('LIVE_FIRST')"),false);
   await run("emitOutput('s1','OLD_SESSION');emitOutput('s3','\\r\\nLIVE_SECOND')");await until("terminalText().includes('LIVE_SECOND')");
   assert.equal(await run("terminalText().includes('OLD_SESSION')"),false);
-  await select('spaces','empty');await until("!document.querySelector('#spaces').disabled && !document.querySelector('#empty').hidden");
+  await select('spaces','empty');await until("document.querySelector('#workspace').dataset.ready==='true' && !document.querySelector('#empty').hidden");
   assert.equal(await run("document.querySelector('#terminal-scroll').hidden"),true);
-  await select('spaces','work');await until("!document.querySelector('#spaces').disabled && terminalText().includes('Restored Codex')");
-  await run("document.querySelector('#spaces').value='second';document.querySelector('#spaces').dispatchEvent(new Event('change'));document.querySelector('#spaces').value='work';document.querySelector('#spaces').dispatchEvent(new Event('change'))");
-  await until("!document.querySelector('#spaces').disabled && terminalText().includes('Restored Codex')");
+  await select('spaces','work');await until("document.querySelector('#workspace').dataset.ready==='true' && terminalText().includes('Restored Codex')");
+  await run("switchSpace('second');switchSpace('work')");
+  await until("document.querySelector('#workspace').dataset.ready==='true' && terminalText().includes('Restored Codex')");
   assert.equal(await run('testState.ws'),'work','latest rapid workspace choice reaches host');
   await run("document.querySelector('#draft').value='draft A';document.querySelector('#draft').dispatchEvent(new Event('input'))");
-  await select('groups','review');await until("document.querySelector('#panes').value==='l2'");
+  await select('groups','review');await until("document.querySelector('#workspace').dataset.pane==='l2'");
   assert.equal(await run("document.querySelector('#draft').value"),'');
   await select('groups','build');await until("document.querySelector('#draft').value==='draft A'");
   await run("document.querySelector('#mic').click()");await until("document.querySelector('#recording-title').textContent==='Recording…'");
@@ -63,8 +82,8 @@ app.whenReady().then(async()=>{
   await new Promise(r=>setTimeout(r,350));
   fs.writeFileSync('/tmp/tote-android-client.png',(await win.webContents.capturePage()).toPNG());win.hide();
   win.setSize(320,640);assert(await run("document.querySelector('#composer').scrollWidth<=document.querySelector('#composer').clientWidth"));
-  if(errors.length)console.error(await run('testErrors'));await run("document.querySelector('#new-terminal').click()");await until("document.querySelector('#new-dialog').open");await run("document.querySelector('#start-new').click()");await until("document.querySelector('#groups').value==='_sessions' && document.querySelector('#panes').options.length===1");
+  if(errors.length)console.error(await run('testErrors'));await run("document.querySelector('#new-terminal').click()");await until("document.querySelector('#new-dialog').open");await run("document.querySelector('#start-new').click()");await until("document.querySelector('#workspace').dataset.group==='_sessions' && document.querySelectorAll('.nav-pane').length===1");
   assert.equal(await run("testCalls.filter(c=>c.m==='pty:spawn').length"),1);
-  assert.deepEqual(errors,[]);console.log('Mobile UI passed: live output, fresh workspace sessions, empty spaces, stale event filtering, scroll following, groups, per-session drafts, voice stop/cancel, reconnect, files, compact layout.');app.exit(0);
+  assert.deepEqual(errors,[]);console.log('Mobile UI passed: drawer navigation, phone-only wrapping, terminal view toggle, live output, fresh workspace sessions, empty spaces, stale event filtering, scroll following, groups, per-session drafts, voice stop/cancel, reconnect, files, compact layout.');app.exit(0);
  }catch(e){console.error(e);app.exit(1);}
 });

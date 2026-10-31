@@ -20,7 +20,7 @@ socket.on('message',raw=>{const msg=JSON.parse(raw);const call=pending.get(msg.i
 function call(method,params={}){return new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error('Timed out: '+method));},10000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});}
 async function evaluate(expression){const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
 async function tap(selector){
-  const point=await evaluate(`(()=>{const selector=${JSON.stringify(selector)};const e=selector.startsWith('text=')?[...document.querySelectorAll('button')].find(e=>e.textContent.startsWith(selector.slice(5))):document.querySelector(selector);e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  const point=await evaluate(`(async()=>{const selector=${JSON.stringify(selector)};const e=selector.startsWith('text=')?[...document.querySelectorAll('button')].find(e=>e.textContent.startsWith(selector.slice(5))):document.querySelector(selector);e.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,180));const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
   const dpr=await evaluate('devicePixelRatio');
   execFileSync(adb,['-s',serial,'shell','input','tap',String(Math.round(point.x*dpr)),String(Math.round(point.y*dpr)+webviewTop)]);
 }

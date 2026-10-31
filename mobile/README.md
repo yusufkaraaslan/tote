@@ -4,11 +4,11 @@ A client-only Android app for Tote's existing device host. The phone never share
 
 ## Install and connect
 
-1. Build the debug APK below, then transfer `android/app/build/outputs/apk/debug/app-debug.apk` to your phone and open it. Android may ask you to allow installation from the app opening the APK.
+1. Download the [v0.4.0 APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk), or build the debug APK below and transfer `android/app/build/outputs/apk/debug/app-debug.apk` to your phone and open it. Android may ask you to allow installation from the app opening the APK.
 2. Install and connect Tailscale on the phone using the **same owner account** as the computer.
 3. In desktop Tote, enable **Share device** under device settings. Keep Tote running and the computer awake.
 4. Open Tote on the phone and choose your computer. Desktop Tote sends discovery announcements directly to its owner's online Android devices through Tailscale. **No same-network requirement, address entry, QR pairing, API key, or second login.** A wired desktop and a phone on mobile data work through the same path. Both apps need this updated discovery implementation. A first discovery can take a few seconds; verified computers are remembered. Address entry remains an optional troubleshooting fallback under **Connect by address instead**.
-5. Pick a workspace, then a group and pane. The group and pane dropdowns stay above the terminal. Use the microphone beside the input to record; Stop transcribes into an editable draft and opens the keyboard. Send is always a separate action.
+5. Open the ☰ side panel to pick a workspace, then a group and terminal. Selecting a terminal closes the panel; tapping the header opens it again. Text wraps to the phone width by default. The toolbar’s **Wrap text** toggle restores the original terminal grid when you need its exact layout; neither mode resizes the desktop terminal. Use the microphone beside the input to record; Stop transcribes into an editable draft and opens the keyboard. Send is always a separate action.
 
 The host still enforces its existing same-owner `tailscale whois` authorization. No public server or relay is introduced. Plain WebSocket traffic is carried inside Tailscale's encrypted network; native code only accepts literal addresses in `100.64.0.0/10`, never arbitrary URLs or redirects. The WebView keeps its normal mixed-content policy and a restrictive CSP. Do not publish the desktop port on the internet.
 
@@ -46,7 +46,7 @@ This is a debug build for testing, not a Play Store release. Release signing and
 - Automatic Tailscale-computer discovery, remembered computers, per-viewer workspaces, persisted desktop groups, terminal/pane selection. Connecting to an updated host also discovers its same-owner Tailscale peers; each candidate must pass a Tote probe before it is saved.
 - Real xterm output and PTY input, screen replay, automatic reconnect, and foreground resume. Leaving the app detaches the viewer; host sessions keep running while Tote remains running.
 - Per-session in-memory drafts. Reconnect never resends an unacknowledged input. Android process termination clears unsent drafts.
-- Desktop terminal dimensions preserved by default; horizontal/vertical scrolling on the phone. **Fit to phone** explicitly resizes the shared PTY and affects other viewers.
+- Desktop terminal dimensions preserved by default; the phone wraps parsed terminal text to its screen width. Disable **Wrap text** to use the original terminal grid with scrolling. **Resize terminal** explicitly resizes the shared PTY and affects other viewers.
 - Esc, Tab, arrows, Enter and Ctrl+C; multiline composer; separate Send.
 - New terminals use host CLI profiles and appear under **Other terminals** until arranged into a group on desktop. Mobile never writes `views.json`.
 - Read-only file tree, text/source and image previews. Workspace paths are resolved by the host's existing safe file API. HTML is shown as source; host content never executes in the Android WebView.
@@ -99,3 +99,5 @@ The simulator replaces Android plugin calls with an Electron transport; it does 
 The 0.3.4 fix was reproduced and verified in a Pixel 6 / Android 35 emulator using the installed APK, native picker taps, native OkHttp sockets and the actual main PC. Check rich terminal sessions as well as plain shells: terminal device queries exercise the response filter and previously stalled xterm’s parser. The UI regression fixture now emits those queries during replay and live output.
 
 For APK debugging, forward port 18765 to `localabstract:webview_devtools_remote_<app-pid>` with adb, then run `node mobile/scripts/android-debug.mjs inspect`. The helper also supports `tap <CSS selector>`, `pick <native option label>`, `type <text>` and `wait <JavaScript condition>`. It defaults to `emulator-5554` and the Pixel 6 status-bar offset; override `TOTE_ADB_SERIAL`, `TOTE_WEBVIEW_TOP`, and `ANDROID_HOME` for other configurations. These commands use real Android taps; they do not dispatch synthetic select change events.
+
+Phone navigation lives in `src/navigation.js`. `src/reading.js` creates the wrapped reading view from xterm’s parsed buffer, joining soft wraps and rendering literal text (no HTML). It reads the latest 2,000 physical lines and updates at most once per 60 ms during live output. The original terminal renderer remains available through the Wrap text toggle for applications whose colors or exact grid layout matter. Neither changing the reading mode nor resizing the phone changes host PTY dimensions.

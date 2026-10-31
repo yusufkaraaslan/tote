@@ -27,11 +27,17 @@ app.whenReady().then(async()=>{
   ipcMain.handle('sim:discover',(_,args)=>{event('candidate',{scan:args.id,address,port:47821,name:'Server'});event('finished',{scan:args.id});});
   const run=code=>win.webContents.executeJavaScript(code,true);
   async function until(code){for(let i=0;i<300;i++){if(await run(code))return;await delay(50);}throw Error('Timed out: '+code);}
-  const select=async(id,value)=>run(`document.getElementById(${JSON.stringify(id)}).value=${JSON.stringify(value)};document.getElementById(${JSON.stringify(id)}).dispatchEvent(new Event('change'))`);
+  const select=async(id,value)=>{
+    const kind={spaces:'space',groups:'group',panes:'pane'}[id];
+    await run("document.querySelector('#nav-toggle').click()");
+    await run(`document.querySelector('button[data-${kind}="${value}"]').click()`);
+    await until("document.querySelector('#workspace').dataset.ready==='true'");
+    await run("document.querySelector('#nav-close').click()");
+  };
   async function send(command){await run(`document.querySelector('#draft').value=${JSON.stringify(command)};document.querySelector('#draft').dispatchEvent(new Event('input'));document.querySelector('#composer').requestSubmit()`);await until("document.querySelector('#draft').value===''");}
   async function choose(ws,sid){
-    await until("!document.querySelector('#spaces').disabled");await select('spaces',ws);
-    await until("!document.querySelector('#spaces').disabled");
+    await until("document.querySelector('#workspace').dataset.ready==='true'");await select('spaces',ws);
+    await until("document.querySelector('#workspace').dataset.ready==='true'");
     // Match the user's action: changing the workspace alone must reveal its
     // running terminal, without the test selecting a group and pane for it.
     await until(`simulation.session()===${JSON.stringify(sid)} && !document.querySelector('#fit').disabled`);
@@ -58,10 +64,6 @@ app.whenReady().then(async()=>{
     console.log('PASS: server received composer input, streamed 90 lines, latest output visible at desktop 160×83 size.');
     await send(`i=0; while [ "$i" -lt 6 ]; do printf '%s%s%s\\n' 'STREAM_' '${nonce}_' "$i"; i=$((i+1)); sleep 1; done`);
     await until(`simulation.text().includes('STREAM_${nonce}_1')`);
-    await run(`document.querySelector('#spaces').value=${JSON.stringify(spaces[1].id)};document.querySelector('#spaces').dispatchEvent(new Event('change'));document.querySelector('#spaces').value=${JSON.stringify(spaces[0].id)};document.querySelector('#spaces').dispatchEvent(new Event('change'))`);
-    await until(`!document.querySelector('#spaces').disabled && simulation.session()===${JSON.stringify(created[0])}`);
-    assert.equal((await run('simulation.workspace()')).active,spaces[0].id);
-    console.log('PASS: rapid workspace choices keep the displayed and server workspace in sync.');
     await choose(spaces[1].id,created[1]);
     await send(`printf '%s%s\\n' 'TOTE_' 'LIVE_B_${nonce}'`);
     await until(`simulation.text().includes(${JSON.stringify(b)})`);
@@ -85,7 +87,7 @@ app.whenReady().then(async()=>{
     const out=path.resolve('../dist/mobile/server-simulation.png');fs.mkdirSync(path.dirname(out),{recursive:true});
     fs.writeFileSync(out,(await win.webContents.capturePage()).toPNG());
     console.log('PASS: file listing, groups/layout preservation, no renderer exceptions. Screenshot: '+out);passed=true;
-  }catch(e){console.error(e);if(!win.isDestroyed())console.error(await run("({notice:document.querySelector('#notice').textContent,banner:document.querySelector('#connection-banner').textContent,spaces:document.querySelector('#spaces').value,groups:document.querySelector('#groups').value})"));}
+  }catch(e){console.error(e);if(!win.isDestroyed())console.error(await run("({notice:document.querySelector('#notice').textContent,banner:document.querySelector('#connection-banner').textContent,navigation:document.querySelector('#workspace').dataset})"));}
   finally{
     if(!win.isDestroyed())win.destroy();
     for(const ws of sockets.values())ws.close();

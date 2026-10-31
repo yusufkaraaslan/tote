@@ -4,7 +4,8 @@
 
 *Tote: a bag you carry everything in.* Web LLM tabs, native apps and CLI agents
 (Claude Code, Codex, Gemini CLI, Kimi, OpenCode) live in one window; switch a
-workspace and every tab, terminal, download and layout follows.
+workspace and every tab, terminal, download and layout follows. The Android companion
+connects to your computers over Tailscale so you can use their live terminals from your phone.
 
 ![Tote — workspace strip on top, files pane, a web LLM tab and Claude Code docked right](docs/screenshots/hero.png)
 
@@ -15,9 +16,37 @@ native app, or CLI agent) works against *that folder*, and every file that lands
 to the right place. Research in a web tab, download, resume in Claude Code — no manual
 file shuffling.
 
+## Download v0.4.0
+
+[Release notes and all downloads](https://github.com/yusufkaraaslan/tote/releases/tag/v0.4.0) · [Changelog](CHANGELOG.md)
+
+| Platform | Download |
+|---|---|
+| Linux x64 — portable | [AppImage](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/Tote-0.4.0.AppImage) |
+| Debian / Ubuntu x64 | [.deb package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote_0.4.0_amd64.deb) |
+| Arch Linux x64 | [.pacman package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-0.4.0.pacman) |
+| Android | [Tote Android APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk) |
+
+For AppImage, mark the downloaded file executable and open it. The Android APK is a debug-signed preview, not a Play Store release; it updates the earlier Tote test APKs without changing the app identity. Checksums are included with the release. macOS and Windows can be built from source using the commands below; this release supplies Linux and Android binaries.
+
+### On your phone
+
+Enable **Share device** in desktop Tote and connect Tailscale on both devices using the same owner account. Open Tote on Android and choose your computer. A wired desktop works too; no matching Wi-Fi network is required.
+
+- Open the **☰ side panel** to switch workspaces, groups and terminals.
+- Terminal text **wraps to the phone width** without resizing the desktop terminal. Toggle **Wrap text** in the toolbar for the original terminal grid.
+- Speak with the microphone beside the composer, stop recording, edit the transcription, then send.
+- Terminal sessions stay on the computer and reconnect when the phone returns.
+
+| Workspace and group navigation | Phone-width terminal output |
+|---|---|
+| <img src="docs/screenshots/android-navigation.png" width="280" alt="Android side panel with workspaces, nested groups and terminals"> | <img src="docs/screenshots/android-terminal.png" width="280" alt="Live terminal text wrapping within the Android screen"> |
+
+[Android setup, development and current limitations](mobile/README.md)
+
 ## The workflow it exists for
 
-1. Click your project space on the top strip (e.g. `nexus-core`).
+1. Click your project space in the sidebar (e.g. `nexus-core`).
 2. Open the **Kimi** or **Claude** web tab, do your research, hit download —
    the file lands in `nexus-core/inbox/kimi/`, not your Downloads folder.
 3. Open a terminal pane (Ctrl+`), fire **Claude Code** — it starts `cd`'d into
@@ -102,9 +131,9 @@ npm run dist:win    # NSIS setup .exe (desktop + start-menu shortcuts)
 The NSIS installer is non-one-click, so users can choose the install directory.
 
 First run creates the **Global** space at `~/tote/workspace`. Add project spaces
-with **+ space** on the top strip (name + any folder on disk — point it at an
-existing project if you like). **Drag a space tab** along the strip to reorder it —
-the order is remembered. Right-click a space tab to open its folder, copy the
+from the sidebar’s workspace menu (name + any folder on disk — point it at an
+existing project if you like). **Drag a workspace row** in the sidebar to reorder it —
+the order is remembered. Right-click a workspace row to open its folder, copy the
 path, rename it, point it at a different folder, or remove it — the same controls live under
 **settings → Workspaces**. Tote never deletes or moves files: removing a space only
 unregisters it, and changing its folder just re-points it.
@@ -135,7 +164,7 @@ unregisters it, and changing its folder just re-points it.
   **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows, **Cmd+C / Cmd+V** on macOS.
   Plain Ctrl+C still interrupts the terminal command. Clipboard text stays on the
   machine running your window, including when viewing another device.
-- **Remote spaces** — `+r` on the strip opens a project that lives on **another machine**
+- **Remote spaces** — **New remote space** in the sidebar opens a project that lives on **another machine**
   over ssh, which is to say Tailscale works with no extra setup: give it a host
   (`devbox`, or `user@devbox`) and a path, and you get the same space you always had —
   files pane, file panes, groups, layout — except the tree, the edits and the agents all
@@ -144,7 +173,7 @@ unregisters it, and changing its folder just re-points it.
   everything and kept alive, so you authenticate rarely; when Tailscale's periodic check
   *does* expire, the files pane says so and hands you a connect pane and the login link —
   no modal, and nothing else you have open is interrupted.
-- **Temp spaces** — `+t` on the strip makes a throwaway space with no folder picker:
+- **Temp spaces** — the sidebar’s temp-space action makes a throwaway space with no folder picker:
   name it (or take the generated one), work, then **discard** it from the chip's
   context menu and its files go with it. Changed your mind? **keep…** moves the
   folder wherever you want and the space becomes permanent, tabs and layout intact.
@@ -156,7 +185,7 @@ unregisters it, and changing its folder just re-points it.
 - **Your other machines** — run Tote on each of your machines, tick **Settings → Share this machine**
   on the ones you want to reach, and the chip at the top left lists them (over Tailscale). Pick one
   and this window *becomes* that machine's Tote: its spaces, its files, its agents still running —
-  type into them from here. The strip turns amber while you're on another machine. Switching back
+  type into them from here. The device indicator turns amber while you're on another machine. Switching back
   and forth is instant and loses nothing: each machine's panes stay alive in the window, web tabs
   keep their pages and unsent drafts. If a machine sleeps, its panes stay up under a banner and
   reconnect by themselves when it wakes. A download from a web tab goes to the machine you were
@@ -167,7 +196,7 @@ unregisters it, and changing its folder just re-points it.
   the agent shows in both, with its scrollback, live. Terminals belong to the app rather than to
   a window, so on macOS closing a window doesn't stop its agents — the next window picks them up.
 - **Groups** — each space holds several layouts, like desktops on your OS: switch with the
-  chips under the workspace strip or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
+  groups under the active workspace in the sidebar or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
   groups keep running in the background. Move a pane to another group by dragging its title bar onto a
   chip (or `+` for a new one), right-clicking the title bar, or **Cmd/Ctrl+Alt+Shift+1…9**.
 - **Workspace pane** — tree, right-click new/rename/trash/
@@ -223,10 +252,6 @@ Design rules:
 - House agent via DeepSeek Harness plugin with workspace tools
 - Context bus: send selection/conversation between panes
 
-## License
-
-MIT
-
 ## Android client
 
 The client-only Android app lives in [`mobile/`](mobile/README.md). It connects to your desktop Tote through Tailscale and supports workspaces, groups, live terminals, file previews, and voice-to-draft input.
@@ -237,3 +262,7 @@ npm run mobile:apk
 ```
 
 Requires JDK 21 and Android SDK 36. The debug APK is written to `mobile/android/app/build/outputs/apk/debug/app-debug.apk`. See the mobile README for connection setup, tests, and current limitations.
+
+## License
+
+MIT

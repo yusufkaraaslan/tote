@@ -1,7 +1,7 @@
 {
   "name": "tote",
   "productName": "Tote",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "One window for all your LLMs - web apps, native apps and CLI agents organized around workspaces.",
   "main": "src/main/main.js",
   "license": "MIT",

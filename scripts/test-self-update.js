@@ -8,7 +8,7 @@ const { createGuard } = require('../src/main/updateGuard');
 const payload = Buffer.from('fixture executable — never launched');
 const sha256 = crypto.createHash('sha256').update(payload).digest('hex');
 const manifest = () => ({ updateSchema:1, signed:true, version:'0.6.0', protocol:1, releasePlatforms:['linux','android'], androidVersionCode:12, androidMinSdkVersion:33,
-  files:[{name:'Tote-0.6.0-linux-x64.AppImage',platform:'linux',size:payload.length,sha256}] });
+  files:[{name:'Tote-0.6.0-linux-x86_64.AppImage',platform:'linux',size:payload.length,sha256}] });
 const policy = { current:'0.5.0',latest:'0.6.0',platform:'linux',arch:'x64',protocol:1 };
 function fixture() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'tote-updater-'))), target = path.join(root,'Tote.AppImage');
@@ -18,7 +18,7 @@ function fixture() {
   return { root,target,updater,close:()=>fs.rmSync(root,{recursive:true,force:true}) };
 }
 test('manifest pins exact version, protocol, production status, architecture, size and digest', () => {
-  assert.equal(U.artifact(manifest(),policy).url,U.RELEASES+'/download/v0.6.0/Tote-0.6.0-linux-x64.AppImage');
+  assert.equal(U.artifact(manifest(),policy).url,U.RELEASES+'/download/v0.6.0/Tote-0.6.0-linux-x86_64.AppImage');
   for (const change of [{signed:false},{signed:'true'},{updateSchema:0},{protocol:2},{version:'0.7.0'},{releasePlatforms:[]},{files:[]},{files:[...manifest().files,...manifest().files]}])
     assert.throws(()=>U.artifact({...manifest(),...change},policy));
   for (const change of [{size:0},{size:2**31},{size:'42'},{sha256:'g'.repeat(64)},{name:'../../evil.AppImage'}])
@@ -123,4 +123,12 @@ test('relaunch failure retains installed executable and tells the user where rec
     assert.deepEqual(fs.readFileSync(f.target),payload);
     assert.equal(fs.readFileSync(f.updater.state.backup,'utf8'),'old executable');
   } finally { f.close(); }
+});
+test('updater selects the exact AppImage architecture names produced by electron-builder', () => {
+  const {Arch,getArtifactArchName}=require('builder-util');
+  for(const arch of ['x64','arm64']) {
+    const name=`Tote-0.6.0-linux-${getArtifactArchName(Arch[arch],'AppImage')}.AppImage`;
+    const m=manifest();m.files[0].name=name;
+    assert.equal(U.artifact(m,{...policy,arch}).name,name);
+  }
 });

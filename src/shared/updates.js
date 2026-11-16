@@ -37,7 +37,7 @@
         compare(latest,current) !== 1 || manifest.protocol !== protocol || !Array.isArray(manifest.files) ||
         manifest.files.length > 16 || !manifest.releasePlatforms?.includes(platform))
       throw Error('This release does not support a verified, compatible in-app update.');
-    const name = platform === 'linux' && ['x64','arm64'].includes(arch) ? `Tote-${latest}-linux-${arch}.AppImage`
+    const name = platform === 'linux' && ['x64','arm64'].includes(arch) ? `Tote-${latest}-linux-${arch === 'x64' ? 'x86_64' : arch}.AppImage`
       : platform === 'android' ? `Tote-${latest}-android.apk` : null;
     const matches = manifest.files.filter(f => f.name === name && f.platform === platform);
     const f = matches[0], limit = platform === 'android' ? 256*1024*1024 : 1024*1024*1024;

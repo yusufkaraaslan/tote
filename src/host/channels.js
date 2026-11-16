@@ -38,6 +38,7 @@ const HOST = new Set([
 const FIRE = new Set(['pty:write', 'pty:resize', 'pty:kill', 'pty:detach']);
 
 const VIEWER = new Set([
+  'updates:check', 'updates:open',
   'diagnostics:get', 'diagnostics:export',
   'clipboard:readText', 'clipboard:writeText',
   'config:getProviders', 'config:saveProviders', 'config:openDir',

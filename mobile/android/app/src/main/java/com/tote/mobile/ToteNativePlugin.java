@@ -94,6 +94,33 @@ public class ToteNativePlugin extends Plugin {
         if (budget != null) budget.release(call.getLong("seq", 0L));
         call.resolve();
     }
+    private volatile JSObject cachedRelease;
+    private volatile long checkedReleaseAt;
+    @PluginMethod public void checkUpdates(PluginCall call) {
+        if (cachedRelease != null && android.os.SystemClock.elapsedRealtime() - checkedReleaseAt < 900000) { call.resolve(cachedRelease); return; }
+        OkHttpClient updates = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build();
+        Request request = new Request.Builder().url("https://api.github.com/repos/yusufkaraaslan/tote/releases/latest")
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "Tote-update-check").build();
+        updates.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call request, java.io.IOException error) { call.reject("Could not check releases. Check your connection and try later."); }
+            @Override public void onResponse(Call request, Response response) {
+                try (response) {
+                    if (!response.isSuccessful() || response.body() == null) throw new java.io.IOException();
+                    okio.BufferedSource source = response.body().source(); source.request(262145);
+                    if (source.getBuffer().size() > 262144) throw new java.io.IOException();
+                    JSObject data = new JSObject(source.readUtf8()), result = new JSObject();
+                    result.put("tag_name", data.optString("tag_name")); result.put("draft", data.optBoolean("draft", true)); result.put("prerelease", data.optBoolean("prerelease", true));
+                    cachedRelease = result; checkedReleaseAt = android.os.SystemClock.elapsedRealtime(); call.resolve(result);
+                } catch (Exception error) { call.reject("Release information is unavailable. Try later."); }
+            }
+        });
+    }
+    @PluginMethod public void openUpdates(PluginCall call) {
+        try {
+            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/yusufkaraaslan/tote/releases/latest")));
+            call.resolve();
+        } catch (Exception error) { call.reject("No browser is available."); }
+    }
     @PluginMethod public void diagnostics(PluginCall call) {
         JSObject result = new JSObject();
         result.put("tailscaleInstalled", getContext().getPackageManager().getLaunchIntentForPackage("com.tailscale.ipn") != null);

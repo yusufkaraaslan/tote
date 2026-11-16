@@ -13,11 +13,14 @@ const names = [...new Set([...source.matchAll(/\btote\.(\w+)/g)].map(m => m[1]))
 const preload = path.join(scratch, 'preload.js');
 fs.writeFileSync(preload, `
 const { contextBridge } = require('electron');
-let active = 'tote', diagnosticOffline = false;
+let active = 'tote', diagnosticOffline = false, updatesBusy = true, updatesFail = false;
 const calls = [], sessions = [];
 const list = ['Global', 'tote', 'KnitGame', 'Genesis', ...Array.from({length: 20}, (_, i) => 'Project ' + (i + 1))].map((name, i) => ({ id: i === 0 ? 'global' : name, name, path: '/preview/' + name }));
 const api = Object.fromEntries(${JSON.stringify(names)}.map(name => [name, name.startsWith('on') ? () => {} : async () => null]));
 Object.assign(api, {
+  testUpdates: async (busy, fail=false) => { updatesBusy=busy; updatesFail=fail; },
+  checkUpdates: async () => { calls.push({method:'checkUpdates'}); if(updatesFail)throw Error('offline');return {current:'0.5.0',latest:'0.6.0',available:true,activeTerminals:updatesBusy?2:0}; },
+  openUpdate: async () => { calls.push({method:'openUpdate'}); return {deferred:updatesBusy,activeTerminals:updatesBusy?2:0}; },
   testDiagnosticsOffline: async () => { diagnosticOffline = true; },
   diagnosticsGet: async metrics => ({format:'tote-diagnostics-v1',viewer:{kind:'desktop',version:'0.4.0'},host:{version:'0.4.0',state:diagnosticOffline?'cached':'current'},connection:{state:diagnosticOffline?'disconnected':'local'},terminals:[{id:'secret',host:{cols:120,rows:30},local:{cols:120,rows:30,width:500,height:300},controller:'another-viewer',data:'DO_NOT_EXPORT'}],events:[{code:'permission',message:'DO_NOT_EXPORT'}]}),
   diagnosticsExport: async report => { calls.push({method:'diagnosticsExport',report}); return true; },
@@ -107,6 +110,17 @@ app.whenReady().then(async () => {
       await settle();
       assert.equal(await run("document.querySelector('#set-content .sec.active').dataset.sec"), section);
     }
+    await run("document.querySelector('#set-nav [data-sec=about]').click()"); await settle();
+    assert.equal(await run("tote.testCalls().then(c=>c.filter(x=>x.method==='checkUpdates').length)"),0,'no unsolicited update requests');
+    await run("document.querySelector('#set-update-check').click()");await settle();
+    assert.equal(await run("document.querySelector('#set-update-open').disabled"),true);
+    assert.match(await run("document.querySelector('#set-update-advice').textContent"),/2 host terminals/);
+    await run("tote.testUpdates(false).then(()=>document.querySelector('#set-update-check').click())");await settle();
+    assert.equal(await run("document.querySelector('#set-update-open').disabled"),false);
+    await run("tote.testUpdates(true).then(()=>document.querySelector('#set-update-open').click())");await settle();
+    assert.equal(await run("document.querySelector('#set-update-open').disabled"),true,'late terminal creation defers update action');
+    await run("tote.testUpdates(false,true).then(()=>document.querySelector('#set-update-check').click())");await settle();
+    assert.match(await run("document.querySelector('#set-update-status').textContent"),/Could not check/);
     await run("document.querySelector('#set-nav [data-sec=diagnostics]').click()"); await settle();
     assert.equal(await run("document.querySelector('#diagnostics-save').disabled"),false);
     const preview = await run("document.querySelector('#diagnostics-preview').textContent");

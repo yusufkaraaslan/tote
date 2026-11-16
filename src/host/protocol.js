@@ -9,6 +9,7 @@
 //
 // Pure: framing, validation and the remote allow-list. The socket lives in
 // server.js (host side) and src/main/devices.js (viewer side).
+const Updates = require('../shared/updates');
 const CH = require('./channels');
 
 const VERSION = 1;
@@ -66,9 +67,8 @@ function hello(role, device, tote) {
 
 function checkHello(msg) {
   if (!msg || msg.t !== 'hello') return 'expected hello';
-  if (msg.v !== VERSION) {
-    return `protocol v${msg.v} on the other side, v${VERSION} here — update Tote on both machines`;
-  }
+  const compatibility = Updates.peer(msg, null, VERSION);
+  if (!compatibility.ok) return compatibility.message;
   return null;
 }
 

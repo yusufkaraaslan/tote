@@ -80,6 +80,8 @@ contextBridge.exposeInMainWorld('tote', {
   diagnosticsGet: (metrics) => ipcRenderer.invoke('diagnostics:get', metrics),
   diagnosticsExport: (report) => ipcRenderer.invoke('diagnostics:export', report),
   hostDiagnostics: () => ipcRenderer.invoke('device:diagnostics'),
+  checkUpdates: () => ipcRenderer.invoke('updates:check'),
+  openUpdate: () => ipcRenderer.invoke('updates:open'),
   appVersion: () => ipcRenderer.invoke('app:version'),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
 

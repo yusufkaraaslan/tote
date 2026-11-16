@@ -1,3 +1,4 @@
+import Updates from '../../src/shared/updates.js';
 // v1 JSON protocol. Transport injection keeps the native adapter out of tests.
 export class DeviceClient {
   constructor({ socketFactory, onEvent = () => {}, onClose = () => {}, timeout = 90000, helloTimeout = 8000, role = 'viewer', maxPending = 64, maxFrames = 4096, maxOutput = 72 * 1024 * 1024, outputTimeout = 30000 }) {
@@ -28,7 +29,7 @@ export class DeviceClient {
         if (!msg || typeof msg !== 'object' || Array.isArray(msg)) { fail(new Error('Invalid response from host.')); return; }
         if (!greeted) {
           if (msg?.t !== 'hello' || msg.v !== 1 || msg.role !== 'host' || msg.error) {
-            fail(new Error(msg?.error || 'Incompatible host. Update Tote on the computer.')); socket.close(); return;
+            fail(new Error(msg?.error || Updates.peer(msg).message || 'Incompatible host. Update Tote on the computer.')); socket.close(); return;
           }
           greeted = true; this.ready = true; this.flow = msg.flow === 1; clearTimeout(timer);
           this.outputTimer = setInterval(() => {

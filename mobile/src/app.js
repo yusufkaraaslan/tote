@@ -8,6 +8,7 @@ import { DeviceClient } from './client.js';
 import { Native, Speech, Discovery, initNative, socketFactory } from './native.js';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
+import Updates from '../../src/shared/updates.js';
 import Diagnostics from '../../src/shared/diagnostics.js';
 import TermStream from '../../src/renderer/termstream.js';
 
@@ -121,6 +122,7 @@ function stopConnection() {
   const old = client; client = null; ready = false; busy = false; attached = null; old?.close(); controls();
 }
 function openDevice(device) {
+  $('version-notice').hidden = true;
   stopSearch(); rememberDraft(); stopConnection(); selectedDevice = device; wsId = null; group = null; pane = null; retry = 0;
   terminalSession = null; $('draft').value = ''; $('terminal-scroll').hidden = true; $('file-view').hidden = true; $('composer').hidden = true; $('keys').hidden = true;
   spaces = []; groups = []; renderNavigation(); showEmpty('Connecting to ' + device.name + '…');
@@ -145,6 +147,8 @@ async function connect() {
   try {
     const hello = await c.connect(device.address, device.port);
     if (epoch !== connectionEpoch) return;
+    $('version-notice').textContent = Updates.peer(hello, version).message;
+    $('version-notice').hidden = !$('version-notice').textContent;
     hostVersions.set(device.id, Diagnostics.report({host:{version:hello.tote}}).host.version);
     ready = true; connectedAt = Date.now(); await refresh(true);
     if (epoch !== connectionEpoch) return;
@@ -459,6 +463,26 @@ $('diagnostics-save').onclick = async () => {
   finally { $('diagnostics-save').disabled = !diagnosticReport; }
 };
 
+function openUpdates() { $('updates-dialog').showModal(); }
+$('home-updates').onclick = openUpdates; $('open-updates').onclick = openUpdates;
+$('updates-close').onclick = () => $('updates-dialog').close();
+$('updates-check').onclick = async () => {
+  $('updates-check').disabled = true; $('updates-open').hidden = true;
+  $('updates-status').textContent = 'Checking GitHub…';
+  try {
+    const info = App.getInfo ? await App.getInfo().catch(() => null) : null;
+    const r = Updates.latest(await Native.checkUpdates(), info?.version || version);
+    $('updates-status').textContent = r.available ? `Tote ${r.latest} is available. Installed: ${r.current}.` : `Installed: ${r.current}. Latest stable: ${r.latest}. No newer stable release is available.`;
+    $('updates-open').hidden = !r.available;
+  } catch { $('updates-status').textContent = 'Could not check for updates. Check your internet connection and try later.'; }
+  finally { $('updates-check').disabled = false; }
+};
+$('updates-open').onclick = async () => {
+  rememberDraft();
+  if ([...drafts.values()].some(text => text.trim())) { $('updates-status').textContent = 'Save or clear your phone drafts before installing an update. Drafts are currently kept only in memory.'; return; }
+  try { await Native.openUpdates(); } catch { $('updates-status').textContent = 'Could not open the release page.'; }
+};
+
 async function init() {
   renderDevices();
   await initNative();
@@ -470,6 +494,6 @@ async function init() {
   discoveryInitialized = true; findComputers();
   await Speech.addListener('state', event => { if (!$('recording').open) return; $('recording-title').textContent = event.listening ? 'Recording…' : 'Transcribing…'; $('stop-voice').disabled = !event.listening; if (event.text) $('partial').textContent = event.text; });
   await App.addListener('appStateChange', ({ isActive }) => { paused = !isActive; if (paused) { stopSearch(); cancelVoice(); rememberDraft(); stopConnection(); } else if (selectedDevice) connect(); else findComputers(); });
-  await App.addListener('backButton', () => { if ($('diagnostics-dialog').open) $('diagnostics-dialog').close(); else if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
+  await App.addListener('backButton', () => { if ($('updates-dialog').open) $('updates-dialog').close(); else if ($('diagnostics-dialog').open) $('diagnostics-dialog').close(); else if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
 }
 init().catch(e => notify('Android initialization failed: ' + e.message));

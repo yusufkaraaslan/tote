@@ -55,6 +55,12 @@ This is a debug build for testing, not a Play Store release. Release signing and
 
 Not yet included: mobile provider web sessions, PDF/binary previews, file editing/upload/download, desktop app launch, creating/rearranging groups, agent-status notifications, or background audio recording.
 
+## Updates
+
+Use **Updates** on the Computers screen or in workspace tools, then **Check for updates**. This explicitly contacts GitHub over native HTTPS; normal device sockets remain restricted to Tailscale. Tote shows published stable releases only and opens the release page after you save or clear phone drafts. It does not install an APK itself. Desktop/Android share the version in `release.json`; protocol-compatible older hosts remain usable with feature fallbacks and a version notice.
+
+Preview APKs use debug signing. Production APKs require the existing app's stable signing identity; a different key cannot upgrade an installed app. See [release and signing setup](../docs/releases.md).
+
 ## Diagnostics
 
 Use **⋮ → Diagnostics** inside a workspace, or **Diagnostics** on the Computers screen. The report includes Android/host versions, connection state, native queue counts, Tailscale installation, host sharing/network status, categorized errors, host terminal dimensions, the local viewport and sizing controller. Opening diagnostics never resizes a terminal or sends input.

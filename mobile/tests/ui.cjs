@@ -17,6 +17,15 @@ app.whenReady().then(async()=>{
   await win.loadFile(path.join(dir,'index.html'));
   await run("window.testErrors=[];window.addEventListener('error',e=>testErrors.push(e.error?.stack||e.message))");
   await until("document.querySelectorAll('#devices .connect').length===2");
+  assert.equal(await run("testState.updateChecks||0"),0);
+  await run("document.querySelector('#home-updates').click();document.querySelector('#updates-check').click()");
+  await until("!document.querySelector('#updates-open').hidden");
+  assert.match(await run("document.querySelector('#updates-status').textContent"),/0.6.0 is available/);
+  await run("document.querySelector('#updates-open').click()");await until("testState.updateOpened===1");
+  await run("testState.updateFail=true;document.querySelector('#updates-check').click()");
+  await until("document.querySelector('#updates-status').textContent.includes('Could not check')");
+  assert.equal(await run("document.querySelector('#updates-open').hidden"),true);
+  await run("testState.updateFail=false;document.querySelector('#updates-close').click()");
   await run("document.querySelector('#home-diagnostics').click()");
   await until("!document.querySelector('#diagnostics-save').disabled");
   assert.equal(await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent).host.state"),'unavailable');
@@ -69,6 +78,12 @@ app.whenReady().then(async()=>{
   await until("document.querySelector('#workspace').dataset.ready==='true' && terminalText().includes('Restored Codex')");
   assert.equal(await run('testState.ws'),'work','latest rapid workspace choice reaches host');
   await run("document.querySelector('#draft').value='draft A';document.querySelector('#draft').dispatchEvent(new Event('input'))");
+  await run("document.querySelector('#open-updates').click();document.querySelector('#updates-check').click()");
+  await until("!document.querySelector('#updates-open').hidden");
+  await run("document.querySelector('#updates-open').click()");
+  assert.match(await run("document.querySelector('#updates-status').textContent"),/Save or clear/);
+  assert.equal(await run("testState.updateOpened"),1,'unsent phone drafts defer installation guidance');
+  await run("document.querySelector('#updates-close').click()");
   await select('groups','review');await until("document.querySelector('#workspace').dataset.pane==='l2'");
   assert.equal(await run("document.querySelector('#draft').value"),'');
   await select('groups','build');await until("document.querySelector('#draft').value==='draft A'");
@@ -85,7 +100,7 @@ app.whenReady().then(async()=>{
   await run("document.querySelector('#more').click();document.querySelector('#open-diagnostics').click()");
   await until("!document.querySelector('#diagnostics-save').disabled");
   const report = await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent)");
-  assert.equal(report.host.state,'current'); assert.equal(report.host.version,'0.4.0');
+  assert.equal(report.host.state,'current'); assert.equal(report.host.version,'0.5.0');
   assert.equal(report.terminals[0].controller,'another-viewer'); assert.equal(report.terminals[0].local.width,await run("document.querySelector('#stage').clientWidth"));
   assert(!JSON.stringify(report).includes('DO_NOT_EXPORT'));
   await run("document.querySelector('#diagnostics-save').click()");

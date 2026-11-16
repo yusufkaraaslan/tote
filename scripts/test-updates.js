@@ -1,0 +1,65 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+const U=require('../src/shared/updates'),{checker,fetchLatest}=require('../src/main/updates');
+const stable=tag=>({tag_name:tag,draft:false,prerelease:false,html_url:'https://untrusted.example'});
+test('stable updates compare numerically and generate only fixed repository links',()=>{
+ assert(U.latest(stable('v0.10.0'),'0.9.9').available);
+ assert(!U.latest(stable('v0.4.0'),'0.5.0').available);
+ assert.equal(U.latest(stable('v0.5.0'),'0.4.0').url,U.RELEASES+'/tag/v0.5.0');
+ for(const v of [null,{},stable('v01.2.3'),stable('v1.2.3/../../'),{...stable('v0.6.0'),draft:true},{...stable('v0.6.0'),prerelease:true},stable('v0.6.0-rc.1')])assert.throws(()=>U.latest(v,'0.5.0'));
+});
+test('wire protocol rejects incompatible peers while older app versions retain compatible features',()=>{
+ assert.match(U.peer({v:2,tote:'0.5.0'},'0.5.0').message,/update Tote on both/);
+ assert(!U.peer({v:'1'},'0.5.0').ok);
+ assert(U.peer({v:1,tote:'0.4.0'},'0.5.0').ok);
+ assert.match(U.peer({v:1,tote:'0.4.0'},'0.5.0').message,/newer features/);
+ assert.equal(U.peer({v:1},'0.5.0').message,'');
+ assert.match(U.installAdvice(3),/3 host terminals/);
+});
+test('update checks share in-flight requests, cache success, and retry failures',async()=>{
+ let calls=0,now=0,resolve;const check=checker(()=>{calls++;return new Promise(r=>resolve=r);},()=>now);
+ const a=check('0.5.0'),b=check('0.5.0');assert.equal(calls,1);resolve(stable('v0.6.0'));await Promise.all([a,b]);
+ await check('0.5.0');assert.equal(calls,1);now=900001;const c=check('0.5.0');resolve(stable('v0.7.0'));assert.equal((await c).latest,'0.7.0');
+ const retry=checker(async()=>{if(++calls===3)throw Error('offline');return stable('v0.7.0');});
+ await assert.rejects(retry('0.5.0'));assert((await retry('0.5.0')).available);
+});
+test('HTTP metadata is bounded; redirects, invalid JSON and rate limits fail safely',async()=>{
+ const {EventEmitter}=require('node:events');
+ function request(status,body){return (url,options,callback)=>{
+  assert.equal(url,U.API);assert(!options.headers.Authorization);
+  const req=new EventEmitter();req.destroy=error=>{req.emit('error',error);req.emit('close');};
+  queueMicrotask(()=>{const response=new EventEmitter();response.statusCode=status;response.resume=()=>{};callback(response);if(status===200){response.emit('data',Buffer.from(body));response.emit('end');}req.emit('close');});return req;
+ };}
+ assert.equal((await fetchLatest(request(200,JSON.stringify(stable('v0.6.0'))))).tag_name,'v0.6.0');
+ await assert.rejects(fetchLatest(request(302,'')),/unavailable/);
+ await assert.rejects(fetchLatest(request(403,'')),/rate limit/);
+ await assert.rejects(fetchLatest(request(200,'not JSON')),/Invalid/);
+ await assert.rejects(fetchLatest(request(200,'x'.repeat(262145))),/size limit/);
+});
+test('release validation rejects drift and missing signing without printing secrets',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tote-release-test-'));
+ try {
+  for(const name of ['release.json','package.json','package-lock.json','mobile/package.json','mobile/package-lock.json','mobile/android/app/build.gradle','docs/releases/v0.5.0.md']) {const dest=path.join(dir,name);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(__dirname,'..',name),dest);}
+  const {check}=require('./release-version');assert.equal(check(dir,'v0.5.0').version,'0.5.0');assert.throws(()=>check(dir,'v0.4.0'),/Tag/);
+  const p=path.join(dir,'mobile/package.json');const data=JSON.parse(fs.readFileSync(p));data.version='0.4.1';fs.writeFileSync(p,JSON.stringify(data));assert.throws(()=>check(dir),/mismatch/);
+  const signing=require('./release-signing');assert.throws(()=>signing.check('darwin',{CSC_LINK:'never-print-this'}),e=>e.message.includes('APPLE_ID')&&!e.message.includes('never-print-this'));
+  assert.throws(()=>signing.check('android',{}),/ANDROID_KEYSTORE_PATH/);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('release manifest rejects tampering and requires every platform',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tote-assets-test-')),out=path.join(dir,'out');
+ try {
+  const A=require('./release-assets');
+  for(const [platform,extensions] of Object.entries({linux:['AppImage','deb','pacman'],darwin:['dmg'],win32:['exe'],android:['apk']})){
+   const src=path.join(dir,platform);fs.mkdirSync(src);for(const ext of extensions)fs.writeFileSync(path.join(src,`Tote-0.5.0-${platform}.${ext}`),'binary '+platform);A.collect(src,out,platform,false);
+  }
+  const apk=path.join(out,'Tote-0.5.0-android.apk');fs.appendFileSync(apk,'tampered');assert.throws(()=>A.manifest(out),/Invalid/);fs.writeFileSync(apk,'binary android');
+  assert.equal(A.manifest(out).length,6);assert.match(fs.readFileSync(path.join(out,'SHA256SUMS'),'utf8'),/^[a-f0-9]{64}  Tote-/);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('download guidance is deferred if a terminal starts during an async update check',async()=>{
+ const {openRelease}=require('../src/main/updates');let busy=false,opened=0;
+ const options={sessions:()=>busy?[{alive:true}]:[],current:'0.5.0',check:async()=>{busy=true;return U.latest(stable('v0.6.0'),'0.5.0');},open:async()=>opened++};
+ assert.equal((await openRelease(options)).deferred,true);assert.equal(opened,0);
+ options.check=async()=>U.latest(stable('v0.6.0'),'0.5.0');busy=false;
+ assert.equal((await openRelease(options)).opened,true);assert.equal(opened,1);
+});

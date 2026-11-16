@@ -481,6 +481,12 @@ Expand **Review JSON report**, inspect the snapshot, then choose **Save reviewed
 
 See [Android diagnostics and physical-device checks](mobile/README.md#diagnostics).
 
+### Releases and update checks
+
+Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Installation is manual. Desktop defers the download-page action while host terminals are running; Android asks you to save or clear phone drafts first. Save documents and finish desktop agents before replacing the app: quitting Tote still stops its host processes.
+
+Source now targets **0.5.0** on both desktop and Android; the download links above remain the last published release until a new build is published. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). [0.5.0 candidate notes](docs/releases/v0.5.0.md) describe the changes and verification still needed before publication.
+
 ## Architecture
 
 ```text

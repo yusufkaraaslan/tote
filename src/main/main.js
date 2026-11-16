@@ -25,6 +25,8 @@ const { Host } = require('../host/host');
 const CH = require('../host/channels');
 const { DeviceServer, tailnetAuthorizer } = require('../host/server');
 const Diagnostics = require('../shared/diagnostics');
+const Updates = require('../shared/updates');
+const checkUpdate = require('./updates').checker();
 const diagnosticLog = Diagnostics.createLog();
 const TS = require('../host/tailscale');
 const { DeviceClient, discover } = require('./devices');
@@ -191,7 +193,7 @@ function deviceOf(wc) {
   const w = viewing.get(wc.id);
   return (w && w.current && w.devices.get(w.current)) || null;
 }
-const deviceInfo = (d) => d && { key: d.key, name: d.name, address: d.address, port: d.port, up: d.up };
+const deviceInfo = (d) => d && { key: d.key, name: d.name, address: d.address, port: d.port, up: d.up, versionNotice: d.client?.remote?.versionNotice || '' };
 
 let selfNameCache = null;
 async function selfName() {
@@ -1086,6 +1088,12 @@ ipcMain.handle('diagnostics:export', async (e, report) => {
   return true;
 });
 
+ipcMain.handle('updates:check', async () => ({ ...await checkUpdate(app.getVersion()),
+  activeTerminals: host.sessions.list().filter(s => s.alive).length,
+}));
+ipcMain.handle('updates:open', () => require('./updates').openRelease({
+  sessions: () => host.sessions.list(), check: checkUpdate, current: app.getVersion(), open: url => shell.openExternal(url),
+}));
 ipcMain.handle('app:version', () => app.getVersion());
 
 ipcMain.on('app:openExternal', (e, url) => {

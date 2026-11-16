@@ -19,5 +19,8 @@ if(!process.env.TOTE_PACKAGED_ASAR) {
  const terminal=pty.spawn(shell,args,{cols:80,rows:24,cwd:require('node:os').tmpdir(),env:process.env});
  let output='';const timer=setTimeout(()=>{terminal.kill();console.error('Packaged PTY timed out');process.exit(1);},10000);
  terminal.onData(data=>output+=data);
- terminal.onExit(()=>{clearTimeout(timer);assert(output.includes('TOTE_PACKAGED_PTY_OK'));console.log('Packaged version, assets and real PTY passed');});
+ terminal.onExit(()=>{clearTimeout(timer);assert(output.includes('TOTE_PACKAGED_PTY_OK'));console.log('Packaged version, assets and real PTY passed');
+  // ConPTY leaves worker handles alive in this standalone Node-mode harness.
+  // The child PTY has exited and its output was checked; end the harness too.
+  process.exit(0);});
 }

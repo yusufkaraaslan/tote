@@ -30,3 +30,7 @@
 
 #home > header { flex-wrap: wrap; gap: 8px; }
 #version-notice { padding: 8px 14px; color: #dbbd87; background: #30271a; font-size: 12px; }
+
+#updates-dialog { max-height: 85dvh; overflow: auto; }
+#updates-drafts section { margin: 14px 0; }
+#updates-drafts textarea { width: 100%; min-height: 90px; resize: vertical; }

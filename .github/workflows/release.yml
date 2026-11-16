@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '22'
@@ -47,6 +48,9 @@ jobs:
           node scripts/release-version.js
           if [ "$REQUEST_SIGNED" = true ] && [ "$GITHUB_REF" != refs/heads/main ] && [ -z "$RELEASE_TAG" ]; then
             echo 'Signed builds require main or a version tag'; exit 1
+          fi
+          if [ "$REQUEST_SIGNED" = true ]; then
+            node scripts/release-ancestry.js HEAD refs/remotes/origin/main
           fi
           echo "signed=$REQUEST_SIGNED" >> "$GITHUB_OUTPUT"
           node -e "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version='+require('./release.json').version+'\n')"

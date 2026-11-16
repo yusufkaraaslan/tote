@@ -1,3 +1,5 @@
+const {version}=require('../package.json');
+const updateVersion=`${Number(version.split('.')[0])+1}.0.0`;
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const dir=process.env.TOTE_UI_DIR;app.setPath('userData',path.join(dir,'profile'));
@@ -20,8 +22,9 @@ app.whenReady().then(async()=>{
   assert.equal(await run("testState.updateChecks||0"),0);
   await run("document.querySelector('#home-updates').click();document.querySelector('#updates-check').click()");
   await until("!document.querySelector('#updates-open').hidden");
-  assert.match(await run("document.querySelector('#updates-status').textContent"),/0.6.0 is available/);
+  assert((await run("document.querySelector('#updates-status').textContent")).includes(updateVersion+' is available'));
   await run("document.querySelector('#updates-open').click()");await until("testState.updateOpened===1");
+  assert.equal(await run('testState.openedVersion'),updateVersion);
   await run("testState.updateFail=true;document.querySelector('#updates-check').click()");
   await until("document.querySelector('#updates-status').textContent.includes('Could not check')");
   assert.equal(await run("document.querySelector('#updates-open').hidden"),true);
@@ -100,7 +103,7 @@ app.whenReady().then(async()=>{
   await run("document.querySelector('#more').click();document.querySelector('#open-diagnostics').click()");
   await until("!document.querySelector('#diagnostics-save').disabled");
   const report = await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent)");
-  assert.equal(report.host.state,'current'); assert.equal(report.host.version,'0.5.0');
+  assert.equal(report.host.state,'current'); assert.equal(report.host.version,version);
   assert.equal(report.terminals[0].controller,'another-viewer'); assert.equal(report.terminals[0].local.width,await run("document.querySelector('#stage').clientWidth"));
   assert(!JSON.stringify(report).includes('DO_NOT_EXPORT'));
   await run("document.querySelector('#diagnostics-save').click()");
@@ -131,6 +134,16 @@ app.whenReady().then(async()=>{
   win.setSize(320,640);assert(await run("document.querySelector('#composer').scrollWidth<=document.querySelector('#composer').clientWidth"));
   if(errors.length)console.error(await run('testErrors'));await run("document.querySelector('#new-terminal').click()");await until("document.querySelector('#new-dialog').open");await run("document.querySelector('#start-new').click()");await until("document.querySelector('#workspace').dataset.group==='_sessions' && document.querySelectorAll('.nav-pane').length===1");
   assert.equal(await run("testCalls.filter(c=>c.m==='pty:spawn').length"),1);
+  // Drafts must remain reviewable after their computer/session disappears.
+  await run("document.querySelector('#draft').value='orphaned draft';document.querySelector('#draft').dispatchEvent(new Event('input'));document.querySelector('#nav-toggle').click();document.querySelector('#back').click()");
+  await until("!document.querySelector('#home').hidden");
+  await run("[...document.querySelectorAll('#devices .remove')].forEach(b=>b.click());document.querySelector('#home-updates').click()");
+  await until("[...document.querySelectorAll('#updates-drafts textarea')].some(t=>t.value==='orphaned draft')");
+  await run("window.oldConfirm=window.confirm;window.confirm=()=>false;[...document.querySelectorAll('#updates-drafts textarea')].find(t=>t.value==='orphaned draft').closest('section').querySelector('button').click()");
+  assert(await run("[...document.querySelectorAll('#updates-drafts textarea')].some(t=>t.value==='orphaned draft')"),'cancel keeps an orphaned draft');
+  await run("window.confirm=()=>true;[...document.querySelectorAll('#updates-drafts textarea')].find(t=>t.value==='orphaned draft').closest('section').querySelector('button').click();window.confirm=oldConfirm;void 0");
+  assert.equal(await run("[...document.querySelectorAll('#updates-drafts textarea')].some(t=>t.value==='orphaned draft')"),false,'explicit discard releases an orphaned draft');
+  await run("document.querySelector('#updates-close').click()");
   assert.deepEqual(errors,[]);console.log('Mobile UI passed: drawer navigation, phone-only wrapping, terminal view toggle, live output, fresh workspace sessions, empty spaces, stale event filtering, scroll following, groups, per-session drafts, voice stop/cancel, reconnect, files, compact layout.');app.exit(0);
  }catch(e){console.error(e);app.exit(1);}
 });

@@ -109,7 +109,8 @@ public class ToteNativePlugin extends Plugin {
                     okio.BufferedSource source = response.body().source(); source.request(262145);
                     if (source.getBuffer().size() > 262144) throw new java.io.IOException();
                     JSObject data = new JSObject(source.readUtf8()), result = new JSObject();
-                    result.put("tag_name", data.optString("tag_name")); result.put("draft", data.optBoolean("draft", true)); result.put("prerelease", data.optBoolean("prerelease", true));
+                    String version = UpdateRelease.version(data);
+                    result.put("tag_name", "v" + version); result.put("draft", false); result.put("prerelease", false);
                     cachedRelease = result; checkedReleaseAt = android.os.SystemClock.elapsedRealtime(); call.resolve(result);
                 } catch (Exception error) { call.reject("Release information is unavailable. Try later."); }
             }
@@ -117,7 +118,7 @@ public class ToteNativePlugin extends Plugin {
     }
     @PluginMethod public void openUpdates(PluginCall call) {
         try {
-            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/yusufkaraaslan/tote/releases/latest")));
+            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(UpdateRelease.url(call.getString("version")))));
             call.resolve();
         } catch (Exception error) { call.reject("No browser is available."); }
     }

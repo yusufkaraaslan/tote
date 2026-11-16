@@ -463,24 +463,49 @@ $('diagnostics-save').onclick = async () => {
   finally { $('diagnostics-save').disabled = !diagnosticReport; }
 };
 
-function openUpdates() { $('updates-dialog').showModal(); }
+let updateVersion = null;
+function renderUpdateDrafts() {
+  rememberDraft();
+  const list = $('updates-drafts'); list.replaceChildren();
+  for (const [key, text] of drafts) {
+    if (!text.trim()) continue;
+    const row = document.createElement('section'), label = document.createElement('label');
+    label.textContent = `Saved draft ${list.children.length + 1} — select and copy before discarding`;
+    const value = document.createElement('textarea'); value.value = text; value.readOnly = true; label.append(value);
+    const discard = document.createElement('button'); discard.textContent = 'Discard this draft';
+    discard.onclick = () => {
+      if (!confirm('Discard this unsent draft? Copy any text you want to keep first.')) return;
+      // Never erase a newer buffer if an asynchronous edit changed the draft.
+      rememberDraft();
+      if (drafts.get(key) !== text) { renderUpdateDrafts(); return; }
+      if (inputKey() === key && $('draft').value === text) { $('draft').value = ''; controls(); }
+      drafts.delete(key); renderUpdateDrafts();
+    };
+    row.append(label, discard); list.append(row);
+  }
+  $('updates-draft-review').hidden = !list.children.length;
+}
+function openUpdates() { renderUpdateDrafts(); $('updates-dialog').showModal(); }
 $('home-updates').onclick = openUpdates; $('open-updates').onclick = openUpdates;
 $('updates-close').onclick = () => $('updates-dialog').close();
 $('updates-check').onclick = async () => {
+  updateVersion = null;
   $('updates-check').disabled = true; $('updates-open').hidden = true;
   $('updates-status').textContent = 'Checking GitHub…';
   try {
     const info = App.getInfo ? await App.getInfo().catch(() => null) : null;
     const r = Updates.latest(await Native.checkUpdates(), info?.version || version);
     $('updates-status').textContent = r.available ? `Tote ${r.latest} is available. Installed: ${r.current}.` : `Installed: ${r.current}. Latest stable: ${r.latest}. No newer stable release is available.`;
+    updateVersion = r.available ? r.latest : null;
     $('updates-open').hidden = !r.available;
   } catch { $('updates-status').textContent = 'Could not check for updates. Check your internet connection and try later.'; }
   finally { $('updates-check').disabled = false; }
 };
 $('updates-open').onclick = async () => {
-  rememberDraft();
+  if (!updateVersion) return;
+  renderUpdateDrafts();
   if ([...drafts.values()].some(text => text.trim())) { $('updates-status').textContent = 'Save or clear your phone drafts before installing an update. Drafts are currently kept only in memory.'; return; }
-  try { await Native.openUpdates(); } catch { $('updates-status').textContent = 'Could not open the release page.'; }
+  try { await Native.openUpdates({ version: updateVersion }); } catch { $('updates-status').textContent = 'Could not open the release page.'; }
 };
 
 async function init() {

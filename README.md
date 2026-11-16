@@ -398,7 +398,7 @@ adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Use `npm --prefix mobile run android` to sync assets and open Android Studio.
-Release signing and Play Store packaging are not configured.
+Production signing support is available through the [release workflow](docs/releases.md), but signing credentials still need provisioning. Play Store packaging is not configured.
 
 ### Checks
 

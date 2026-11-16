@@ -3,7 +3,7 @@
   const RELEASES = 'https://github.com/yusufkaraaslan/tote/releases';
   const API = 'https://api.github.com/repos/yusufkaraaslan/tote/releases/latest';
   function version(value) {
-    if (typeof value !== 'string' || !/^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/.test(value)) return null;
+    if (typeof value !== 'string' || value !== value.trim() || !/^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/.test(value)) return null;
     return value.split('.').map(Number);
   }
   function compare(a,b) {

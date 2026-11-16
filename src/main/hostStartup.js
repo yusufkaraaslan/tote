@@ -18,9 +18,10 @@ function plan({ executable, entry, dataDir, platform = process.platform, home = 
     // PowerShell encoded command avoids cmd expansion of %, &, and profile paths.
     const literal = s => "'" + s.replace(/'/g, "''") + "'";
     const command = "$env:ELECTRON_RUN_AS_NODE='1'; & " + args.map(literal).join(' ');
-    const encoded = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ' + Buffer.from(command, 'utf16le').toString('base64');
+    const shell = path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
+    const shellArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ' + Buffer.from(command, 'utf16le').toString('base64');
     return { file: path.join(appData || path.join(home, 'AppData/Roaming'), 'Microsoft/Windows/Start Menu/Programs/Startup/ToteHost.lnk'),
-      shortcut: true, command: encoded };
+      shortcut: true, shell, args: shellArgs, command: '"' + shell + '" ' + shellArgs };
   }
   if (platform !== 'linux') throw Error('Start at login is not supported on this platform');
   return { file: path.join(configHome && path.isAbsolute(configHome) ? configHome : path.join(home, '.config'), 'autostart/tote-host.desktop'),
@@ -35,8 +36,8 @@ function setEnabled(on, options) {
     fs.mkdirSync(path.dirname(p.file), { recursive: true });
     if (p.shortcut) {
       const literal = value => "'" + value.replace(/'/g, "''") + "'";
-      const script = '$s=(New-Object -ComObject WScript.Shell).CreateShortcut(' + literal(p.file) + '); $s.TargetPath="powershell.exe"; $s.Arguments=' + literal(p.command.slice('powershell.exe '.length)) + '; $s.WindowStyle=7; $s.Save()';
-      execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 10000, stdio: 'pipe' });
+      const script = '$s=(New-Object -ComObject WScript.Shell).CreateShortcut(' + literal(p.file) + '); $s.TargetPath=' + literal(p.shell) + '; $s.Arguments=' + literal(p.args) + '; $s.WindowStyle=7; $s.Save()';
+      execFileSync(p.shell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 10000, stdio: 'pipe' });
     } else {
       const temporary = p.file + '.tmp-' + process.pid;
       fs.writeFileSync(temporary, p.content, { mode: 0o600 }); fs.renameSync(temporary, p.file);

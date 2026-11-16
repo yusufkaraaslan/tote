@@ -111,7 +111,22 @@ test('startup registration is opt-in and quotes platform paths without shell exp
     assert.equal(setEnabled(false, options), false);
     assert.match(plan({ ...options, platform: 'darwin' }).content, /a&amp;b.js/);
     const win = plan({ ...options, platform: 'win32' });
+    assert(path.win32.isAbsolute(win.shell), 'login shortcut must target the actual PowerShell executable');
     assert.match(Buffer.from(win.command.split(' ').pop(), 'base64').toString('utf16le'), /& '\/apps\/Tote \$name'/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Windows startup shortcut round-trips its target and arguments', { skip: process.platform !== 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tote-shortcut-'));
+  const options = { executable: process.execPath, entry: path.join(dir, 'host entry.js'), dataDir: path.join(dir, 'profile'), appData: dir };
+  try {
+    assert.equal(setEnabled(true, options), true);
+    const p = plan(options), literal = value => "'" + value.replace(/'/g, "''") + "'";
+    const script = '$s=(New-Object -ComObject WScript.Shell).CreateShortcut(' + literal(p.file) + '); @{target=$s.TargetPath;args=$s.Arguments}|ConvertTo-Json -Compress';
+    const result = JSON.parse(require('node:child_process').execFileSync(p.shell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true }));
+    assert.equal(result.target.toLowerCase(), p.shell.toLowerCase());
+    assert.equal(result.args, p.args);
+    assert.equal(setEnabled(false, options), false);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

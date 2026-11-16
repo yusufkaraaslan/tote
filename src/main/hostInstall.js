@@ -9,7 +9,13 @@ const disk = process.versions.electron ? require('original-fs') : fs;
 async function installRuntime({ dataDir, executable, appPath, packaged, platform = process.platform }) {
   if (!packaged) return { executable, entry: path.join(appPath, 'src/host/daemon.js') };
   const hash = crypto.createHash('sha256');
-  for await (const chunk of disk.createReadStream(appPath)) hash.update(chunk);
+  // A runtime-only Electron/fuse/signature update can leave app.asar unchanged.
+  // Include the executable so a newly signed install cannot reuse a preview's
+  // unsigned runtime copy merely because their application code is identical.
+  hash.update(platform + ':' + process.arch);
+  for (const file of [appPath, executable]) {
+    for await (const chunk of disk.createReadStream(file)) hash.update(chunk);
+  }
   const id = hash.digest('hex').slice(0, 24);
   const source = platform === 'darwin' ? path.resolve(executable, '../../..') : path.dirname(executable);
   const root = path.join(dataDir, 'host-runtimes');

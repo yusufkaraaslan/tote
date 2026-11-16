@@ -176,6 +176,10 @@ test('packaged runtime is copied once and remains available after replacing desk
     const first = await installRuntime(options);
     assert.equal(fs.readFileSync(first.executable, 'utf8'), 'runtime');
     assert.deepEqual(await installRuntime(options), first);
+    fs.writeFileSync(executable, 'new signed runtime');
+    const runtimeOnly = await installRuntime(options);
+    assert.notEqual(runtimeOnly.executable, first.executable, 'runtime or signature changes must not reuse an older copy');
+    assert.equal(fs.readFileSync(first.executable, 'utf8'), 'runtime');
     fs.writeFileSync(appPath, 'new code');
     const second = await installRuntime(options);
     assert.notEqual(second.entry, first.entry);

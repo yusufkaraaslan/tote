@@ -4,11 +4,11 @@
 (function (root) {
   function create(term, { onSize = () => {}, onParsed = () => {} } = {}) {
     const queue = [];
-    let busy = false, disposed = false;
+    let busy = false, disposed = false, active = null;
     function next() {
       if (busy || disposed || !queue.length) return;
       busy = true;
-      const p = queue.shift();
+      const entry = active = queue.shift(), p = entry.packet;
       if (p.replay) term.reset();
       if (Number.isInteger(p.cols) && Number.isInteger(p.rows) && p.cols > 0 && p.rows > 0) {
         if (term.cols !== p.cols || term.rows !== p.rows) term.resize(p.cols, p.rows);
@@ -17,6 +17,7 @@
       const done = () => {
         if (disposed) return;
         onParsed(p);
+        entry.resolve(); active = null;
         busy = false;
         next();
       };
@@ -24,8 +25,15 @@
       else done();
     }
     return {
-      write(p) { if (!disposed) { queue.push(p); next(); } },
-      dispose() { disposed = true; queue.length = 0; },
+      write(p) {
+        if (disposed) return Promise.resolve();
+        // A fresh host snapshot supersedes queued output from the old link.
+        // Let the active parse finish before reset, but never accumulate old
+        // queues across reconnects if a parser is exceptionally slow.
+        if (p.replay) { for (const entry of queue) entry.resolve(); queue.length = 0; }
+        return new Promise(resolve => { queue.push({ packet: p, resolve }); next(); });
+      },
+      dispose() { disposed = true; active?.resolve(); for (const entry of queue) entry.resolve(); queue.length = 0; },
     };
   }
   const api = { create };

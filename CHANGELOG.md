@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Devices: detect stalled connections, bound socket/output/call queues, and acknowledge terminal output after parsing on desktop and Android. An overloaded viewer reconnects with a fresh synchronized replay while its PTYs and other viewers continue; input is never retried automatically.
+- Android: bound native-to-WebView message queues and outgoing socket buffers, surface disconnect reasons, and retain reconnect backoff for repeatedly overloaded links.
 - Shared layouts: save per workspace with host-checked revisions. Keep conflicting local layouts under an explicit choice, protect unsaved document buffers, and bind delayed saves to the device where the edit happened. Older hosts allow temporary local layout changes only.
 - Documents: preserve text typed during an asynchronous file refresh and keep responses on their originating device.
 - Configuration: flush and atomically replace JSON saves, keep the preceding valid version in a `.bak` file, and recover missing or damaged files with a visible notice. Damaged files are preserved; unrecoverable configuration stops startup instead of silently resetting it.

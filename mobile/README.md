@@ -64,7 +64,7 @@ cd mobile/android
 ./gradlew testDebugUnitTest lintDebug
 ```
 
-The mobile protocol tests use the real `DeviceServer` and headless session mirror over loopback. They check reconnect replay, disconnect survival, host allow-list enforcement, pending-call rejection, and no automatic resize/input retry. UI tests exercise group switching, separate drafts, voice stop/cancel, keyboard focus requests, reconnection, literal file rendering, new terminals and narrow-screen layout. Native Java tests check the Tailscale address boundary.
+The mobile protocol tests use the real `DeviceServer` and headless session mirror over loopback. They check reconnect replay, disconnect survival, host allow-list enforcement, parsing acknowledgements, slow-reader overload, pending-call limits, native-send failure and no automatic resize/input retry. UI tests exercise group switching, separate drafts, voice stop/cancel, keyboard focus requests, reconnection, literal file rendering, new terminals and narrow-screen layout. Native Java tests check the Tailscale address boundary and native-to-WebView queue accounting. See [connection limits and recovery](../docs/device-transport.md).
 
 Physical-phone checks still matter: Tailscale authorization, microphone service availability, Turkish/other language dictation, soft keyboard resizing, long scrollback, alternate-screen TUIs, and background/foreground recovery. Desktop renderer tests cannot establish these Android-specific behaviors.
 

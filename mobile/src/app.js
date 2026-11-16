@@ -128,11 +128,13 @@ function openDevice(device) {
 async function connect() {
   if (!selectedDevice || paused) return;
   stopConnection(); const epoch = connectionEpoch; const device = selectedDevice;
+  let connectedAt = 0;
   banner(retry ? 'Reconnecting… Your sessions are still on the computer.' : 'Connecting…');
   const c = client = new DeviceClient({ socketFactory,
-    onEvent: (event, payload) => { if (client === c) hostEvent(event, payload); },
+    onEvent: (event, payload) => { if (client === c) return hostEvent(event, payload); },
     onClose: error => {
       if (client !== c) return;
+      if (connectedAt && Date.now() - connectedAt >= 30000) retry = 0;
       ready = false; attached = null; controls(); clearInterval(polling); banner(error.message);
       scheduleReconnect();
     },
@@ -140,7 +142,7 @@ async function connect() {
   try {
     await c.connect(device.address, device.port);
     if (epoch !== connectionEpoch) return;
-    ready = true; retry = 0; await refresh(true);
+    ready = true; connectedAt = Date.now(); await refresh(true);
     if (epoch !== connectionEpoch) return;
     banner(''); controls(); learnComputers(c); polling = setInterval(() => refresh().catch(e => notify(e.message)), 10000);
   } catch (e) { if (epoch === connectionEpoch) { banner(e.message); scheduleReconnect(); } }
@@ -304,7 +306,7 @@ applyReadingMode();
 new ResizeObserver(() => { if (followingOutput()) revealOutput(); }).observe($('stage'));
 function hostEvent(event, p) {
   if (event === 'pty:data' && p.id === attached && term) {
-    termStream?.write({ ...p, follow: p.replay || followingOutput() });
+    return termStream?.write({ ...p, follow: p.replay || followingOutput() });
   } else if (event === 'pty:exit' && p.id === attached) {
     if (pane?.session) pane.session.alive = false;
     notify('Terminal exited' + (p.exitCode == null ? '.' : ' with code ' + p.exitCode + '.')); controls();

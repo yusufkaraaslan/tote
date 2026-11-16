@@ -113,8 +113,10 @@ class Sessions {
     s.pending.set(viewerId, token);
     s.mirror.write('', () => {
       if (this.map.get(sid) !== s || s.pending.get(viewerId) !== token) return;
-      s.pending.delete(viewerId);
       this.sendData(s, s.ser.serialize(), viewerId, true);
+      // Sending may synchronously disconnect an overloaded viewer.
+      if (s.pending.get(viewerId) !== token) return;
+      s.pending.delete(viewerId);
       s.subs.add(viewerId);
       if (!s.meta.alive) this.deliver(viewerId, 'pty:exit', { id: sid, exitCode: s.meta.exitCode });
     });

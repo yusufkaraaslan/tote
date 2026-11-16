@@ -1577,7 +1577,7 @@ async function sendToTab(relPath) {
 const LOCAL = '';                    // this machine's slice key
 const SLICE = ['profiles', 'workspaces', 'treeData', 'treeWs', 'views', 'tabs', 'activeTab', 'terms',
                'sessions', 'cliAvail', 'docs', 'docOrder', 'remote', 'activeTermByWs', 'expanded',
-               'sliceLoaded', 'deviceDown', 'needsReattach'];
+               'sliceLoaded', 'deviceDown', 'deviceDownReason', 'needsReattach'];
 state.deviceKey = LOCAL;
 state.slices = new Map();            // device key -> a stashed slice (never the current one)
 
@@ -1586,7 +1586,7 @@ function freshSlice() {
     profiles: [], workspaces: { active: null, list: [] }, treeData: [], treeWs: null, views: {},
     tabs: new Map(), activeTab: null, terms: new Map(), sessions: new Map(), cliAvail: new Map(),
     docs: new Map(), docOrder: [], remote: {}, activeTermByWs: {}, expanded: new Set(['inbox']),
-    sliceLoaded: false, deviceDown: false, needsReattach: false,
+    sliceLoaded: false, deviceDown: false, deviceDownReason: '', needsReattach: false,
   };
 }
 
@@ -1698,7 +1698,8 @@ function renderOfflineBanner() {
   bar.innerHTML = '';
   const msg = document.createElement('span');
   msg.textContent = d.name + ' is offline' + (state.deviceDownSince ? ' since ' + state.deviceDownSince : '') +
-    ' — reconnecting by itself. Its agents keep running there; this is the last thing they showed.';
+    ' — ' + (state.deviceDownReason ? state.deviceDownReason + '. ' : '') +
+    'Reconnecting by itself. Its agents keep running there; this is the last thing they showed.';
   bar.appendChild(msg);
   const b1 = document.createElement('button');
   b1.textContent = 'retry now';
@@ -1834,6 +1835,7 @@ tote.onDeviceLost((m) => {
   const S = sliceFor(m.key);
   if (!S) return;
   S.deviceDown = true;
+  S.deviceDownReason = m.reason || '';
   if (S === state) {
     state.deviceDownSince = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     renderOfflineBanner();
@@ -1845,6 +1847,7 @@ tote.onDeviceBack((m) => {
   const S = sliceFor(m.key);
   if (!S) return;
   S.deviceDown = false;
+  S.deviceDownReason = '';
   if (S === state) {
     if (state.device) state.device.up = true;
     renderOfflineBanner();
@@ -2318,6 +2321,7 @@ function closeTerm(id) {
 // Two id spaces share these events: host sessions (string ids this renderer
 // picked) and the wizard's own installer pty (a number from pty:run).
 tote.onPtyData((ptyId, data, dev, replay, grid = {}) => {
+  const consumed = () => { if (grid.delivery) tote.ackDeviceOutput(dev, grid.delivery); };
   // Filed under the device it came from: a hidden device's terminals keep
   // streaming into their hidden panes, like another space's do.
   const S = sliceFor(dev);
@@ -2325,10 +2329,10 @@ tote.onPtyData((ptyId, data, dev, replay, grid = {}) => {
   if (t) {
     // A replay is the whole screen as the host has it; on a re-attach this
     // xterm already shows an older copy, and writing on top would double it.
-    t.stream.write({ ...grid, data, replay });
+    t.stream.write({ ...grid, data, replay }).then(consumed);
     return;
   }
-  if (dev) return;
+  if (dev) { consumed(); return; }
   if (wizTerm && ptyId === wizTermPty) {
     wizTerm.write(data);
     // Buffer for the post-exit npm diagnostics; warnings sit at the tail, so

@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('tote', {
   ptyList: () => ipcRenderer.invoke('pty:list'),
   ptyAttach: (id) => ipcRenderer.invoke('pty:attach', id),
   ptyDetach: (id) => ipcRenderer.send('pty:detach', { id }),
+  ackDeviceOutput: (key, id) => ipcRenderer.send('devices:outputAck', key, id),
   ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
   ptyResize: (id, cols, rows, claim = true) => ipcRenderer.send('pty:resize', { id, cols, rows, claim }),
   ptyKill: (id) => ipcRenderer.send('pty:kill', { id }),

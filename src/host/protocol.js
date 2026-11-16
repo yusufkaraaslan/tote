@@ -50,6 +50,9 @@ function decode(text) {
     case 'ev':
       if (typeof msg.e !== 'string') return { error: 'event without a name' };
       return { msg };
+    case 'ack':
+      if (!Number.isSafeInteger(msg.seq) || msg.seq < 1) return { error: 'invalid output acknowledgement' };
+      return { msg };
     default:
       return { error: 'unknown message type: ' + msg.t };
   }

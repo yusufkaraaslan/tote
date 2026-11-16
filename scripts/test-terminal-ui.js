@@ -18,6 +18,8 @@ api.onPtyExit = cb => ipcRenderer.on('pty:exit', (_e,p) => cb(p.id,p.exitCode));
 contextBridge.exposeInMainWorld('tote',api);
 `);
 const windows = new Map(), errors = [], resizes = [];
+let releaseInitialSessions, initialSessionsRequested = false;
+const initialSessions = new Promise(resolve => { releaseInitialSessions = resolve; });
 const sessions = new Sessions({launch:()=>1,write(){},resize:(_,cols,rows)=>resizes.push([cols,rows]),kill(){}},
   (id,event,p) => windows.get(id)?.webContents.send(event,p));
 sessions.spawn({sid:'shared',meta:{wsId:'work',title:'Shared terminal'},spec:{cols:100,rows:24}});
@@ -29,7 +31,7 @@ function finish(code) {
   app.exit(code);
 }
 setTimeout(() => { console.error('Terminal UI harness exceeded 60 seconds'); finish(1); }, 60000).unref();
-ipcMain.handle('fixture', (e,name,args) => {
+ipcMain.handle('fixture', async (e,name,args) => {
   const id=String(e.sender.id);
   switch(name) {
     case 'getViewsSnapshot': return {protocol:1,views:{work:{tabs:[],docs:[],activeGroup:'g',groups:[{id:'g',name:'Build',tree:{type:'leaf',id:'term-leaf',kind:'term',ref:'shared'},focus:'term-leaf'}]}},revisions:{}};
@@ -40,7 +42,9 @@ ipcMain.handle('fixture', (e,name,args) => {
     case 'devicesList': return {devices:[],share:{}};
     case 'listWorkspaces': return {active:'work',list:[{id:'work',name:'Work',path:'/preview'}]};
     case 'getViews': return {work:{tabs:[],docs:[],activeGroup:'g',groups:[{id:'g',name:'Build',tree:{type:'leaf',id:'term-leaf',kind:'term',ref:'shared'},focus:'term-leaf'}]}};
-    case 'ptyList': return sessions.list();
+    case 'ptyList':
+      if (!initialSessionsRequested) { initialSessionsRequested = true; await initialSessions; }
+      return sessions.list();
     case 'ptyAttach': return sessions.attach(args[0],id);
     case 'ptyResize': return sessions.resize(args[0],args[1],args[2],id,args[3]);
     case 'ptyAvailable': return {ok:true};
@@ -56,6 +60,15 @@ app.whenReady().then(async()=>{
       win.webContents.on('console-message',(_e,_l,m)=>{if(/Uncaught|TypeError|ReferenceError/.test(m))errors.push(m);});
       await win.loadFile(path.join(root,'src/renderer/index.html'));
       win.showInactive();
+      if (windows.size === 1) {
+        const deadline = Date.now() + 15000;
+        while (!initialSessionsRequested && Date.now() < deadline) await pause(25);
+        assert(initialSessionsRequested, 'first viewer requests host sessions');
+        // Force the resize path between the layout snapshot and session reply.
+        const refs = await win.webContents.executeJavaScript("applyTiles(); TileTree.leaves(state.views.work.groups[0].tree).map(l=>l.ref)");
+        assert(refs.includes('shared'), 'startup resize must preserve terminal leaves until host sessions arrive');
+        releaseInitialSessions();
+      }
     }
     const [a,b]=[...windows.values()];
     const run=(w,code)=>w.webContents.executeJavaScript(code);

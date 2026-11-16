@@ -923,6 +923,7 @@ ipcMain.handle('updates:open', () => require('./updates').openRelease({
 }));
 const updateGuard = require('./updateGuard').createGuard({
   onReply: callback => ipcMain.on('updates:guardReply', callback),
+  validate: () => { if (wizardOwners.size) throw Error('Finish the running setup commands before updating the desktop.'); },
   windows: () => BrowserWindow.getAllWindows().filter(w => host.viewers.has(viewerIdOf(w.webContents))),
   confirm: async () => {
     if (wizardOwners.size) throw Error('Finish the running setup commands before updating the desktop.');
@@ -937,7 +938,7 @@ ipcMain.handle('updates:status', () => selfUpdater.restore());
 ipcMain.handle('updates:download', () => selfUpdater.start());
 ipcMain.handle('updates:cancel', () => { selfUpdater.cancel(); return true; });
 ipcMain.handle('updates:install', async () => {
-  if (installingUpdate) throw Error('An installation is already running.');
+  if (installingUpdate || upgradingHost) throw Error('Another update operation is running.');
   installingUpdate = true;
   try {
     return await selfUpdater.install(updateGuard, target => {
@@ -950,10 +951,14 @@ ipcMain.handle('updates:install', async () => {
 const startupOptions = () => ({ ...hostLaunch, dataDir: app.getPath('userData') });
 ipcMain.handle('host:status', async () => {
   const status = await host.admin('local:status').catch(error => ({ running: false, error: error.message }));
-  return { ...status, startAtLogin: hostStartup.enabled(startupOptions()) };
+  return { ...status, viewerVersion:app.getVersion(), startAtLogin: hostStartup.enabled(startupOptions()) };
 });
-ipcMain.handle('host:start', async () => host.start());
+ipcMain.handle('host:start', async () => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
+  return host.start();
+});
 ipcMain.handle('host:stop', async e => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
   const status = await host.admin('local:status');
   if (status.terminals) {
     const result = await dialog.showMessageBox(winOf(e), { type: 'warning',
@@ -963,6 +968,18 @@ ipcMain.handle('host:stop', async e => {
     if (result.response !== 1) return { canceled: true };
   }
   return host.admin('local:stop', [{ force: status.terminals > 0 }]);
+});
+let upgradingHost = false;
+ipcMain.handle('host:upgrade', async e => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
+  upgradingHost = true;
+  try {
+    const result = await require('./updates').upgradeHost({host,current:app.getVersion(),confirm:async()=>
+      (await dialog.showMessageBox(winOf(e), {type:'question',buttons:['Cancel','Upgrade idle host'],defaultId:0,cancelId:0,
+        message:'Upgrade the idle background host?',detail:'Connected viewers will briefly reconnect. This action refuses if any host terminal is running.'})).response === 1});
+    if (result.upgraded && hostStartup.enabled(startupOptions())) hostStartup.setEnabled(true,startupOptions());
+    return result;
+  } finally { upgradingHost = false; }
 });
 ipcMain.handle('host:startup', (_e, on) => hostStartup.setEnabled(on === true, startupOptions()));
 ipcMain.handle('app:version', () => app.getVersion());

@@ -1,7 +1,7 @@
 // Ask every local viewer to flush layouts and freeze editing before replacement.
 // A crashed/unresponsive viewer, navigation, or a newly opened window fails closed.
 const crypto = require('node:crypto');
-function createGuard({ onReply, windows, confirm, timeout = 15000 }) {
+function createGuard({ onReply, windows, confirm, validate = () => {}, timeout = 15000 }) {
   let active = null;
   onReply((event, token, clean) => {
     if (active?.token !== token || !active.pending.has(event.sender.id)) return;
@@ -29,6 +29,7 @@ function createGuard({ onReply, windows, confirm, timeout = 15000 }) {
       active = null;
     };
     unlock.assert = () => {
+      validate();
       if (changed || windows().some(w => !viewers.includes(w)) || viewers.some(w => w.isDestroyed())) throw Error('The open windows changed. Try again.');
     };
     try {

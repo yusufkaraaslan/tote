@@ -22,10 +22,14 @@ fs.writeFileSync(preload, `
 const { contextBridge } = require('electron');
 let active = 'tote', diagnosticOffline = false, updatesBusy = true, updatesFail = false;
 const calls = [], sessions = [];
+let hostVersion='0.4.0',hostTerminals=2;
 const list = ['Global', 'tote', 'KnitGame', 'Genesis', ...Array.from({length: 20}, (_, i) => 'Project ' + (i + 1))].map((name, i) => ({ id: i === 0 ? 'global' : name, name, path: '/preview/' + name }));
 const api = Object.fromEntries(${JSON.stringify(names)}.map(name => [name, name.startsWith('on') ? () => {} : async () => null]));
 Object.assign(api, {
   updateStatus: async () => ({phase:'idle'}),
+  hostStatus: async () => ({running:true,version:hostVersion,viewerVersion:'0.5.0',terminals:hostTerminals}),
+  testHostIdle: async () => {hostTerminals=0;},
+  hostUpgrade: async () => {calls.push({method:'hostUpgrade'});hostVersion='0.5.0';return {upgraded:true};},
   testUpdates: async (busy, fail=false) => { updatesBusy=busy; updatesFail=fail; },
   checkUpdates: async () => { calls.push({method:'checkUpdates'}); if(updatesFail)throw Error('offline');return {current:'0.5.0',latest:'0.6.0',available:true,activeTerminals:updatesBusy?2:0}; },
   openUpdate: async () => { calls.push({method:'openUpdate'}); return {deferred:updatesBusy,activeTerminals:updatesBusy?2:0}; },
@@ -120,6 +124,13 @@ app.whenReady().then(async () => {
     }
     await run("document.querySelector('#set-nav [data-sec=about]').click()"); await settle();
     assert.equal(await run("tote.testCalls().then(c=>c.filter(x=>x.method==='checkUpdates').length)"),0,'no unsolicited update requests');
+    assert.equal(await run("document.querySelector('#host-upgrade').hidden"),false);
+    assert.equal(await run("document.querySelector('#host-upgrade').disabled"),true,'active host upgrade is deferred');
+    await run("tote.testHostIdle().then(()=>document.querySelector('#host-refresh').click())");await settle();
+    assert.equal(await run("document.querySelector('#host-upgrade').disabled"),false);
+    await run("document.querySelector('#host-upgrade').click()");await settle();
+    assert.equal(await run("document.querySelector('#host-upgrade').hidden"),true,'upgraded host matches viewer');
+    assert.equal(await run("tote.testCalls().then(c=>c.filter(x=>x.method==='hostUpgrade').length)"),1);
     await run("document.querySelector('#set-update-check').click()");await settle();
     assert.equal(await run("document.querySelector('#set-update-open').disabled"),true);
     assert.match(await run("document.querySelector('#set-update-advice').textContent"),/2 host terminals/);

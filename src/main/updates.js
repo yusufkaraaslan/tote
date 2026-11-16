@@ -37,4 +37,31 @@ async function openRelease({ sessions, check, current, open }) {
   if(!release.available)return {available:false};
   await open(release.url); return {opened:true};
 }
-module.exports={fetchLatest,checker,openRelease};
+// Only this explicit action adopts the new viewer's already-copied host runtime.
+// The host checks its live session count atomically when processing local:stop.
+async function upgradeHost({host,current,confirm,now=Date.now,pause=ms=>new Promise(r=>setTimeout(r,ms))}) {
+  const status = await host.admin('local:status');
+  if (U.compare(current,status.version) !== 1) return {unchanged:true};
+  if (status.terminals) return {deferred:true,activeTerminals:status.terminals};
+  if (!await confirm()) return {canceled:true};
+  await host.admin('local:stop',[{force:false}]);
+  const deadline = now()+20000;
+  while (now()<deadline) {
+    await pause(100);
+    let stopped = false;
+    try {
+      const next = await host.admin('local:status');
+      if (!next.stopping) throw Error('The host changed while upgrading. Check its status before trying again.');
+    } catch (error) {
+      if (!/ECONNREFUSED/.test(error.message)) throw error;
+      stopped = true;
+    }
+    if (stopped) {
+      const started = await host.start();
+      if (started.version !== current) throw Error('A different host runtime started. Refresh host status before trying again.');
+      return {upgraded:true,...started};
+    }
+  }
+  throw Error('The host has not finished stopping. Check its status before starting it again.');
+}
+module.exports={fetchLatest,checker,openRelease,upgradeHost};

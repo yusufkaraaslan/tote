@@ -3291,10 +3291,21 @@ async function refreshHostStatus() {
       : status.stopping ? 'Stopping background host…' : 'Stopped or unavailable. ' + (status.error || '');
     $('#host-start').disabled = status.running || status.stopping;
     $('#host-stop').disabled = !status.running;
+    $('#host-upgrade').hidden = !status.running || window.ToteUpdates.compare(status.viewerVersion,status.version) !== 1;
+    $('#host-upgrade').disabled = status.terminals > 0;
+    $('#host-upgrade').title = status.terminals ? 'Finish host terminals before upgrading the host.' : '';
     $('#host-startup').checked = status.startAtLogin;
   } catch (error) { $('#host-status').textContent = error.message; }
 }
 $('#host-refresh').onclick = refreshHostStatus;
+$('#host-upgrade').onclick = async () => {
+  $('#host-upgrade').disabled = true;
+  try {
+    const result = await tote.hostUpgrade();
+    await refreshHostStatus();
+    if (result.deferred) $('#host-status').textContent = `${result.activeTerminals} host terminals are running. Finish them before upgrading the host.`;
+  } catch (error) { $('#host-status').textContent = error.message; $('#host-upgrade').disabled = false; }
+};
 for (const action of ['start', 'stop']) $('#host-' + action).onclick = async () => {
   $('#host-' + action).disabled = true;
   try {
@@ -3326,7 +3337,7 @@ tote.onUpdateGuard?.(async ({ token, release }) => {
   } catch { if (updateGuardToken === token) tote.updateGuardReply(token, false); }
 });
 function renderUpdateProgress(s) {
-  $('#set-update-install').hidden = s.phase !== 'ready';
+  $('#set-update-install').hidden = s.phase !== 'ready' || s.supported === false;
   $('#set-update-cancel').hidden = s.phase !== 'downloading';
   $('#set-update-download').disabled = s.phase === 'downloading';
   $('#set-update-progress').textContent = s.phase === 'downloading' ? (s.total ? `Downloading… ${Math.floor(100*s.received/s.total)}%` : 'Preparing download…')

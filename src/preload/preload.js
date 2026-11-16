@@ -99,6 +99,7 @@ contextBridge.exposeInMainWorld('tote', {
   hostStatus: () => ipcRenderer.invoke('host:status'),
   hostStart: () => ipcRenderer.invoke('host:start'),
   hostStop: () => ipcRenderer.invoke('host:stop'),
+  hostUpgrade: () => ipcRenderer.invoke('host:upgrade'),
   hostStartup: on => ipcRenderer.invoke('host:startup', on),
   devicePeers: () => ipcRenderer.invoke('device:peers'),
   deviceSettings: () => ipcRenderer.invoke('device:settings'),

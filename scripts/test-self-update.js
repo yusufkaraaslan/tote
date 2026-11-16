@@ -90,3 +90,28 @@ test('all viewers must acknowledge clean state; dirty or unresponsive viewers un
   release.assert();f.windows[1].webContents.emit('did-start-navigation');assert.throws(release.assert,/windows changed/);release();
   assert.equal(f.events.filter(e=>e.release).length,2);
 });
+test('explicit host upgrade defers live agents, refuses a late agent and adopts only an idle runtime', async () => {
+  const {upgradeHost}=require('../src/main/updates');
+  let stops=0, starts=0, confirmations=0;
+  const confirm=async()=>{confirmations++;return true;};
+  const host={admin:async()=>({version:'0.4.0',terminals:2}),start:async()=>{starts++;return {version:'0.5.0'};}};
+  assert.deepEqual(await upgradeHost({host,current:'0.5.0',confirm}),{deferred:true,activeTerminals:2});
+  assert.equal(confirmations,0);
+  host.admin=async(name,args)=>{
+    if(name==='local:status')return {version:'0.4.0',terminals:0};
+    assert.equal(args[0].force,false);stops++;throw Error('1 terminals are running');
+  };
+  await assert.rejects(upgradeHost({host,current:'0.5.0',confirm}),/terminals/);assert.equal(starts,0);
+  let status=0;
+  host.admin=async(name,args)=>{
+    if(name==='local:stop'){assert.equal(args[0].force,false);stops++;return {stopping:true};}
+    if(status++===0)return {version:'0.4.0',terminals:0};
+    if(status===2)return {stopping:true};
+    throw Error('connect ECONNREFUSED');
+  };
+  assert((await upgradeHost({host,current:'0.5.0',confirm,pause:async()=>{}})).upgraded);
+  assert.equal(starts,1);assert.equal(stops,2);
+  host.admin=async()=>({version:'0.6.0',terminals:0});
+  assert((await upgradeHost({host,current:'0.5.0',confirm})).unchanged);
+  assert.equal(starts,1);
+});

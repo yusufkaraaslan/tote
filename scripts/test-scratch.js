@@ -229,7 +229,7 @@ describe('discardTemp', () => {
       fs.mkdirSync(outside, { recursive: true });
       fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
       fs.rmSync(entry.path, { recursive: true, force: true });
-      fs.symlinkSync(outside, entry.path);
+      fs.symlinkSync(outside, entry.path, 'dir');
       assert.throws(() => h.wm.discardTemp(id), /scratch root/i);
       assert.strictEqual(fs.existsSync(path.join(outside, 'keep.txt')), true);
     } finally { h.cleanup(); }

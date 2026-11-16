@@ -841,7 +841,7 @@ class WorkspaceManager {
   watchLocal(space, budget, callback) {
     const chokidar = require('chokidar');
     let timer = null;
-    const root = space.path;
+    const root = path.resolve(space.path);
     const { depth, capped } = this.watchPlan(root, 5, budget);
     if (capped) {
       console.warn(
@@ -857,7 +857,9 @@ class WorkspaceManager {
       // The root is handed to this predicate too, and pruning it would watch
       // nothing at all -- a space whose own folder happens to be called `out`,
       // `dist` or `Logs`.
-      ignored: (p) => p !== root && skip(path.dirname(p), path.basename(p)),
+      // Chokidar uses forward slashes on Windows too; normalize before the
+      // root exemption or a root named `dist` gets mistaken for a child cache.
+      ignored: (p) => path.resolve(p) !== root && skip(path.dirname(p), path.basename(p)),
     });
     watcher.on('all', () => {
       clearTimeout(timer);

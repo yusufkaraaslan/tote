@@ -414,6 +414,31 @@ For native Android checks, run `./gradlew testDebugUnitTest lintDebug` from
 still needed for Android Tailscale networking, speech, keyboard behavior and
 background/foreground recovery.
 
+[GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
+runs the full logic suite on Linux, macOS and Windows with Node 22, the three
+renderer checks under a Linux virtual display, and Android native tests, lint and
+a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
+kept as workflow artifacts for seven days. These checks use isolated fixtures;
+they do not verify live Tailscale accounts, real agent sessions, native desktop
+installers, or the physical-device behaviors above.
+
+### Configuration recovery
+
+Tote saves each JSON file in its application-data `config` folder through a flushed
+temporary file and an atomic rename. A sibling `.bak` holds the preceding valid
+distinct version; unchanged saves leave the backup intact. On first use, it contains
+the initial configuration. Missing JSON or an invalid top-level structure is
+restored from that backup with a notice; damaged bytes remain in a
+`.corrupt-…` file for inspection. If neither copy is usable, Tote reports the path
+and stops startup so you can restore it, instead of opening an empty configuration.
+
+Backups cover settings, workspaces, provider and CLI profiles, apps and saved
+layouts. They do not back up workspace files or unsaved editor buffers. Only one
+prior version is retained, and concurrent layout edits still use last-edit-wins.
+Recovery assumes the filesystem supports atomic sibling renames; Windows flushes
+the file, while supported POSIX filesystems also flush the containing directory.
+An abrupt process exit can leave an unused `.tmp` file, which Tote ignores.
+
 ## Architecture
 
 ```text
@@ -445,6 +470,12 @@ Further implementation notes: [AGENTS.md](AGENTS.md),
 [Android development](mobile/README.md).
 
 ## Roadmap
+
+The [feature backlog](https://github.com/yusufkaraaslan/tote/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
+tracks the proposed improvements and their acceptance criteria. The first
+[stabilization milestone](https://github.com/yusufkaraaslan/tote/milestone/1)
+covers safe persistence, automated checks, shared-device reliability, diagnostics
+and updates.
 
 - Global hotkey and tray access.
 - Per-workspace download routing rules.

@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('tote', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   getViews: () => ipcRenderer.invoke('views:get'),
   saveViews: (v) => ipcRenderer.invoke('views:save', v),
+  getViewsSnapshot: (device) => ipcRenderer.invoke('views:snapshot', device),
+  patchViews: (patch, device) => ipcRenderer.invoke('views:patch', patch, device),
   saveSettings: (s) => ipcRenderer.invoke('settings:save', s),
 
   // native apps

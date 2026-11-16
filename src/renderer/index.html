@@ -55,6 +55,7 @@
     <header id="workspace-context"><span id="context-space"></span><span class="context-sep">/</span><span id="context-group"></span><span id="context-device">this machine</span></header>
 
     <div id="main">
+      <div id="layout-status" class="hidden" role="status" aria-live="polite"></div>
       <!-- Flat tiling surface. Every pane is a DIRECT child, created once per
            content instance and never reparented -- moving a pane changes its
            rect, never its parent. Dividers are siblings, rebuilt per layout. -->
@@ -305,6 +306,7 @@
   <script src="termreports.js"></script>
   <script src="termstream.js"></script>
   <script src="termclipboard.js"></script>
+  <script src="viewsync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

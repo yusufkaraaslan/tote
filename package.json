@@ -12,7 +12,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
-    "test": "node --test scripts/test-config.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
+    "test": "node --test scripts/test-config.js scripts/test-views.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
@@ -24,7 +24,8 @@
     "mobile:build": "npm --prefix mobile run sync",
     "mobile:apk": "npm --prefix mobile run apk",
     "test:mobile-ui": "npm --prefix mobile run test:ui",
-    "test:terminal-ui": "electron scripts/test-terminal-ui.js"
+    "test:terminal-ui": "electron scripts/test-terminal-ui.js",
+    "test:layout-sync-ui": "electron scripts/test-layout-sync-ui.js"
   },
   "build": {
     "appId": "com.tote.app",

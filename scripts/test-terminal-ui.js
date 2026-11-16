@@ -24,6 +24,8 @@ sessions.spawn({sid:'shared',meta:{wsId:'work',title:'Shared terminal'},spec:{co
 ipcMain.handle('fixture', (e,name,args) => {
   const id=String(e.sender.id);
   switch(name) {
+    case 'getViewsSnapshot': return {protocol:1,views:{work:{tabs:[],docs:[],activeGroup:'g',groups:[{id:'g',name:'Build',tree:{type:'leaf',id:'term-leaf',kind:'term',ref:'shared'},focus:'term-leaf'}]}},revisions:{}};
+    case 'patchViews': return {ok:true,snapshot:{protocol:1,views:Object.fromEntries(args[0].changes.filter(c=>c.value!==null).map(c=>[c.wsId,c.value])),revisions:{}}};
     case 'getSettings': return {setupDone:true};
     case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'devicesOpen': return [];
     case 'deviceSettings': return {keepAwake:false};

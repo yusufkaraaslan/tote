@@ -32,6 +32,13 @@ Object.assign(api, {
   getViews: async () => ({tote:{tabs:[],docs:[],activeGroup:'build',groups:[{id:'build',name:'Build',tree:{id:'files-test',kind:'files',ref:'files'},focus:'files-test'},{id:'research',name:'Research',tree:null}]}}),
   devicesList: async () => ({devices:[],share:{}}), devicesOpen: async () => [],
 });
+let savedViews;
+api.getViewsSnapshot = async () => ({protocol:1,views:savedViews || await api.getViews(),revisions:{}});
+api.patchViews = async patch => {
+  savedViews ||= await api.getViews();
+  for(const c of patch.changes) { if(c.value===null)delete savedViews[c.wsId];else savedViews[c.wsId]=c.value; }
+  return {ok:true,snapshot:await api.getViewsSnapshot()};
+};
 contextBridge.exposeInMainWorld('tote', api);
 `);
 app.whenReady().then(async () => {

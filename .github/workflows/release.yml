@@ -167,6 +167,7 @@ jobs:
           retention-days: 7
   assemble:
     needs: [plan, desktop, android]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.desktop.result == 'success' && needs.android.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

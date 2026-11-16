@@ -487,6 +487,8 @@ Desktop **Settings → About → Check for updates** and Android **Updates** che
 
 Source now targets **0.5.0** on both desktop and Android; the download links above remain the last published release until a new build is published. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). [0.5.0 candidate notes](docs/releases/v0.5.0.md) describe the changes and verification still needed before publication.
 
+Dependency proposals, advisory monitoring, Electron support checks and the upgrade validation checklist are documented in [Dependency maintenance](docs/dependencies.md). Run `npm run dependencies:report` to inspect current lockfile advisories and runtime support; existing findings remain visible until fixed.
+
 ## Architecture
 
 ```text

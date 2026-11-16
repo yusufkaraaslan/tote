@@ -2,6 +2,8 @@
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto'), assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 function main() {
+  const out = path.resolve(__dirname, '../reports/releases'); fs.mkdirSync(out, { recursive: true });
+  fs.rmSync(path.join(out, 'android-upgrade.json'), { force: true });
   const [serial, previous, candidate] = process.argv.slice(2);
   if (!/^emulator-\d+$/.test(serial || '') || !previous || !candidate) throw Error('Usage: node scripts/test-android-upgrade.js emulator-PORT previous.apk candidate.apk');
   const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
@@ -26,7 +28,6 @@ function main() {
     const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     const report = { checkedAt: new Date().toISOString(), emulatorApi: api, previousSha256: hash(previous), candidateSha256: hash(candidate),
       inPlaceUpgrade: true, appDataPreserved: true, candidateNotDebuggable: true, launch: true, physicalDeviceVerified: false };
-    const out = path.resolve(__dirname, '../reports/releases'); fs.mkdirSync(out, { recursive: true });
     fs.writeFileSync(path.join(out, 'android-upgrade.json'), JSON.stringify(report, null, 2) + '\n');
     console.log('Android emulator upgrade passed: in-place install, preserved app data, non-debuggable candidate and launch. Physical-device verification remains pending.');
   } finally { if (installed) adb('uninstall', 'com.tote.mobile'); }

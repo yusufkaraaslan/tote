@@ -25,7 +25,7 @@ node scripts/test-android-upgrade.js emulator-PORT previous.apk candidate.apk
 
 It refuses phones and emulators that already have Tote. It installs the previous debuggable APK, writes a private-data marker, updates in place, checks the marker using the emulator's root access, verifies that the candidate disallows `run-as`, and launches it. It removes only the fixture installation it created. Results go to ignored `reports/releases/android-upgrade.json`. This command is for the legacy-debug-to-production transition, not arbitrary release rollback testing.
 
-On 2026-11-16 the published 0.4.0 APK (versionCode 9) upgraded to the 0.5.0 candidate (versionCode 11) in an Android 15/API 35 emulator. App data survived and the non-debuggable app launched. Physical phone discovery, voice, file-save and installation behavior remain pending; an emulator pass is not phone acceptance.
+On 2026-11-16 the published 0.4.0 APK (versionCode 9) upgraded to the 0.5.0 candidate (versionCode 11) in Android 13/API 33 and Android 15/API 35 emulators. App data survived and the non-debuggable app launched. Physical phone discovery, voice, file-save and installation behavior remain pending; an emulator pass is not phone acceptance.
 
 ## Key custody and recovery
 

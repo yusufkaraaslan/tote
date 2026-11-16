@@ -24,6 +24,8 @@ const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnipp
 const { Host } = require('../host/host');
 const CH = require('../host/channels');
 const { DeviceServer, tailnetAuthorizer } = require('../host/server');
+const Diagnostics = require('../shared/diagnostics');
+const diagnosticLog = Diagnostics.createLog();
 const TS = require('../host/tailscale');
 const { DeviceClient, discover } = require('./devices');
 
@@ -226,6 +228,7 @@ async function applyShareSetting() {
     deviceServer = server;
     console.log('[tote] sharing this device on ' + server.address);
   } catch (e) {
+    diagnosticLog.add('sharing', e);
     shareError = e.code === 'EADDRINUSE' ? 'port ' + port + ' is already in use' : e.message;
     console.error('[tote] could not share this device:', shareError);
   }
@@ -827,6 +830,7 @@ function connectDevice(wc, d) {
       output.clear();
       if (d.connectedAt && Date.now() - d.connectedAt >= 30000) d.backoff = 0;
       if (d.gone) return;
+      diagnosticLog.add('connection', reason);
       d.up = false;
       if (!wc.isDestroyed()) wc.send('devices:lost', { key: d.key, name: d.name, reason });
       scheduleRetry(wc, d);
@@ -834,6 +838,7 @@ function connectDevice(wc, d) {
   });
   return d.client.connect().then((hello) => {
     d.up = true;
+    d.lastVersion = hello.tote;
     d.connectedAt = Date.now();
     if (!d.named && hello.device) d.name = hello.device;
     return hello;
@@ -1030,6 +1035,57 @@ ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
 
 ipcMain.handle('app:newWindow', () => { createWindow(); });
 
+async function localDiagnostics() {
+  let network;
+  try {
+    const status = await TS.status();
+    network = { state: ({ Running: 'running', Stopped: 'stopped', NeedsLogin: 'needs-login' })[status.backend] || 'unknown' };
+  } catch (error) {
+    diagnosticLog.add('tailscale', error);
+    network = { state: 'unavailable', reason: Diagnostics.classify(error) };
+  }
+  return { events: diagnosticLog.snapshot(), network: { host: network }, sharing: { enabled: configStore.getSettings().shareDevice === true,
+    listening: !!deviceServer, reason: shareError ? Diagnostics.classify(shareError) : null } };
+}
+
+ipcMain.handle('diagnostics:get', async (e, metrics = {}) => {
+  const d = deviceOf(e.sender), key = d?.key || '';
+  if (metrics.deviceKey !== key) throw new Error('Device changed. Refresh diagnostics.');
+  const local = d ? await localDiagnostics() : null;
+  let snapshot, status = 'current';
+  try {
+    if (d && !d.up) throw new Error('Device disconnected');
+    snapshot = d ? await Diagnostics.withTimeout(d.client.call('device:diagnostics', []))
+      : await host.call('device:diagnostics', viewerIdOf(e.sender), []);
+    if (!snapshot || snapshot.format !== 'tote-diagnostics-v1') throw new Error('Incompatible host diagnostics');
+    if (d) {
+      const safe = Diagnostics.report(snapshot);
+      snapshot = { ...safe, terminals: safe.terminals.map((t, i) => ({ ...t, id: snapshot.terminals[i]?.id })) };
+      d.diagnosticSnapshot = snapshot;
+    }
+  } catch (error) {
+    diagnosticLog.add('diagnostics', error);
+    snapshot = d?.diagnosticSnapshot;
+    status = snapshot ? 'cached' : /Not a host method|incompatible/i.test(error.message) ? 'unsupported' : 'unavailable';
+  }
+  return Diagnostics.compose({ snapshot, status, metrics: metrics.terminals,
+    viewer: { kind: 'desktop', version: app.getVersion(), platform: process.platform, runtime: process.versions.electron },
+    hostVersion: d?.lastVersion, network: local?.network.host || snapshot?.network?.host,
+    connection: { mode: d ? 'remote' : 'local', state: d ? d.up ? 'connected' : 'disconnected' : 'local',
+      flow: d?.client.remote?.flow, pendingCalls: d?.client.pending.size || 0,
+      queuedBytes: d?.client.ws?.bufferedAmount || 0, pendingFrames: d?.output?.size || 0 },
+    events: d ? diagnosticLog.snapshot() : [],
+  });
+});
+ipcMain.handle('diagnostics:export', async (e, report) => {
+  const text = Diagnostics.stringify(report);
+  const result = await dialog.showSaveDialog(winOf(e), { title: 'Save reviewed diagnostics',
+    defaultPath: 'tote-diagnostics.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (result.canceled || !result.filePath) return false;
+  await fs.promises.writeFile(result.filePath, text, { encoding: 'utf8', mode: 0o600 });
+  return true;
+});
+
 ipcMain.handle('app:version', () => app.getVersion());
 
 ipcMain.on('app:openExternal', (e, url) => {
@@ -1084,6 +1140,8 @@ if (!gotLock) {
     host = new Host({
       cfg: configStore, workspace, ptys,
       platform: {
+        version: app.getVersion(),
+        diagnostics: localDiagnostics,
         trash: (abs) => shell.trashItem(abs),
         openExternal: (url) => shell.openExternal(url),
         applyKeepAwake: () => applyKeepAwake(),

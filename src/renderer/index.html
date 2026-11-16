@@ -128,6 +128,7 @@
         <button class="ni" data-sec="apps">Apps</button>
         <button class="ni" data-sec="devices">Devices</button>
         <button class="ni" data-sec="behavior">Behavior</button>
+        <button class="ni" data-sec="diagnostics">Diagnostics</button>
         <button class="ni" data-sec="about">About</button>
       </nav>
       <div id="set-content">
@@ -205,6 +206,14 @@
           </label>
         </section>
 
+        <section class="sec" data-sec="diagnostics">
+          <h2>Diagnostics</h2>
+          <p class="lede">Connection and terminal sizing for the device you are viewing. Review the report below before saving. It excludes terminal text, file contents, paths, device names, addresses, tokens and cookies.</p>
+          <button id="diagnostics-refresh">Refresh</button> <button id="diagnostics-save" disabled>Save reviewed report</button>
+          <p id="diagnostics-status" role="status"></p>
+          <div id="diagnostics-summary"></div>
+          <details><summary>Review JSON report</summary><pre id="diagnostics-preview"></pre></details>
+        </section>
         <section class="sec" data-sec="about">
           <h2>About</h2>
           <p class="lede">tote — one window for all your agents.</p>
@@ -307,6 +316,7 @@
   <script src="termstream.js"></script>
   <script src="termclipboard.js"></script>
   <script src="viewsync.js"></script>
+  <script src="../shared/diagnostics.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

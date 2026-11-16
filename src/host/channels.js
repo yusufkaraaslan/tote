@@ -20,7 +20,7 @@ const HOST = new Set([
   // path: a native picker can only browse THIS machine's disk, so on another
   // machine the path is typed instead.
   'workspaces:addLocal', 'workspaces:setPathTo', 'workspaces:promoteTo',
-  'device:settings', 'device:setKeepAwake', 'device:peers',
+  'device:diagnostics', 'device:settings', 'device:setKeepAwake', 'device:peers',
   'remote:connect', 'remote:state', 'remote:disconnect',
   'workspace:getRoot', 'workspace:tree', 'workspace:read', 'workspace:readDoc',
   'workspace:write', 'workspace:createFile', 'workspace:createFolder', 'workspace:rename',
@@ -38,6 +38,7 @@ const HOST = new Set([
 const FIRE = new Set(['pty:write', 'pty:resize', 'pty:kill', 'pty:detach']);
 
 const VIEWER = new Set([
+  'diagnostics:get', 'diagnostics:export',
   'clipboard:readText', 'clipboard:writeText',
   'config:getProviders', 'config:saveProviders', 'config:openDir',
   'settings:get', 'settings:save',

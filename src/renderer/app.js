@@ -3236,8 +3236,39 @@ function showSettingsSection(sec) {
   for (const n of document.querySelectorAll('#set-nav .ni')) n.classList.toggle('active', n.dataset.sec === sec);
   for (const x of document.querySelectorAll('#set-content .sec')) x.classList.toggle('active', x.dataset.sec === sec);
   if (sec === 'devices') renderDevicesSection();
+  if (sec === 'diagnostics') refreshDiagnostics();
 }
 for (const n of document.querySelectorAll('#set-nav .ni')) n.onclick = () => showSettingsSection(n.dataset.sec);
+
+let diagnosticsReport = null, diagnosticsRequest = 0;
+async function refreshDiagnostics() {
+  const ticket = ++diagnosticsRequest, key = state.deviceKey;
+  diagnosticsReport = null; $('#diagnostics-save').disabled = true;
+  $('#diagnostics-status').textContent = 'Collecting diagnostics…';
+  $('#diagnostics-preview').textContent = ''; $('#diagnostics-summary').replaceChildren();
+  const terminals = [...state.terms.values()].slice(0, 64).map(t => ({
+    id: t.sid, alive: t.alive, focused: t.pane.el.classList.contains('focused'),
+    host: { cols: t.hostCols, rows: t.hostRows },
+    local: { cols: t.term.cols, rows: t.term.rows, width: t.pane.el.clientWidth, height: t.pane.el.clientHeight },
+  }));
+  try {
+    const value = await tote.diagnosticsGet({ deviceKey: key, terminals });
+    if (ticket !== diagnosticsRequest) return;
+    if (key !== state.deviceKey) { $('#diagnostics-status').textContent = 'Device changed. Refresh diagnostics.'; return; }
+    diagnosticsReport = window.ToteDiagnostics.report(value);
+    window.ToteDiagnostics.render($('#diagnostics-summary'), diagnosticsReport);
+    $('#diagnostics-preview').textContent = window.ToteDiagnostics.stringify(diagnosticsReport);
+    $('#diagnostics-save').disabled = false;
+    $('#diagnostics-status').textContent = 'Snapshot ready. Recent errors are categorized; raw messages are excluded.';
+  } catch { if (ticket === diagnosticsRequest) $('#diagnostics-status').textContent = 'Could not collect diagnostics. Try refreshing.'; }
+}
+$('#diagnostics-refresh').onclick = refreshDiagnostics;
+$('#diagnostics-save').onclick = async () => {
+  if (!diagnosticsReport) return;
+  const snapshot = diagnosticsReport;
+  try { if (await tote.diagnosticsExport(snapshot)) $('#diagnostics-status').textContent = 'Report saved.'; }
+  catch { $('#diagnostics-status').textContent = 'Could not save the report.'; }
+};
 
 function renderSettings() {
   // spaces

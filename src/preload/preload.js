@@ -77,6 +77,9 @@ contextBridge.exposeInMainWorld('tote', {
   ensureLocal: (providerId) => ipcRenderer.invoke('provider:ensureLocal', providerId),
   sendFileToTab: (wcId, relPath) => ipcRenderer.invoke('tab:sendFile', { wcId, relPath }),
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),
+  diagnosticsGet: (metrics) => ipcRenderer.invoke('diagnostics:get', metrics),
+  diagnosticsExport: (report) => ipcRenderer.invoke('diagnostics:export', report),
+  hostDiagnostics: () => ipcRenderer.invoke('device:diagnostics'),
   appVersion: () => ipcRenderer.invoke('app:version'),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
 

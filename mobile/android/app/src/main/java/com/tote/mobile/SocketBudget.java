@@ -19,5 +19,6 @@ final class SocketBudget {
         Long size = pending.remove(id); if (size != null) bytes -= size;
     }
     synchronized void close() { closed = true; pending.clear(); bytes = 0; }
+    synchronized int pendingFrames() { return pending.size(); }
     synchronized long bytes() { return bytes; }
 }

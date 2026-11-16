@@ -13,11 +13,14 @@ const names = [...new Set([...source.matchAll(/\btote\.(\w+)/g)].map(m => m[1]))
 const preload = path.join(scratch, 'preload.js');
 fs.writeFileSync(preload, `
 const { contextBridge } = require('electron');
-let active = 'tote';
+let active = 'tote', diagnosticOffline = false;
 const calls = [], sessions = [];
 const list = ['Global', 'tote', 'KnitGame', 'Genesis', ...Array.from({length: 20}, (_, i) => 'Project ' + (i + 1))].map((name, i) => ({ id: i === 0 ? 'global' : name, name, path: '/preview/' + name }));
 const api = Object.fromEntries(${JSON.stringify(names)}.map(name => [name, name.startsWith('on') ? () => {} : async () => null]));
 Object.assign(api, {
+  testDiagnosticsOffline: async () => { diagnosticOffline = true; },
+  diagnosticsGet: async metrics => ({format:'tote-diagnostics-v1',viewer:{kind:'desktop',version:'0.4.0'},host:{version:'0.4.0',state:diagnosticOffline?'cached':'current'},connection:{state:diagnosticOffline?'disconnected':'local'},terminals:[{id:'secret',host:{cols:120,rows:30},local:{cols:120,rows:30,width:500,height:300},controller:'another-viewer',data:'DO_NOT_EXPORT'}],events:[{code:'permission',message:'DO_NOT_EXPORT'}]}),
+  diagnosticsExport: async report => { calls.push({method:'diagnosticsExport',report}); return true; },
   ptyAvailable: async () => ({ok:true}), getProviders: async () => [{id:'preview',name:'Preview provider',url:'about:blank'}], listApps: async () => [{id:'editor',name:'Editor',path:'/preview/Editor.app'}],
   getSettings: async () => ({setupDone:true}), deviceCurrent: async () => null,
   getCliProfiles: async () => [{id:'shell',name:'Plain Shell',command:'',args:[]}], ptyList: async () => sessions,
@@ -99,11 +102,21 @@ app.whenReady().then(async () => {
     assert.equal(await run("document.querySelector('#settings-card').offsetWidth"), 850);
     assert(await run("(() => {const r=document.querySelector('#settings-card').getBoundingClientRect();return r.top>0 && Math.abs((r.left+r.right)/2-innerWidth/2)<2})()"));
     fs.writeFileSync(path.join(os.tmpdir(), 'tote-settings-updated.png'), (await win.webContents.capturePage()).toPNG());
-    for (const section of ['providers', 'agents', 'apps', 'devices', 'behavior', 'about', 'spaces']) {
+    for (const section of ['providers', 'agents', 'apps', 'devices', 'behavior', 'diagnostics', 'about', 'spaces']) {
       await run(`document.querySelector('#set-nav [data-sec="${section}"]').click()`);
       await settle();
       assert.equal(await run("document.querySelector('#set-content .sec.active').dataset.sec"), section);
     }
+    await run("document.querySelector('#set-nav [data-sec=diagnostics]').click()"); await settle();
+    assert.equal(await run("document.querySelector('#diagnostics-save').disabled"),false);
+    const preview = await run("document.querySelector('#diagnostics-preview').textContent");
+    assert(!preview.includes('DO_NOT_EXPORT')); assert(!preview.includes('secret'));
+    assert.match(await run("document.querySelector('#diagnostics-summary').textContent"),/another-viewer/);
+    await run("document.querySelector('#diagnostics-save').click()"); await settle();
+    assert.deepEqual(await run("tote.testCalls().then(c=>c.find(x=>x.method==='diagnosticsExport').report)"), JSON.parse(preview));
+    fs.writeFileSync('/tmp/tote-desktop-diagnostics.png', (await win.webContents.capturePage()).toPNG());
+    await run("tote.testDiagnosticsOffline().then(()=>document.querySelector('#diagnostics-refresh').click())"); await settle();
+    assert.equal(await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent).host.state"),'cached');
     await run("document.querySelector('#set-nav [data-sec=behavior]').click(); document.querySelector('#set-bridge').click()");
     await settle();
     assert(await run("tote.testCalls().then(calls => calls.some(c => c.method === 'saveSettings' && c.settings.bridgeDownloads === false))"));

@@ -12,6 +12,32 @@ const lines = term => Array.from({length:term.buffer.active.length},(_,i) => {
   return [line.isWrapped,line.translateToString(true)];
 });
 
+test('stream consumption resolves after parsing, and disposal releases queued acknowledgements', async () => {
+  const callbacks=[],written=[];
+  const term={write:(data,done)=>{written.push(data);callbacks.push(done);}};
+  const s=create(term);let consumed=false;
+  const first=s.write({data:'first'}).then(()=>{consumed=true;});
+  await Promise.resolve();assert.equal(consumed,false);
+  callbacks.shift()();await first;assert.equal(consumed,true);
+  const active=s.write({data:'active'}),queued=s.write({data:'queued'});
+  s.dispose();await Promise.all([active,queued]);callbacks.shift()();
+  assert.deepEqual(written,['first','active']);
+});
+
+test('reconnect snapshots replace queued stale output but wait for the active parse before resetting', async () => {
+  const callbacks=[],written=[];
+  const term={write:(data,done)=>{written.push(data);callbacks.push(done);},reset:()=>written.push('RESET')};
+  const s=create(term);
+  const active=s.write({data:'active'}),stale=s.write({data:'stale'});
+  const firstReplay=s.write({data:'old replay',replay:true});
+  await stale;
+  const latest=s.write({data:'fresh replay',replay:true});await firstReplay;
+  assert.deepEqual(written,['active']);
+  callbacks.shift()();await active;
+  assert.deepEqual(written,['active','RESET','fresh replay']);
+  callbacks.shift()();await latest;s.dispose();
+});
+
 test('two viewers parse output at the host size through replay and competing resizes', async t => {
   const viewers = new Map(), received = new Map(), resized = [];
   const host = new Sessions({launch:()=>1,write(){},resize:(_,c,r)=>resized.push([c,r]),kill(){}}, (id,event,p) => {

@@ -460,6 +460,15 @@ that window to refresh its baseline. An updated viewer on an older host shows a
 notice and keeps layout changes local until the host is updated. Android keeps
 its own group and pane selection and never saves desktop layouts.
 
+### Slow or interrupted device connections
+
+Tote detects stalled links and limits queued terminal output and pending calls.
+If a viewer falls behind, it shows the reason and reconnects with a fresh terminal
+replay; the host's sessions and other viewers keep running. Draft input stays
+local and is never resent automatically. Update both desktops and Android for
+output acknowledgements after terminal parsing. See [connection limits and
+recovery](docs/device-transport.md) for compatibility, limits and test coverage.
+
 ## Architecture
 
 ```text

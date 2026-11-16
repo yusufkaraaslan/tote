@@ -10,11 +10,12 @@
 const { WebSocketServer } = require('ws');
 const P = require('./protocol');
 const TS = require('./tailscale');
+const { Transport, LIMITS } = require('./transport');
 
 class DeviceServer {
   // authorize(ip) -> { ok, name, reason }. Injected so the tests can run the
   // whole thing over loopback; the real one asks `tailscale whois`.
-  constructor({ host, device, tote, authorize, advertise = false }) {
+  constructor({ host, device, tote, authorize, advertise = false, limits = {} }) {
     this.host = host;
     this.device = device;
     this.tote = tote;
@@ -24,6 +25,8 @@ class DeviceServer {
     this.wss = null;
     this.seq = 0;
     this.address = null;
+    this.limits = { ...LIMITS, ...limits };
+    this.transports = new Set();
   }
 
   // Resolves once listening; rejects on EADDRINUSE and friends, so the caller
@@ -63,42 +66,56 @@ class DeviceServer {
 
   accept(ws, auth) {
     let vid = null;
-    const send = (msg) => { if (ws.readyState === ws.OPEN) ws.send(P.encode(msg)); };
+    const calls = new Set();
+    const transport = new Transport(ws, { limits: this.limits, onStop: () => {
+      clearTimeout(helloTimer);
+      if (vid) this.host.removeViewer(vid);
+      vid = null; this.transports.delete(transport);
+    } });
+    this.transports.add(transport);
+    const helloTimer = setTimeout(() => transport.stop(4000, 'Viewer hello timed out'), this.limits.helloMs);
+    helloTimer.unref?.();
+    const send = msg => transport.send(msg);
 
     ws.on('message', (raw) => {
+      if (transport.stopped) return;
       const { msg, error } = P.decode(raw);
-      if (error) return ws.close(4000, error);
+      if (error) return transport.stop(4000, error);
       if (!vid) {
         // Nothing is served before a hello that speaks our version.
         const bad = P.checkHello(msg);
         if (bad) {
           send({ t: 'hello', v: P.VERSION, role: 'host', device: this.device, tote: this.tote, error: bad });
-          return ws.close(4002, bad.slice(0, 120));
+          return transport.stop(4002, bad.slice(0, 120));
         }
         // A discovery probe only wants to know Tote is here and which version:
         // answered, and never made a viewer (which would arm a watcher here).
         if (msg.role === 'probe') {
           send(P.hello('host', this.device, this.tote));
-          return ws.close(1000, 'probe answered');
+          return transport.stop(1000, 'probe answered');
         }
+        clearTimeout(helloTimer);
+        transport.flow = msg.flow === 1;
         vid = 'r' + (++this.seq) + ':' + (auth.name || 'device');
         this.host.addViewer({ id: vid, send: (e, p) => send({ t: 'ev', e, p }) });
-        return send(P.hello('host', this.device, this.tote));
+        return send({ ...P.hello('host', this.device, this.tote), ...(transport.flow ? { flow: 1 } : {}) });
       }
+      if (msg.t === 'ack') { if (transport.flow) transport.ack(msg.seq); return; }
       if (msg.t !== 'call') return;
       if (!P.allowedRemote(msg.m)) {
         return send({ t: 'ret', id: msg.id, ok: false, e: 'Not callable from another device: ' + msg.m });
       }
+      if (calls.has(msg.id)) return transport.stop(4000, 'Duplicate pending call id');
+      if (calls.size >= this.limits.calls) return transport.stop(1013, 'Too many pending device calls; check results before retrying');
+      calls.add(msg.id);
       this.host.call(msg.m, vid, msg.a).then(
         (r) => send({ t: 'ret', id: msg.id, ok: true, r: r === undefined ? null : r }),
         (e) => send({ t: 'ret', id: msg.id, ok: false, e: (e && e.message) || String(e) }),
-      );
+      ).finally(() => calls.delete(msg.id));
     });
 
     // A machine that drops off the tailnet leaves its viewer behind unless
     // this fires; its sessions keep running, as a closed window's do.
-    ws.on('close', () => { if (vid) this.host.removeViewer(vid); vid = null; });
-    ws.on('error', () => {});
   }
 
   stop() {
@@ -107,7 +124,7 @@ class DeviceServer {
     this.wss = null;
     this.address = null;
     if (!wss) return Promise.resolve();
-    for (const c of wss.clients) { try { c.close(1001, 'host stopped sharing'); } catch {} }
+    for (const transport of this.transports) transport.stop(1001, 'Host stopped sharing');
     return new Promise((r) => wss.close(() => r()));
   }
 }

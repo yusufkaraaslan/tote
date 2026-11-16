@@ -810,10 +810,22 @@ async function pushDownload(d, wsId, absFile, providerId) {
  * slept comes back by itself. The renderer hears devices:lost / devices:back
  * and keeps the device's panes in between, under a banner. */
 function connectDevice(wc, d) {
+  const output = d.output = new Map();
   d.client = new DeviceClient({
     address: d.address, port: d.port, device: selfNameCache || os.hostname(),
-    onEvent: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload, d.key); },
+    onEvent: (ev, payload) => {
+      if (wc.isDestroyed()) return;
+      if (ev !== 'pty:data') { wc.send(ev, payload, d.key); return; }
+      return new Promise(resolve => {
+        const delivery = crypto.randomUUID();
+        output.set(delivery, resolve);
+        wc.send(ev, { ...payload, delivery }, d.key);
+      });
+    },
     onClose: (code, reason) => {
+      for (const resolve of output.values()) resolve();
+      output.clear();
+      if (d.connectedAt && Date.now() - d.connectedAt >= 30000) d.backoff = 0;
       if (d.gone) return;
       d.up = false;
       if (!wc.isDestroyed()) wc.send('devices:lost', { key: d.key, name: d.name, reason });
@@ -822,11 +834,17 @@ function connectDevice(wc, d) {
   });
   return d.client.connect().then((hello) => {
     d.up = true;
-    d.backoff = 0;
+    d.connectedAt = Date.now();
     if (!d.named && hello.device) d.name = hello.device;
     return hello;
   });
 }
+
+ipcMain.on('devices:outputAck', (e, key, id) => {
+  const output = viewing.get(e.sender.id)?.devices.get(key)?.output;
+  const resolve = output?.get(id);
+  if (resolve) { output.delete(id); resolve(); }
+});
 
 function scheduleRetry(wc, d) {
   clearTimeout(d.retry);

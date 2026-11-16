@@ -54,11 +54,13 @@ class Runtime {
         onAuthUrl: (url, owner) => this.host.authUrl(url, owner),
       });
       Object.assign(this.host.methods, this.localMethods());
+      // Local viewers can attach as soon as device state is initialized. Optional
+      // Tailscale setup may take time and must not look like an auth failure.
+      ready = true;
       await this.applySettings();
       const active = this.workspace.active();
       if (this.workspace.isRemote(active)) this.workspace.conn(active).silentConnect()
         .then(() => this.host.syncWatches()).catch(() => {});
-      ready = true;
       return this;
     } catch (error) { await this.stop(); throw error; }
   }

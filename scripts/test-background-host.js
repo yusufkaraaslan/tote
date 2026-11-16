@@ -53,6 +53,23 @@ test('host owns a singleton endpoint and refuses unauthenticated or remote admin
   } finally { host.close(); await runtime.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('local viewers attach while optional sharing setup is still pending', { timeout: 10000 }, async () => {
+  const dir = fixture(), runtime = new Runtime(dir), host = new LocalHost(dir);
+  let release, entered = false;
+  const pending = new Promise(resolve => { release = resolve; });
+  runtime.applySettings = () => { entered = true; return pending; };
+  const starting = runtime.start();
+  try {
+    await until(() => entered, 'sharing setup');
+    assert.equal((await host.start()).pid, process.pid, 'desktop attaches to the initializing host');
+    await host.addViewer({ id: 'early', send() {} });
+    assert.equal((await host.call('workspaces:list', 'early')).active, 'a');
+  } finally {
+    release(); await starting;
+    host.close(); await runtime.stop(); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a real PTY survives its starting process exiting and reconnect preserves shell state without replaying input', { timeout: 45000 }, async () => {
   const dir = fixture(), host = new LocalHost(dir);
   let child;

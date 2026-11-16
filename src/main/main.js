@@ -127,6 +127,35 @@ function uniquePath(p) {
 
 // --- provider sessions ---------------------------------------------------------
 
+function providerViewer(contents) {
+  let owner = contents?.hostWebContents || contents;
+  while (owner && !owner.isDestroyed()) {
+    if (host?.viewers.has(viewerIdOf(owner))) return owner;
+    owner = BrowserWindow.fromWebContents(owner)?.getParentWindow()?.webContents;
+  }
+  return null;
+}
+
+function setupProviderPopups(contents) {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 560,
+          height: 720,
+          autoHideMenuBar: true,
+          backgroundColor: '#ffffff',
+          parent: BrowserWindow.fromWebContents(contents.hostWebContents || contents) || undefined,
+        },
+      };
+    }
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  contents.on('did-create-window', win => setupProviderPopups(win.webContents));
+}
+
 // Per-provider persistent session: keeps the login alive across restarts,
 // spoofs a desktop Chrome UA, and routes downloads into the ACTIVE workspace's
 // inbox/<provider>/ (resolved at download time, so switching spaces re-routes).
@@ -140,7 +169,7 @@ function setupProviderSession(provider) {
     // Chromium can only write to local disk, so a remote space downloads into a
     // staging folder and the finished file is pushed up afterwards. The space is
     // the one the webview's WINDOW is looking at, read when the event fires.
-    const owner = guest && (guest.hostWebContents || guest);
+    const owner = providerViewer(guest);
     // A window showing another machine downloads for THAT machine: stage here
     // (Chromium only writes locally), push it up when done. Which device, and
     // which of its spaces, are fixed now, when the download starts.
@@ -403,22 +432,7 @@ app.on('web-contents-created', (event, contents) => {
       metaKey: input.meta, ctrlKey: input.control, altKey: input.alt, shiftKey: input.shift,
     });
   });
-  contents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: 560,
-          height: 720,
-          autoHideMenuBar: true,
-          backgroundColor: '#ffffff',
-          parent: BrowserWindow.fromWebContents(contents.hostWebContents) || undefined,
-        },
-      };
-    }
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
+  setupProviderPopups(contents);
 });
 
 // --- IPC: the host's channels ----------------------------------------------------------

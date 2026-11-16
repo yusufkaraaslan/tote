@@ -143,6 +143,26 @@ test('overload during replay cannot resurrect a detached subscription', async t 
   assert.equal(f.sessions.map.get('s').pending.size, 0);
 });
 
+test('reconnect churn releases viewers, acknowledgements and subscriptions while the PTY survives', async t => {
+  const f = await fixture(t);
+  for (let i = 0; i < 12; i++) {
+    const term = new Terminal({ cols: 12, rows: 8, scrollback: 5000, allowProposedApi: true });
+    const parsed = stream(term);
+    const c = f.client({ onEvent: (e, p) => e === 'pty:data' ? parsed.write(p) : undefined });
+    try {
+      await c.connect(); await c.call('pty:attach', ['s']);
+      await until(() => term.cols === 80 && c.transport.pending.size === 0);
+      assert.deepEqual(lines(term), lines(f.sessions.map.get('s').mirror));
+      c.close();
+      await until(() => f.viewers.size === 0 && f.server.transports.size === 0);
+      assert.equal(c.pending.size, 0); assert.equal(c.transport.pending.size, 0);
+      assert.equal(f.sessions.map.get('s').subs.size, 0); assert.equal(f.sessions.map.get('s').pending.size, 0);
+      f.sessions.onData('s', `while disconnected ${i}\r\n`); await flush(f.sessions.map.get('s').mirror);
+    } finally { c.close(); parsed.dispose(); term.dispose(); }
+  }
+  assert.equal(f.sessions.get('s').alive, true); assert.deepEqual(f.writes, []);
+});
+
 test('client and server bound outstanding calls; rejected calls are not executed', async t => {
   for (const serverLimit of [false, true]) {
     const f = await fixture(t, { calls: serverLimit ? 2 : 64 });

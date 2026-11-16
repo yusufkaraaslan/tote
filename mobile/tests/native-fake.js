@@ -3,7 +3,7 @@ const state = window.testState = {ws:'work',activeSocket:null,speech:null,keyboa
 const sessions=[{id:'s1',wsId:'work',title:'Codex',alive:true,cols:100,rows:83},{id:'s2',wsId:'work',title:'Claude',alive:true,cols:80,rows:24}];
 const views={work:{activeGroup:'build',groups:[{id:'build',name:'Build',tree:{type:'leaf',kind:'term',id:'l1',ref:'s1'}},{id:'review',name:'Review',tree:{type:'leaf',kind:'term',id:'l2',ref:'s2'}}]}};
 views.second={activeGroup:'build',groups:[{id:'build',name:'Build',tree:{type:'leaf',kind:'term',id:'l1',ref:'previous-server-session'}}]};
-window.emitOutput=(id,data)=>state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'pty:data',p:{id,data}})});
+window.emitOutput=(id,data,grid={})=>state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'pty:data',p:{id,data,...grid}})});
 window.dropConnection=()=>state.activeSocket?.onclose();
 export async function initNative(){}
 export function socketFactory(url){
@@ -18,7 +18,7 @@ export function socketFactory(url){
       case 'workspaces:setActive':state.ws=m.a[0];if(state.ws==='second'&&!sessions.some(s=>s.id==='s3'))sessions.push({id:'s3',wsId:'second',title:'Second workspace',alive:true,cols:160,rows:83});r={id:state.ws};break;
       case 'views:get':r=views;break;
       case 'pty:list':r=sessions;break;
-      case 'pty:attach':r=sessions.find(s=>s.id===m.a[0]);emit({t:'ev',e:'pty:data',p:{id:r.id,replay:true,data:'Restored '+r.title+'\r\n'+Array.from({length:r.rows-3},(_,i)=>'line '+i+'\r\n').join('')+'$ \x1b[6n\x1b[c'}});break;
+      case 'pty:attach':r=sessions.find(s=>s.id===m.a[0]);emit({t:'ev',e:'pty:data',p:{id:r.id,replay:true,cols:r.cols,rows:r.rows,controlsSize:false,data:'Restored '+r.title+'\r\n'+Array.from({length:r.rows-3},(_,i)=>'line '+i+'\r\n').join('')+'$ \x1b[6n\x1b[c'}});break;
       case 'pty:write':emit({t:'ev',e:'pty:data',p:{id:m.a[0].id,data:'\r\nREPLY '+m.a[0].data}});break;
       case 'workspace:tree':r=[{type:'file',name:'notes.md',path:'notes.md'}];break;
       case 'workspace:readDoc':r={kind:'text',text:'# Notes\n<script>untrusted</script>'};break;

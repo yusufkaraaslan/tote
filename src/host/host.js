@@ -380,13 +380,13 @@ function methods(host) {
         spec: { file, args, cwd, cols, rows },
         viewerId: ctx.viewer.id,
       });
-      return { id: sid, workspace: space.name, cwd: conn ? conn.root : cwd, host: conn ? conn.host : null };
+      return { id: sid, sizeSync: true, workspace: space.name, cwd: conn ? conn.root : cwd, host: conn ? conn.host : null };
     },
     'pty:list': () => host.sessions.list(),
     'pty:attach': (ctx, sid) => host.sessions.attach(sid, ctx.viewer.id),
     'pty:detach': (ctx, { id }) => host.sessions.detach(id, ctx.viewer.id),
     'pty:write': (ctx, { id, data }) => host.sessions.write(id, data),
-    'pty:resize': (ctx, { id, cols, rows }) => host.sessions.resize(id, cols, rows),
+    'pty:resize': (ctx, { id, cols, rows, claim = true }) => host.sessions.resize(id, cols, rows, ctx.viewer.id, claim),
     'pty:kill': (ctx, { id }) => host.sessions.kill(id),
     'cli:check': async (ctx, command) => {
       if (!command) return true; // plain shell profile always works

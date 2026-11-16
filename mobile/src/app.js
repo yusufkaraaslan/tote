@@ -1,13 +1,14 @@
 import { version } from '../package.json';
 import { Terminal } from '@xterm/xterm';
 import { App } from '@capacitor/app';
-import { readableTerminal } from './reading.js';
+import { renderTerminalReading, TERMINAL_THEME } from './reading.js';
 import { createNavigation } from './navigation.js';
 import { ComputerSearch } from './discovery.js';
 import { DeviceClient } from './client.js';
 import { Native, Speech, Discovery, initNative, socketFactory } from './native.js';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
+import TermStream from '../../src/renderer/termstream.js';
 
 const $ = id => document.getElementById(id);
 $('build-version').textContent = 'Android ' + version;
@@ -22,7 +23,8 @@ let spaceEpoch = 0;
 let connectionEpoch = 0, paneEpoch = 0, refreshEpoch = 0, reconnectTimer, retry = 0, paused = false, busy = false, attached = null;
 let lastOutputTop = 0, readingTimer;
 let wrapped = load('tote.wrapText', true);
-let term = null, terminalSession = null, ready = false, polling, refreshTimer, messageTimer;
+let hostSizeSync = false;
+let term = null, termStream = null, terminalSession = null, ready = false, polling, refreshTimer, messageTimer;
 let discoveryInitialized = false, scanning = false, pendingProbes = 0, activeScan = null, discoveryTimer;
 const availability = new Map();
 const search = new ComputerSearch({ socketFactory,
@@ -185,7 +187,7 @@ async function renderGroups(force = false) {
   const chosen = chooseSelection(groups, group?.id || saved.group || views[wsId]?.activeGroup, pane?.id || saved.pane, force);
   group = chosen.group;
   if (force || chosen.pane?.id !== pane?.id || chosen.pane?.ref !== pane?.ref || (chosen.pane?.kind === 'term' && !chosen.pane.unavailable && attached !== chosen.pane.ref)) await showPane(chosen.pane);
-  else { pane = chosen.pane; if (pane?.session && term) setTerminalSize(pane.session.cols || 80, pane.session.rows || 24); controls(); }
+  else { pane = chosen.pane; if (!hostSizeSync && pane?.session && termStream) termStream.write({ data:'', cols:pane.session.cols, rows:pane.session.rows }); controls(); }
 }
 const navigation = createNavigation({
   onSpace: id => changeSpace(id).catch(e => notify(e.message)),
@@ -206,6 +208,7 @@ async function changeGroup(id) {
 }
 async function showPane(next) {
   rememberDraft(); const token = ++paneEpoch, c = client;
+  termStream?.dispose(); termStream = null;
   const old = attached; attached = null; pane = next;
   selection[selectionKey()] = { group: group?.id, pane: pane?.id }; save('tote.selection', selection);
   $('draft').value = drafts.get(inputKey()) || ''; controls();
@@ -220,7 +223,7 @@ async function showPane(next) {
   if (pane.kind !== 'term') { showEmpty('Web-provider tabs run on the desktop. Android currently supports terminals and file previews.'); return; }
   $('terminal-scroll').hidden = false;
   if (!term) {
-    term = new Terminal({ cols: pane.session.cols || 80, rows: pane.session.rows || 24, fontSize: 13, fontFamily: 'monospace', scrollback: 5000, theme: { background: '#0c0d0b', foreground: '#d4d8ca', cursor: '#e0a458' }, convertEol: false });
+    term = new Terminal({ cols: pane.session.cols || 80, rows: pane.session.rows || 24, fontSize: 13, fontFamily: 'monospace', scrollback: 5000, theme: TERMINAL_THEME, convertEol: false });
     term.open($('terminal'));
     term.onData(data => { if (!TermReports.isTermReport(data)) writeInput(data).catch(e => notify(e.message)); });
     term.attachCustomKeyEventHandler(e => { if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) { writeInput('\n').catch(e => notify(e.message)); return false; } return true; });
@@ -233,6 +236,20 @@ async function showPane(next) {
   clearTimeout(readingTimer); readingTimer = null; $('terminal-text').textContent = '';
   $('terminal-scroll').scrollTop = 0; $('terminal-scroll').scrollLeft = 0; lastOutputTop = 0;
   setTerminalSize(pane.session.cols || 80, pane.session.rows || 24);
+  hostSizeSync = !!pane.session.sizeSync;
+  termStream = TermStream.create(term, {
+    onSize: p => {
+      if (token !== paneEpoch) return;
+      if (typeof p.controlsSize === 'boolean') hostSizeSync = true;
+      if (pane?.session) Object.assign(pane.session, {cols:p.cols,rows:p.rows});
+      setTerminalSize(p.cols, p.rows);
+    },
+    onParsed: p => {
+      if (token !== paneEpoch) return;
+      if (wrapped) { if (p.replay) renderReading(true); else scheduleReading(); }
+      else if (p.follow) revealOutput();
+    },
+  });
   attached = pane.ref; // replay may arrive before attach's return frame
   try { const meta = await c.call('pty:attach', [pane.ref]); if (token === paneEpoch) { pane.session = meta; controls(); } }
   catch (e) { if (token === paneEpoch) { attached = null; controls(); } throw e; }
@@ -268,8 +285,7 @@ function revealOutput() {
 function renderReading(forceFollow = false) {
   if (!term || !wrapped) return;
   const follow = forceFollow || followingOutput();
-  const text = readableTerminal(term.buffer.active);
-  if ($('terminal-text').textContent !== text) $('terminal-text').textContent = text;
+  renderTerminalReading($('terminal-text'), term.buffer.active, {theme:term.options.theme,brightBold:term.options.drawBoldTextInBrightColors});
   if (follow) revealOutput();
 }
 function scheduleReading() {
@@ -288,13 +304,7 @@ applyReadingMode();
 new ResizeObserver(() => { if (followingOutput()) revealOutput(); }).observe($('stage'));
 function hostEvent(event, p) {
   if (event === 'pty:data' && p.id === attached && term) {
-    const token = paneEpoch, follow = p.replay || followingOutput();
-    if (p.replay) term.reset();
-    term.write(p.data, () => {
-      if (token !== paneEpoch || p.id !== attached) return;
-      if (wrapped) { if (p.replay) renderReading(true); else scheduleReading(); }
-      else if (follow) revealOutput();
-    });
+    termStream?.write({ ...p, follow: p.replay || followingOutput() });
   } else if (event === 'pty:exit' && p.id === attached) {
     if (pane?.session) pane.session.alive = false;
     notify('Terminal exited' + (p.exitCode == null ? '.' : ' with code ' + p.exitCode + '.')); controls();
@@ -326,7 +336,7 @@ $('refresh').onclick = () => refresh().catch(e => notify(e.message));
 $('fit').onclick = async () => {
   if (!term || !attached || !confirm('Resize the shared terminal to this phone? Other viewers will see the new size too.')) return;
   const cols = Math.max(20, Math.floor(($('stage').clientWidth - 34) / cellSize().width)), rows = Math.max(6, Math.floor(($('stage').clientHeight - 16) / 16));
-  try { await client.call('pty:resize', [{ id: attached, cols, rows }]); setTerminalSize(cols, rows); } catch (e) { notify(e.message); }
+  try { await client.call('pty:resize', [{ id: attached, cols, rows }]); if (!hostSizeSync) termStream?.write({data:'',cols,rows}); } catch (e) { notify(e.message); }
 };
 async function showFiles() {
   const token = paneEpoch, c = client;

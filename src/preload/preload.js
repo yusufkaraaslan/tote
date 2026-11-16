@@ -95,14 +95,14 @@ contextBridge.exposeInMainWorld('tote', {
   ptyAttach: (id) => ipcRenderer.invoke('pty:attach', id),
   ptyDetach: (id) => ipcRenderer.send('pty:detach', { id }),
   ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
-  ptyResize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),
+  ptyResize: (id, cols, rows, claim = true) => ipcRenderer.send('pty:resize', { id, cols, rows, claim }),
   ptyKill: (id) => ipcRenderer.send('pty:kill', { id }),
   checkCommand: (cmd) => ipcRenderer.invoke('cli:check', cmd),
 
   // events. Another machine's events carry its device key as a trailing
   // argument (undefined for this machine), so the renderer can file each one
   // under the right device even while that device's panes are hidden.
-  onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m, dev) => cb(m.id, m.data, dev, !!m.replay)),
+  onPtyData: (cb) => ipcRenderer.on('pty:data', (e, m, dev) => cb(m.id, m.data, dev, !!m.replay, m)),
   onPtyExit: (cb) => ipcRenderer.on('pty:exit', (e, m, dev) => cb(m.id, m.exitCode, dev)),
   onWorkspaceChanged: (cb) => ipcRenderer.on('workspace:changed', (e, wsId, dev) => cb(dev)),
   onWorkspacesChanged: (cb) => ipcRenderer.on('workspaces:changed', (e, x, dev) => cb(dev)),

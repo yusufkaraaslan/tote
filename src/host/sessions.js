@@ -51,10 +51,11 @@ class Sessions {
     // See src/renderer/termreports.js.
     mirror.onData((reply) => { if (s.ptyId !== null) this.ptys.write(s.ptyId, reply); });
     const s = {
-      meta: { kind: 'agent', title: '', ...meta, id: sid, alive: true, exitCode: null, cols, rows },
+      meta: { kind: 'agent', title: '', ...meta, id: sid, alive: true, exitCode: null, cols, rows, sizeSync: true },
       ptyId: null, mirror, ser,
       subs: new Set(viewerId ? [viewerId] : []),
-      pending: new Map(),    // viewerId -> [[event, payload]] queued during a replay
+      pending: new Map(),    // viewerId -> token, cancels stale attach callbacks
+      sizeOwner: viewerId || null,
     };
     this.map.set(sid, s);
     try {
@@ -71,10 +72,19 @@ class Sessions {
   onData(sid, data) {
     const s = this.map.get(sid);
     if (!s) return;
-    s.mirror.write(data);
-    const payload = { id: sid, data };
-    for (const v of s.subs) this.deliver(v, 'pty:data', payload);
-    for (const q of s.pending.values()) q.push(['pty:data', payload]);
+    // Deliver only after parsing: writes, resize barriers and snapshots must
+    // describe the same grid in every viewer, including a late attach.
+    s.mirror.write(data, () => {
+      if (this.map.get(sid) === s) this.sendData(s, data);
+    });
+  }
+
+  sendData(s, data, viewerId, replay = false) {
+    for (const v of viewerId ? [viewerId] : s.subs) {
+      this.deliver(v, 'pty:data', { id: s.meta.id, data,
+        cols: s.meta.cols, rows: s.meta.rows, controlsSize: s.sizeOwner === v,
+        ...(replay ? { replay: true } : {}) });
+    }
   }
 
   onExit(sid, exitCode) {
@@ -85,30 +95,26 @@ class Sessions {
     s.ptyId = null;
     // A dead session stays listed, mirror and all, until a viewer closes its
     // pane: the last screen is usually the reason it died.
-    for (const v of s.subs) this.deliver(v, 'pty:exit', { id: sid, exitCode });
+    s.mirror.write('', () => {
+      if (this.map.get(sid) !== s) return;
+      for (const v of s.subs) this.deliver(v, 'pty:exit', { id: sid, exitCode });
+    });
     // A viewer mid-replay gets the exit after its snapshot (see attach).
   }
 
-  /* Subscribe a viewer and send it the session as it is now.
-   *
-   * The mirror parses asynchronously, so a snapshot taken right away could
-   * miss bytes that were written but not yet parsed. Writing an empty chunk
-   * and snapshotting in its callback gives the state as of that point; output
-   * that arrives in the meantime is queued for this viewer (not lost, not
-   * duplicated) and flushed right after the snapshot. Re-attaching an already
-   * subscribed viewer -- a reloaded window -- replays again, which is what a
-   * fresh xterm needs. */
+  // The empty write is a parser barrier. Earlier bytes are in the snapshot;
+  // later writes deliver after subscribing. A detach/re-attach invalidates the
+  // old callback so it cannot resurrect a disconnected viewer.
   attach(sid, viewerId) {
     const s = this.map.get(sid);
     if (!s) throw new Error('No such session: ' + sid);
+    const token = {};
     s.subs.delete(viewerId);
-    s.pending.set(viewerId, []);
+    s.pending.set(viewerId, token);
     s.mirror.write('', () => {
-      if (this.map.get(sid) !== s) return;
-      const queued = s.pending.get(viewerId) || [];
+      if (this.map.get(sid) !== s || s.pending.get(viewerId) !== token) return;
       s.pending.delete(viewerId);
-      this.deliver(viewerId, 'pty:data', { id: sid, data: s.ser.serialize(), replay: true });
-      for (const [ev, payload] of queued) this.deliver(viewerId, ev, payload);
+      this.sendData(s, s.ser.serialize(), viewerId, true);
       s.subs.add(viewerId);
       if (!s.meta.alive) this.deliver(viewerId, 'pty:exit', { id: sid, exitCode: s.meta.exitCode });
     });
@@ -120,6 +126,7 @@ class Sessions {
     if (!s) return;
     s.subs.delete(viewerId);
     s.pending.delete(viewerId);
+    if (s.sizeOwner === viewerId) s.sizeOwner = null;
   }
 
   detachAll(viewerId) {
@@ -128,18 +135,38 @@ class Sessions {
 
   write(sid, data) {
     const s = this.map.get(sid);
-    if (s && s.ptyId !== null) this.ptys.write(s.ptyId, data);
+    if (!s || s.ptyId === null) return;
+    // A focus resize and its first keystroke travel together. Apply the
+    // queued resize before handing input to the program, or its response
+    // can be drawn for the previous viewer's width.
+    return new Promise((resolve) => s.mirror.write('', () => {
+      if (this.map.get(sid) === s && s.ptyId !== null) this.ptys.write(s.ptyId, data);
+      resolve();
+    }));
   }
 
-  // One size per pty, so the last viewer to resize wins -- tmux's
-  // `window-size latest`. The mirror follows, so a replay reflows correctly.
-  resize(sid, cols, rows) {
+  // Only the controlling viewer's layout changes resize the shared PTY.
+  // Explicit focus (or Android's Resize terminal) transfers control. Merely
+  // opening another viewer must not start a resize tug-of-war.
+  resize(sid, cols, rows, viewerId, claim = true) {
     const s = this.map.get(sid);
-    if (!s || !(cols > 0 && rows > 0)) return;
-    if (s.ptyId !== null) this.ptys.resize(s.ptyId, cols, rows);
-    try { s.mirror.resize(cols, rows); } catch {}
-    s.meta.cols = cols;
-    s.meta.rows = rows;
+    if (!s || !Number.isInteger(cols) || !Number.isInteger(rows) || cols < 2 || rows < 1 || cols > 1000 || rows > 1000) return;
+    s.mirror.write('', () => {
+      if (this.map.get(sid) !== s) return;
+      if (viewerId && !s.subs.has(viewerId) && !s.pending.has(viewerId)) return;
+      if (viewerId && !claim && s.sizeOwner !== viewerId) return;
+      const changed = s.meta.cols !== cols || s.meta.rows !== rows;
+      const ownerChanged = viewerId && s.sizeOwner !== viewerId;
+      if (viewerId) s.sizeOwner = viewerId;
+      if (changed) {
+        s.mirror.resize(cols, rows);
+        s.meta.cols = cols;
+        s.meta.rows = rows;
+      }
+      if (changed || ownerChanged) this.sendData(s, '');
+      // Publish the new grid before the program can redraw into it.
+      if (changed && s.ptyId !== null) this.ptys.resize(s.ptyId, cols, rows);
+    });
   }
 
   // Closing a pane: kill the pty if it still runs, and forget the session.

@@ -171,11 +171,12 @@ function sessions() {
 const SPEC = { file: 'sh', args: [], cwd: '/', cols: 80, rows: 24 };
 
 describe('sessions', () => {
-  test('the creating viewer gets output from the first byte', () => {
+  test('the creating viewer gets output from the first byte', async () => {
     const { ptys, S, add } = sessions();
     const a = add('a');
     S.spawn({ sid: 's1', meta: { wsId: 'x' }, spec: SPEC, viewerId: 'a' });
     ptys.out(1, 'hello');
+    await tick();
     assert.strictEqual(a.data('s1'), 'hello');
   });
 
@@ -189,6 +190,7 @@ describe('sessions', () => {
     ptys.out(1, 'during replay\r\n');       // arrives before the snapshot is taken
     await tick();
     ptys.out(1, 'after\r\n');
+    await tick();
     const got = b.got.filter(([e]) => e === 'pty:data').map(([, p]) => p);
     assert.ok(got[0].replay, 'first thing sent is the replay');
     assert.ok(got[0].data.includes('early line'), 'replay misses earlier output');
@@ -246,10 +248,11 @@ describe('sessions', () => {
     assert.throws(() => S.spawn({ sid: 'ok_1', meta: {}, spec: SPEC }), /already exists/);
   });
 
-  test('resize moves the pty and the mirror together', () => {
+  test('resize moves the pty and the mirror together', async () => {
     const { ptys, S } = sessions();
     S.spawn({ sid: 's1', meta: {}, spec: SPEC });
     S.resize('s1', 120, 40);
+    await tick();
     assert.deepStrictEqual(ptys.procs.get(1).size, [120, 40]);
     assert.strictEqual(S.get('s1').cols, 120);
     S.resize('s1', 0, 40);                   // nonsense is ignored

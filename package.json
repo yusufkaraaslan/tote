@@ -23,7 +23,8 @@
     "test:sidebar-ui": "electron scripts/test-sidebar-ui.js",
     "mobile:build": "npm --prefix mobile run sync",
     "mobile:apk": "npm --prefix mobile run apk",
-    "test:mobile-ui": "npm --prefix mobile run test:ui"
+    "test:mobile-ui": "npm --prefix mobile run test:ui",
+    "test:terminal-ui": "electron scripts/test-terminal-ui.js"
   },
   "build": {
     "appId": "com.tote.app",

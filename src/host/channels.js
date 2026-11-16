@@ -28,6 +28,8 @@ const HOST = new Set([
   'config:getCliProfiles', 'config:saveCliProfiles',
   'views:get', 'views:save',
   'pty:available', 'pty:spawn', 'pty:list', 'pty:attach', 'pty:detach',
+  // resize's optional claim flag distinguishes explicit control from layout
+  // updates; pty:data events carry the authoritative grid and control status.
   'pty:write', 'pty:resize', 'pty:kill',
   'cli:check',
 ]);

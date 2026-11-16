@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Android: preserve ANSI, 256-color and truecolor foreground/background colors, bold and other text styles in the phone-width wrapped view. Attribute-only redraws now update even when the text is unchanged.
+- Shared terminals: synchronize the host grid across desktop and Android viewers, including replay and live size changes. Desktop focus/input takes sizing control; background viewers cannot override it through layout updates.
+- Queue terminal parsing, resizing and replay in order so concurrent viewers do not wrap cursor-addressed output at different widths. Smaller passive desktop panes can scroll the host grid.
+
 ## 0.4.0 — 2026-11-01
 
 ### Android companion

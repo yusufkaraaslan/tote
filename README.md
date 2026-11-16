@@ -122,6 +122,10 @@ what is included in the downloadable version.
   window, preserving web pages and drafts when you switch back.
 - **Reconnect:** a sleeping or disconnected device keeps its panes under a banner;
   Tote reconnects when it returns. The host must stay running to preserve sessions.
+- **Shared terminal sizes:** focusing or typing in a desktop terminal fits the shared
+  session to that pane. Other viewers follow the host's grid, scrolling if needed;
+  background layout changes cannot take sizing control. Update the host and viewers
+  together to use this synchronization.
 - **SSH workspaces:** open a project directory on another machine using
   **New remote space**. Files, edits, terminal processes and downloaded files live
   there. SSH authentication appears in a connect pane when needed.
@@ -284,7 +288,7 @@ that computer. Start with [the connection steps above](#3-connect-android).
 |---|---|
 | Navigation | Side drawer for computers, workspaces, groups and terminals |
 | Live terminals | Screen/scrollback replay, live output, input, reconnect and foreground resume |
-| Phone reading | Wraps parsed terminal output to the phone width; **Wrap text** switches to the original grid |
+| Phone reading | Wraps parsed terminal output to the phone width with terminal colors and styles; **Wrap text** switches to the original grid |
 | Terminal size | Preserves host dimensions on attach; **Resize terminal** explicitly changes the shared PTY for all viewers |
 | Input | Multiline composer, separate Send, Esc, Tab, arrows, Enter and Ctrl+C |
 | Voice | Microphone → record → Stop → editable transcription; sending is a separate action |
@@ -401,6 +405,7 @@ Release signing and Play Store packaging are not configured.
 ```sh
 npm test                 # desktop checks plus mobile protocol, model and reading tests
 npm run test:sidebar-ui   # isolated desktop Electron UI with a fake host
+npm run test:terminal-ui  # two desktop renderers sharing a host terminal mirror
 npm run test:mobile-ui    # isolated mobile UI with fake network and speech
 ```
 

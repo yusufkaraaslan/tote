@@ -1856,35 +1856,52 @@ document.addEventListener('click', (e) => {
 /* ---------------- terminals ---------------- */
 const Fit = window.FitAddon && window.FitAddon.FitAddon;
 
-// Refit every live terminal to its pane. Called on every layout change, so the
-// xterm fit runs per frame while the PTY resize is debounced to the end of the
-// drag -- resizing a PTY on every mousemove makes TUI agents redraw constantly.
+// Viewers render the host grid, even when their pane is a different size.
+// Measure a proposed local size without resizing xterm ahead of incoming bytes.
+// Only the controlling viewer may apply automatic layout changes to the PTY.
 let ptyResizeTimer = null;
 function refitTerms() {
   for (const t of state.terms.values()) {
     if (!t.pane) continue;
     if (t.pane.el.classList.contains('hidden')) { t.wasHidden = true; continue; }
-    if (t.fit) { try { t.fit.fit(); } catch {} }
+    sizeTermElement(t);
     if (t.wasHidden) { t.wasHidden = false; repairViewport(t.term); }
   }
   clearTimeout(ptyResizeTimer);
   ptyResizeTimer = setTimeout(() => {
     for (const t of state.terms.values()) {
-      if (!t.alive || !t.pane || t.pane.el.classList.contains('hidden')) continue;
-      pushTermSize(t, { fitted: true });
+      if (t.alive) pushTermSize(t);
     }
   }, 150);
 }
 
-// Hand the pty this window's size for a terminal -- but only a real one. A pane
-// that is hidden or not laid out yet measures next to nothing, FitAddon clamps
-// that to 2 columns, and the shell would redraw its prompt for a 2-column
-// screen in every window showing the session.
-function pushTermSize(t, { fitted = false } = {}) {
-  if (!t.pane || t.pane.el.classList.contains('hidden')) return;
-  if (!fitted && t.fit) { try { t.fit.fit(); } catch {} }
-  if (t.term.cols < 20 || t.term.rows < 4) return;
-  try { tote.ptyResize(t.sid, t.term.cols, t.term.rows); } catch {}
+function sizeTermElement(t) {
+  const screen = t.term.element?.querySelector('.xterm-screen');
+  if (!screen || !t.pane || t.pane.el.classList.contains('hidden')) return;
+  // A passive viewer may be smaller than the host grid: let it scroll rather
+  // than wrapping the program's cursor-addressed output at a different column.
+  const style = getComputedStyle(t.term.element);
+  const viewport = t.term.element.querySelector('.xterm-viewport');
+  const scrollbar = viewport ? viewport.offsetWidth - viewport.clientWidth : 0;
+  const px = (name) => parseFloat(style[name]) || 0;
+  t.pane.body.style.overflow = 'auto';
+  Object.assign(t.term.element.style, { right: 'auto', bottom: 'auto',
+    width: Math.max(t.pane.body.clientWidth, screen.offsetWidth + px('paddingLeft') + px('paddingRight') + scrollbar) + 'px',
+    height: Math.max(t.pane.body.clientHeight, screen.offsetHeight + px('paddingTop') + px('paddingBottom')) + 'px' });
+  repairViewport(t.term);
+}
+
+function pushTermSize(t, { claim = false } = {}) {
+  if (!t.alive || !t.pane || t.pane.el.classList.contains('hidden')) return;
+  if (!claim && !t.controlsSize) return;
+  const size = t.fit?.proposeDimensions();
+  if (!size || size.cols < 20 || size.rows < 4) return;
+  if (!claim && size.cols === t.hostCols && size.rows === t.hostRows) return;
+  if (claim) t.controlsSize = true;
+  // Older hosts do not broadcast geometry. Retain their local-fit behavior
+  // until both ends are updated, without bypassing queued xterm writes.
+  if (!t.sizeSync) t.stream.write({ data: '', cols: size.cols, rows: size.rows });
+  try { tote.ptyResize(t.sid, size.cols, size.rows, claim); } catch {}
 }
 
 /* A terminal whose pane is hidden -- another group, another space -- keeps
@@ -2058,9 +2075,25 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
     menu.style.top = Math.max(8, Math.min(e.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
   }, true);
 
-  const entry = { term, fit, sid, pane, name: title, wsId, alive: false };
+  const entry = { term, fit, sid, pane, name: title, wsId, alive: false, controlsSize: place };
+  entry.stream = window.TermStream.create(term, {
+    onSize: (p) => {
+      entry.hostCols = p.cols; entry.hostRows = p.rows;
+      if (typeof p.controlsSize === 'boolean') { entry.controlsSize = p.controlsSize; entry.sizeSync = true; }
+    },
+    onParsed: () => {
+      if (!entry.measureFrame) entry.measureFrame = requestAnimationFrame(() => {
+        entry.measureFrame = 0; sizeTermElement(entry);
+      });
+    },
+  });
   state.terms.set(sid, entry);
-  const send = (d) => { if (entry.alive) tote.ptyWrite(sid, d); };
+  const send = (d) => {
+    if (entry.alive) {
+      if (!entry.controlsSize) pushTermSize(entry, { claim: true });
+      tote.ptyWrite(sid, d);
+    }
+  };
   // Keystrokes only: this xterm's answers to the program's queries are dropped,
   // because the host's mirror answers them once for every window (termreports.js).
   term.onData((d) => { if (!window.TermReports.isTermReport(d)) send(d); });
@@ -2136,7 +2169,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
 // the pty existed.
 function bindTerm(ctx) {
   ctx.entry.alive = true;
-  pushTermSize(ctx.entry);   // refits: the pane may have resized while spawning
+  pushTermSize(ctx.entry, { claim: true });
   ctx.term.focus();
 }
 
@@ -2148,6 +2181,8 @@ function bindTerm(ctx) {
 function adoptSession(meta) {
   const ctx = createTermPane(meta.title || 'terminal', { sid: meta.id, wsId: meta.wsId, place: false });
   ctx.entry.alive = !!meta.alive;
+  ctx.entry.sizeSync = !!meta.sizeSync;
+  if (meta.cols && meta.rows) ctx.entry.stream.write({ data: '', ...meta });
   if (!meta.alive) ctx.pane.el.classList.add('dead');
   tote.ptyAttach(meta.id).catch(() => {
     ctx.entry.alive = false;
@@ -2170,6 +2205,7 @@ async function spawnTerm(profile) {
     const where = res.host ? res.host + ':' + res.cwd : res.cwd;
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + where + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
+    ctx.entry.sizeSync ||= !!res.sizeSync;
     bindTerm(ctx);
   } catch (e) {
     term.writeln('\x1b[31mCould not start ' + profile.name + ':\x1b[0m ' + e.message);
@@ -2202,7 +2238,7 @@ function closeTerm(id) {
 
 // Two id spaces share these events: host sessions (string ids this renderer
 // picked) and the wizard's own installer pty (a number from pty:run).
-tote.onPtyData((ptyId, data, dev, replay) => {
+tote.onPtyData((ptyId, data, dev, replay, grid = {}) => {
   // Filed under the device it came from: a hidden device's terminals keep
   // streaming into their hidden panes, like another space's do.
   const S = sliceFor(dev);
@@ -2210,8 +2246,7 @@ tote.onPtyData((ptyId, data, dev, replay) => {
   if (t) {
     // A replay is the whole screen as the host has it; on a re-attach this
     // xterm already shows an older copy, and writing on top would double it.
-    if (replay) t.term.reset();
-    t.term.write(data);
+    t.stream.write({ ...grid, data, replay });
     return;
   }
   if (dev) return;
@@ -2232,8 +2267,8 @@ tote.onPtyExit((ptyId, code, dev) => {
     t.alive = false;
     if (t.pane) t.pane.el.classList.add('dead');
     // A null code is a kill: the pane was closed in another window.
-    t.term.writeln('\r\n\x1b[90m[' + (code == null ? 'closed in another window'
-      : 'process exited with code ' + code) + ']\x1b[0m');
+    t.stream.write({ data: '\r\n\x1b[90m[' + (code == null ? 'closed in another window'
+      : 'process exited with code ' + code) + ']\x1b[0m\r\n' });
     return;
   }
   if (dev || typeof ptyId === 'string') return;
@@ -2870,17 +2905,13 @@ function closeGroup(id) {
 // page inside it -- the next keystroke goes nowhere until the user clicks a
 // second time. So this runs after every space or group switch and on every
 // window activation, and focusPane applies it even when the leaf is unchanged.
-function focusPaneContent(lf) {
+function focusPaneContent(lf, { claim = true } = {}) {
   if (!lf) return;
   if (lf.kind === 'term') {
     const t = state.terms.get(lf.ref);
     if (!t) return;
     t.term.focus();
-    // One pty, one size: the window you are typing in takes it back. Fitted
-    // first, because this can run before the layout's own refit has -- and a
-    // pty is shared now, so a bogus size here makes the shell redraw for it in
-    // every OTHER window too.
-    if (t.alive) pushTermSize(t);
+    if (t.alive) pushTermSize(t, { claim });
   } else if (lf.kind === 'web') {
     const en = state.tabs.get(lf.ref);
     if (!en || !en.wv) return;
@@ -2895,9 +2926,9 @@ function focusPaneContent(lf) {
   }
 }
 
-function focusActivePaneContent() {
+function focusActivePaneContent({ claim = false } = {}) {
   const S = tiles();
-  focusPaneContent(S.focus && T.findLeaf(S.tree, S.focus));
+  focusPaneContent(S.focus && T.findLeaf(S.tree, S.focus), { claim });
 }
 
 $('#btn-add-group').onclick = addGroup;
@@ -3701,7 +3732,7 @@ async function adoptViews(views) {
   applyTiles();
   renderGroupBar();
 }
-tote.onWindowFocus(focusActivePaneContent);
+tote.onWindowFocus(() => focusActivePaneContent({ claim: true }));
 // A pane key pressed inside a web page, caught by main before the page saw it:
 // replay it through the same keydown listener as any other keystroke.
 tote.onWindowKey((k) => dispatchEvent(new KeyboardEvent('keydown', k)));

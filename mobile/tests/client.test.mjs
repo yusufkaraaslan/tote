@@ -17,7 +17,7 @@ async function fixture(t) {
       if (name==='pty:attach') return sessions.attach(args[0],id);
       if (name==='pty:detach') return sessions.detach(args[0].id,id);
       if (name==='pty:list') return sessions.list();
-      if (name==='pty:write') { sessions.write(args[0].id,args[0].data); return null; }
+      if (name==='pty:write') return sessions.write(args[0].id,args[0].data);
       if (name==='workspaces:list') return {active:'w',list:[{id:'w',name:'Work'}]};
       throw Error('unsupported');
     },

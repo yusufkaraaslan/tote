@@ -34,6 +34,17 @@ app.whenReady().then(async()=>{
   await run("emitOutput('s1','\\r\\n'+ 'A long line with readable words. '.repeat(30))");
   await until("document.querySelector('#terminal-text').textContent.includes('A long line with readable words.')");
   assert(await run("document.querySelector('#terminal-scroll').scrollWidth<=document.querySelector('#terminal-scroll').clientWidth"),'long paragraphs wrap instead of scrolling sideways');
+  await run("emitOutput('s1','\\r\\n\\x1b[31mCOLOR_CHECK\\x1b[0m')");
+  await until("[...document.querySelectorAll('#terminal-text span')].some(s=>s.textContent==='COLOR_CHECK' && s.style.color==='rgb(204, 0, 0)')");
+  await run("emitOutput('s1','\\r\\x1b[2K\\x1b[32mCOLOR_CHECK\\x1b[0m')");
+  await until("[...document.querySelectorAll('#terminal-text span')].some(s=>s.textContent==='COLOR_CHECK' && s.style.color==='rgb(78, 154, 6)')");
+  await run("emitOutput('s1','\\r\\n\\x1b[31m<img src=x onerror=alert(1)>\\x1b[0m')");
+  await until("document.querySelector('#terminal-text').textContent.includes('<img src=x')");
+  assert.equal(await run("document.querySelectorAll('#terminal-text img').length"),0,'terminal text never becomes HTML');
+  assert(await run("document.querySelector('#terminal-scroll').scrollWidth<=document.querySelector('#terminal-scroll').clientWidth"),'colored text still wraps');
+  await run("emitOutput('s1','',{cols:52,rows:30,controlsSize:false});emitOutput('s1','\\x1b[2;50HEND',{cols:52,rows:30,controlsSize:false})");
+  await until("terminalSize().cols===52 && terminalSize().rows===30 && terminalText().includes('END')");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:resize').length"),0,'host size updates never resize back from phone');
   await run("document.querySelector('#reading-mode').click()");
   assert.equal(await run("document.querySelector('#terminal-text').hidden"),true);
   await run("document.querySelector('#reading-mode').click()");

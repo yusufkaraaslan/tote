@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 echo "== Tote setup =="
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js not found. Install Node 20+ from https://nodejs.org and re-run."
+  echo "Node.js not found. Install Node 22.12+ from https://nodejs.org and re-run."
   exit 1
 fi
 echo "node $(node -v)  ✓"

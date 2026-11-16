@@ -48,7 +48,7 @@ api.patchViews = async patch => {
 contextBridge.exposeInMainWorld('tote', api);
 `);
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true } });
+  const win = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, backgroundThrottling: false } });
   const errors = [];
   win.webContents.on('console-message', (_e, _level, message) => { if (/Uncaught|TypeError|ReferenceError/.test(message)) errors.push(message); });
   const run = code => win.webContents.executeJavaScript(code);

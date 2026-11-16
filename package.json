@@ -30,7 +30,8 @@
     "release:version": "node scripts/release-version.js --write",
     "prepack": "npm run release:check",
     "predist": "npm run release:check",
-    "dependencies:report": "node scripts/dependency-health.js"
+    "dependencies:report": "node scripts/dependency-health.js",
+    "test:provider-ui": "electron scripts/test-provider-ui.js"
   },
   "build": {
     "appId": "com.tote.app",
@@ -86,11 +87,13 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "electron": "^37.0.0",
+    "electron": "^45.3.3",
     "electron-builder": "^25.0.0"
   },
   "allowScripts": {
-    "electron@37.10.3": true,
     "node-pty@1.1.0": true
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

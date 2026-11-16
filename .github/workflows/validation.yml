@@ -60,6 +60,8 @@ jobs:
         run: xvfb-run -a npm run test:terminal-ui
       - name: Layout conflicts, unsaved buffers and device switching
         run: xvfb-run -a npm run test:layout-sync-ui
+      - name: Provider sessions, popups and workspace download routing
+        run: xvfb-run -a npm run test:provider-ui
       - name: Mobile navigation, reading and speech draft
         run: xvfb-run -a npm run test:mobile-ui
 

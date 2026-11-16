@@ -60,25 +60,30 @@ app.whenReady().then(async()=>{
     const [a,b]=[...windows.values()];
     const run=(w,code)=>w.webContents.executeJavaScript(code);
     const size=w=>run(w,"({cols:state.terms.get('shared').term.cols,rows:state.terms.get('shared').term.rows})");
-    async function settled() {
-      let stable=0;
-      for(let i=0;i<100;i++) {
+    async function settled(timeout = 5000) {
+      let stable=0, last;
+      const deadline=Date.now()+timeout;
+      while(Date.now()<deadline) {
         await pause(50);
         const h=sessions.get('shared');let ready=true;
+        last={host:{cols:h.cols,rows:h.rows},viewers:[]};
         for(const w of windows.values()) {
           const v=await run(w,"(()=>{const t=state.terms.get('shared');return t && {width:innerWidth,cols:t.term.cols,rows:t.term.rows,wants:t.alive&&t.controlsSize?t.fit.proposeDimensions():null};})()");
+          last.viewers.push({bounds:w.getContentBounds(),terminal:v});
           ready &&= !!v && v.width===w.getContentBounds().width && v.cols===h.cols && v.rows===h.rows && (!v.wants || (v.wants.cols===h.cols && v.wants.rows===h.rows));
         }
         if(ready) {if(++stable===4)return;} else stable=0;
       }
-      throw Error('Terminal geometry did not settle');
+      throw Error('Terminal geometry did not settle: '+JSON.stringify(last));
     }
     async function check() {
       const host=sessions.get('shared');
       assert.deepEqual(await size(a),{cols:host.cols,rows:host.rows});
       assert.deepEqual(await size(b),await size(a));
     }
-    await settled(); await check();
+    // Cold renderer/font initialization can take longer on a shared runner.
+    // Subsequent resize transitions retain the five-second deadline.
+    await settled(15000); await check();
     assert.equal(resizes.length,0,'opening passive windows preserves host dimensions');
     await run(a,"document.querySelector('.pane .pane-body').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))");
     await settled(); await check();const wide=sessions.get('shared').cols;

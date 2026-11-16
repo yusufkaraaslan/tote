@@ -80,6 +80,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      # electron-builder 25 bundles node-gyp 9, which still imports distutils.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
       - run: npm ci
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools

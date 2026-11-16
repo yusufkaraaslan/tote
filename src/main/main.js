@@ -1031,7 +1031,21 @@ if (!gotLock) {
     migrateFromOmniHub();
     dropInheritedAgentSession();     // before anything can spawn a child
     adoptLoginShellPath();
-    configStore = new ConfigStore(app);
+    try {
+      configStore = new ConfigStore(app, { onRecovery: ({ file, backup, preserved }) => {
+        console.warn('Recovered Tote configuration:', file, 'from', backup);
+        void dialog.showMessageBox({
+          type: 'warning',
+          message: 'Tote recovered saved configuration',
+          detail: `${file}\n\nRestored from ${backup}. Your most recent changes may be missing.` +
+            (preserved ? `\n\nThe damaged file was kept at ${preserved}.` : ''),
+        });
+      } });
+    } catch (error) {
+      dialog.showErrorBox('Tote could not load its configuration', error.message);
+      app.quit();
+      return;
+    }
     workspace = new WorkspaceManager(configStore);
     // Stale temp spaces go at launch and only at launch, so nothing can vanish
     // mid-session. The report is pushed once the window can show a toast.

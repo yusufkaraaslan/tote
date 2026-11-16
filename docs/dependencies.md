@@ -37,7 +37,7 @@ Electron supports its [latest three stable major lines and the latest minor in e
 | Terminals | Spawn a real CLI, Shift+Enter, alternate-screen TUI, two differently sized viewers, mobile wrapping/colors, reconnect replay, no repeated input. |
 | Android | Install/upgrade with the existing signing identity, Tailscale discovery/reconnect, voice draft, file save permission/cancellation and background/foreground cycle. |
 
-6. Retain the prior release and a configuration backup for rollback. Follow the release checklist before publishing. Closing/updating desktop Tote still stops its host PTYs until [#6](https://github.com/yusufkaraaslan/tote/issues/6) lands.
+6. Retain the prior release and a configuration backup for rollback. Follow the release checklist before publishing. The background host survives desktop quit/replacement using its own runtime copy. Finish agents before explicitly stopping or upgrading that host; signed installed-app upgrades still need physical verification. See [background host operation](background-host.md).
 
 The WebContentsView migration in #2 must carry the same provider/overlay/session evidence. It is not a prerequisite for proposing security updates, and maintenance work must not silently mix that migration into a version bump.
 

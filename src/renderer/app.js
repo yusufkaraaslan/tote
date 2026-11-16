@@ -2537,6 +2537,9 @@ function mountLeaf(lf) {
 /* ----- applying the tree ----- */
 
 function applyTiles() {
+  // Resize observers can fire between the layout snapshot and pty:list. Until
+  // both are loaded, an unknown terminal is pending, not a stale saved leaf.
+  if (!state.sliceLoaded) return;
   const S = tiles();
   const host = hostRect();
 

@@ -4,6 +4,7 @@ const U=require('../src/shared/updates');
 function check(dir=root, tag) {
   const read=p=>JSON.parse(fs.readFileSync(path.join(dir,p),'utf8'));
   const r=read('release.json');
+  require('./release-targets').productionPlatforms(r);
   if(!U.version(r.version) || !Number.isInteger(r.androidVersionCode) || r.androidVersionCode<11 || r.androidVersionCode>2100000000 || r.protocol!==require('../src/host/protocol').VERSION) throw Error('Invalid release metadata');
   for(const name of ['package.json','package-lock.json','mobile/package.json','mobile/package-lock.json']) {
     const p=read(name);

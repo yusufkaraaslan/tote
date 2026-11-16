@@ -98,6 +98,9 @@ independent viewer workspaces, stop protection, real PTY survival after a parent
 process dies, reconnect without input retry, startup generation and runtime copies.
 `npm run test:background-ui` uses disposable configuration and real Electron
 windows to check pane restoration and shell state after normal quit and crash.
-The all-platform packaged smoke test boots a copied host with its real native PTY.
+The all-platform packaged smoke test boots a copied host with its real native PTY,
+removes a disposable desktop installation, then attaches a new viewer and verifies
+the same host PID, shell environment, terminal dimensions and busy-stop protection.
+This is a same-build replacement rehearsal, not a signed version-to-version upgrade.
 Physical sign-in startup, OS power behavior, signed upgrades and provider/phone
 acceptance still need release verification on the target machines.

@@ -66,6 +66,35 @@ test('release manifest rejects tampering and requires every platform',()=>{
   assert.equal(A.manifest(out).length,6);assert.match(fs.readFileSync(path.join(out,'SHA256SUMS'),'utf8'),/^[a-f0-9]{64}  Tote-/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('production scope builds only selected platforms while previews keep the full matrix',()=>{
+ const {platforms,desktopMatrix,productionPlatforms}=require('./release-targets');
+ const candidate={...release,releasePlatforms:['linux','android']};
+ assert.deepEqual(platforms(candidate,true),['linux','android']);
+ assert.equal(platforms(candidate,false).length,4);
+ assert.deepEqual(desktopMatrix(candidate,true),{include:[{os:'ubuntu-22.04',platform:'linux'}]});
+ assert.equal(desktopMatrix(candidate,false).include.length,3);
+ for(const releasePlatforms of [undefined,[],['linux','linux'],['unknown']])assert.throws(()=>productionPlatforms({...candidate,releasePlatforms}));
+});
+test('production manifests require selected artifacts and reject excluded platform files',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tote-scoped-assets-')),out=path.join(dir,'out');
+ try {
+  const A=require('./release-assets'),{productionPlatforms}=require('./release-targets');
+  const extensions={linux:['AppImage','deb','pacman'],darwin:['dmg'],win32:['exe'],android:['apk']};
+  for(const platform of productionPlatforms(release)){
+   const src=path.join(dir,platform);fs.mkdirSync(src);
+   for(const ext of extensions[platform])fs.writeFileSync(path.join(src,`Tote-${release.version}-${platform}.${ext}`),'binary '+platform);
+   A.collect(src,out,platform,true);
+  }
+  const manifest=path.join(out,'release-manifest.json');
+  A.manifest(out,true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(manifest)).releasePlatforms,productionPlatforms(release));
+  fs.rmSync(manifest);fs.rmSync(path.join(out,'SHA256SUMS'));
+  const excluded=Object.keys(extensions).find(p=>!productionPlatforms(release).includes(p));
+  if(excluded){fs.writeFileSync(path.join(out,excluded+'.json'),'{}');assert.throws(()=>A.manifest(out,true),/Unexpected/);fs.rmSync(path.join(out,excluded+'.json'));}
+  fs.rmSync(path.join(out,productionPlatforms(release)[0]+'.json'));
+  assert.throws(()=>A.manifest(out,true));
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
 test('download guidance is deferred if a terminal starts during an async update check',async()=>{
  const {openRelease}=require('../src/main/updates');let busy=false,opened=0;
  const options={sessions:()=>busy?[{alive:true}]:[],current:'0.5.0',check:async()=>{busy=true;return U.latest(stable('v0.6.0'),'0.5.0');},open:async()=>opened++};

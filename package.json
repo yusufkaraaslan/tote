@@ -1,7 +1,7 @@
 {
   "name": "tote",
   "productName": "Tote",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "One window for all your LLMs - web apps, native apps and CLI agents organized around workspaces.",
   "main": "src/main/main.js",
   "license": "MIT",
@@ -12,7 +12,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
-    "test": "node --test scripts/test-config.js scripts/test-views.js scripts/test-transport.js scripts/test-diagnostics.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
+    "test": "npm run release:check && node --test scripts/test-config.js scripts/test-views.js scripts/test-transport.js scripts/test-diagnostics.js scripts/test-updates.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
@@ -25,7 +25,11 @@
     "mobile:apk": "npm --prefix mobile run apk",
     "test:mobile-ui": "npm --prefix mobile run test:ui",
     "test:terminal-ui": "electron scripts/test-terminal-ui.js",
-    "test:layout-sync-ui": "electron scripts/test-layout-sync-ui.js"
+    "test:layout-sync-ui": "electron scripts/test-layout-sync-ui.js",
+    "release:check": "node scripts/release-version.js",
+    "release:version": "node scripts/release-version.js --write",
+    "prepack": "npm run release:check",
+    "predist": "npm run release:check"
   },
   "build": {
     "appId": "com.tote.app",
@@ -33,7 +37,8 @@
     "files": [
       "src/**/*",
       "config/**/*",
-      "package.json"
+      "package.json",
+      "release.json"
     ],
     "directories": {
       "output": "dist"
@@ -66,7 +71,9 @@
     },
     "asarUnpack": [
       "node_modules/node-pty/**"
-    ]
+    ],
+    "artifactName": "Tote-${version}-${os}-${arch}.${ext}",
+    "beforePack": "scripts/before-pack.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

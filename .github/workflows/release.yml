@@ -1,0 +1,203 @@
+name: Release packaging
+
+on:
+  pull_request:
+    paths:
+      - 'release.json'
+      - 'package*.json'
+      - 'mobile/package*.json'
+      - 'mobile/android/**'
+      - 'scripts/*release*'
+      - 'scripts/test-packaged.js'
+      - '.github/workflows/release.yml'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: 'Build with production signing credentials (main only); tag runs also create a draft release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      signed: ${{ steps.plan.outputs.signed }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - id: plan
+        env:
+          REQUEST_SIGNED: ${{ inputs.signed || startsWith(github.ref, 'refs/tags/v') }}
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          node scripts/release-version.js
+          if [ "$REQUEST_SIGNED" = true ] && [ "$GITHUB_REF" != refs/heads/main ] && [ -z "$RELEASE_TAG" ]; then
+            echo 'Signed builds require main or a version tag'; exit 1
+          fi
+          if [ "$REQUEST_SIGNED" = true ]; then
+            node scripts/release-ancestry.js HEAD refs/remotes/origin/main
+          fi
+          echo "signed=$REQUEST_SIGNED" >> "$GITHUB_OUTPUT"
+          node -e "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version='+require('./release.json').version+'\n')"
+  validation:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/validation.yml
+  desktop:
+    needs: [plan, validation]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+          - os: macos-15
+            platform: darwin
+          - os: windows-2022
+            platform: win32
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    environment: ${{ needs.plan.outputs.signed == 'true' && 'release-signing' || 'preview' }}
+    env:
+      TOTE_SIGNED_RELEASE: ${{ needs.plan.outputs.signed }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+          cache: npm
+      # electron-builder 25 bundles node-gyp 9, which still imports distutils.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+      - name: Package desktop (never publish from builder)
+        env:
+          CSC_LINK: ${{ needs.plan.outputs.signed == 'true' && (matrix.platform == 'darwin' && secrets.MAC_CSC_LINK || matrix.platform == 'win32' && secrets.WIN_CSC_LINK) || '' }}
+          CSC_KEY_PASSWORD: ${{ needs.plan.outputs.signed == 'true' && (matrix.platform == 'darwin' && secrets.MAC_CSC_KEY_PASSWORD || matrix.platform == 'win32' && secrets.WIN_CSC_KEY_PASSWORD) || '' }}
+          APPLE_ID: ${{ needs.plan.outputs.signed == 'true' && matrix.platform == 'darwin' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.plan.outputs.signed == 'true' && matrix.platform == 'darwin' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ needs.plan.outputs.signed == 'true' && matrix.platform == 'darwin' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/build-release.js
+      - name: Packaged Electron version, assets and PTY smoke test
+        run: node scripts/test-packaged.js
+      - name: Verify production signatures
+        if: needs.plan.outputs.signed == 'true'
+        run: node scripts/verify-release-signing.js
+      - run: node scripts/release-assets.js collect dist/release release-artifacts ${{ matrix.platform }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+  android:
+    needs: [plan, validation]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: ${{ needs.plan.outputs.signed == 'true' && 'release-signing' || 'preview' }}
+    env:
+      TOTE_SIGNED_RELEASE: ${{ needs.plan.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - run: npm ci --prefix mobile
+      - run: npm run mobile:build
+      - name: Build and verify APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ needs.plan.outputs.signed == 'true' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ needs.plan.outputs.signed == 'true' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ needs.plan.outputs.signed == 'true' && secrets.ANDROID_KEY_ALIAS || '' }}
+          ANDROID_KEY_PASSWORD: ${{ needs.plan.outputs.signed == 'true' && secrets.ANDROID_KEY_PASSWORD || '' }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          mkdir -p apk-out
+          if [ "$TOTE_SIGNED_RELEASE" = true ]; then
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/tote-release.jks"
+            trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+            node -e "if(!process.env.ANDROID_KEYSTORE_BASE64)throw Error('Missing ANDROID_KEYSTORE_BASE64'); require('fs').writeFileSync(process.env.ANDROID_KEYSTORE_PATH,Buffer.from(process.env.ANDROID_KEYSTORE_BASE64,'base64'),{mode:0o600})"
+            node scripts/release-signing.js android
+            mobile/android/gradlew -p mobile/android --no-daemon testReleaseUnitTest lintRelease assembleRelease
+            cp mobile/android/app/build/outputs/apk/release/app-release.apk "apk-out/Tote-${RELEASE_VERSION}-android.apk"
+          else
+            mobile/android/gradlew -p mobile/android --no-daemon testDebugUnitTest lintDebug assembleDebug
+            cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "apk-out/Tote-${RELEASE_VERSION}-android-preview.apk"
+          fi
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose apk-out/*.apk
+      - run: node scripts/release-assets.js collect apk-out release-artifacts android
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-android
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+  assemble:
+    needs: [plan, desktop, android]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.desktop.result == 'success' && needs.android.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TOTE_SIGNED_RELEASE: ${{ needs.plan.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-*
+          path: release-artifacts
+          merge-multiple: true
+      - run: node scripts/release-assets.js manifest release-artifacts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: complete-release-bundle
+          path: release-artifacts/
+          retention-days: 7
+      - name: Create draft release for a signed version tag
+        if: startsWith(github.ref, 'refs/tags/v') && needs.plan.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-artifacts/* --draft --verify-tag --title "Tote $RELEASE_TAG" --notes-file docs/releases/v${{ needs.plan.outputs.version }}.md

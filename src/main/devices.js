@@ -9,6 +9,8 @@
 // No electron in here either: a client-only build (a phone) would be this
 // file and the renderer.
 const WebSocket = require('ws');
+const Updates = require('../shared/updates');
+const { version } = require('../../package.json');
 const P = require('../host/protocol');
 const TS = require('../host/tailscale');
 const { Transport, LIMITS } = require('../host/transport');
@@ -44,7 +46,7 @@ class DeviceClient {
       }, this.limits.helloMs);
       ws.on('open', () => {
         transport = this.transport = new Transport(ws, { limits: this.limits, onStop: finish });
-        transport.send({ ...P.hello(this.role, this.device), flow: 1 });
+        transport.send({ ...P.hello(this.role, this.device, version), flow: 1 });
       });
       ws.on('unexpected-response', (req, res) => {
         clearTimeout(timer);
@@ -60,7 +62,7 @@ class DeviceClient {
           const bad = msg.error || P.checkHello(msg);
           if (bad) return transport.stop(4002, bad);
           greeted = true;
-          this.remote = { device: msg.device, tote: msg.tote, flow: msg.flow === 1 };
+          this.remote = { device: msg.device, tote: msg.tote, flow: msg.flow === 1, versionNotice: Updates.peer(msg, version, P.VERSION).message };
           return resolve(this.remote);
         }
         if (msg.t === 'ret') {

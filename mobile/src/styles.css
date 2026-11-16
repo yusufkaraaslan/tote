@@ -27,3 +27,10 @@
 #diagnostics-summary { font-size: 13px; overflow-wrap: anywhere; }
 #diagnostics-summary td { padding: 5px 12px 5px 0; vertical-align: top; }
 #diagnostics-summary p { margin: 12px 0; }
+
+#home > header { flex-wrap: wrap; gap: 8px; }
+#version-notice { padding: 8px 14px; color: #dbbd87; background: #30271a; font-size: 12px; }
+
+#updates-dialog { max-height: 85dvh; overflow: auto; }
+#updates-drafts section { margin: 14px 0; }
+#updates-drafts textarea { width: 100%; min-height: 90px; resize: vertical; }

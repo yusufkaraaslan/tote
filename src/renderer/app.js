@@ -1849,7 +1849,7 @@ tote.onDeviceBack((m) => {
   S.deviceDown = false;
   S.deviceDownReason = '';
   if (S === state) {
-    if (state.device) state.device.up = true;
+    if (state.device) Object.assign(state.device, { up: true, versionNotice: m.versionNotice || '' });
     renderOfflineBanner();
     reattachSlice();
     toast(m.name + ' is back.', 'success');
@@ -3237,6 +3237,7 @@ function showSettingsSection(sec) {
   for (const x of document.querySelectorAll('#set-content .sec')) x.classList.toggle('active', x.dataset.sec === sec);
   if (sec === 'devices') renderDevicesSection();
   if (sec === 'diagnostics') refreshDiagnostics();
+  if (sec === 'about') $('#set-version-notice').textContent = state.device?.versionNotice || '';
 }
 for (const n of document.querySelectorAll('#set-nav .ni')) n.onclick = () => showSettingsSection(n.dataset.sec);
 
@@ -3268,6 +3269,25 @@ $('#diagnostics-save').onclick = async () => {
   const snapshot = diagnosticsReport;
   try { if (await tote.diagnosticsExport(snapshot)) $('#diagnostics-status').textContent = 'Report saved.'; }
   catch { $('#diagnostics-status').textContent = 'Could not save the report.'; }
+};
+
+$('#set-update-check').onclick = async () => {
+  $('#set-update-check').disabled = true; $('#set-update-open').hidden = true;
+  $('#set-update-status').textContent = 'Checking GitHub…'; $('#set-update-advice').textContent = '';
+  try {
+    const r = await tote.checkUpdates();
+    $('#set-update-status').textContent = r.available ? `Tote ${r.latest} is available. Installed: ${r.current}.`
+      : `Installed: ${r.current}. Latest stable release: ${r.latest}. No newer stable release is available.`;
+    $('#set-update-advice').textContent = window.ToteUpdates.installAdvice(r.activeTerminals);
+    $('#set-update-open').hidden = !r.available; $('#set-update-open').disabled = r.activeTerminals > 0;
+  } catch { $('#set-update-status').textContent = 'Could not check for updates. Check your internet connection and try later.'; }
+  finally { $('#set-update-check').disabled = false; }
+};
+$('#set-update-open').onclick = async () => {
+  try {
+    const r = await tote.openUpdate();
+    if (r.deferred) { $('#set-update-advice').textContent = window.ToteUpdates.installAdvice(r.activeTerminals); $('#set-update-open').disabled = true; }
+  } catch { $('#set-update-status').textContent = 'Could not open the download page. Try checking again.'; }
 };
 
 function renderSettings() {

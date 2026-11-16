@@ -1,3 +1,5 @@
+import releaseVersion from '../../scripts/release-version.js';
+releaseVersion.check();
 import { build } from 'esbuild';
 import { mkdir, copyFile } from 'node:fs/promises';
 await mkdir('dist', { recursive: true });

@@ -39,7 +39,7 @@ With a phone connected and USB debugging enabled:
 adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-This is a debug build for testing, not a Play Store release. Release signing and store packaging are intentionally unconfigured.
+This is a debug build for testing, not a Play Store release. Production signing support is available through the release workflow, but credentials still need provisioning; Play Store packaging is not configured.
 
 ## Included
 
@@ -54,6 +54,12 @@ This is a debug build for testing, not a Play Store release. Release signing and
 - Native Android `SpeechRecognizer`: runtime microphone permission, recording popup, Stop, Cancel, service errors, and editable transcription. Uses the phone's current language and configured recognition service, which may require a network connection. A service can finish automatically on silence; this inserts its final transcript without submitting. No audio files are retained by Tote.
 
 Not yet included: mobile provider web sessions, PDF/binary previews, file editing/upload/download, desktop app launch, creating/rearranging groups, agent-status notifications, or background audio recording.
+
+## Updates
+
+Use **Updates** on the Computers screen or in workspace tools, then **Check for updates**. This explicitly contacts GitHub over native HTTPS; normal device sockets remain restricted to Tailscale. Tote shows published stable releases only and opens the release page after you save or clear phone drafts. The link opens the exact version checked. **Review unsent drafts** lets you copy and explicitly discard drafts, including those from removed computers or sessions. It does not install an APK itself. Desktop/Android share the version in `release.json`; protocol-compatible older hosts remain usable with feature fallbacks and a version notice.
+
+Preview APKs use debug signing. Production APKs require the existing app's stable signing identity; a different key cannot upgrade an installed app. See [release and signing setup](../docs/releases.md).
 
 ## Diagnostics
 

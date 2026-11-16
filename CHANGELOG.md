@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Releases: align desktop and Android at 0.5.0 with validated metadata, preview packaging and real packaged-PTY checks, production signing configuration, checksums, and draft-only tagged releases.
+- Updates: explicit desktop/Android release checks, protocol/version guidance, and manual-update deferral for active host terminals and unsaved phone drafts.
+
 - Diagnostics: desktop Settings and Android show connection/host versions, Tailscale and sharing status, terminal grid/viewport/sizing control, and recent categorized errors. Review and save a bounded JSON report without terminal contents, private paths, device identifiers, tokens or cookies; disconnected hosts use explicitly cached snapshots.
 
 - Devices: detect stalled connections, bound socket/output/call queues, and acknowledge terminal output after parsing on desktop and Android. An overloaded viewer reconnects with a fresh synchronized replay while its PTYs and other viewers continue; input is never retried automatically.

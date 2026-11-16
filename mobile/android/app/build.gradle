@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+def releaseMetadata = new groovy.json.JsonSlurper().parse(file('../../../release.json'))
 
 android {
     namespace = "com.tote.mobile"
@@ -7,8 +8,8 @@ android {
         applicationId "com.tote.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "0.4.1"
+        versionCode releaseMetadata.androidVersionCode
+        versionName releaseMetadata.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +17,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -54,3 +66,13 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+// A release APK must never silently fall back to the debug identity.
+tasks.register('validateReleaseSigning') {
+    doLast {
+        ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'].each {
+            if (!System.getenv(it)) throw new GradleException('Missing signing configuration: ' + it)
+        }
+    }
+}
+tasks.configureEach { if (name == 'preReleaseBuild') dependsOn('validateReleaseSigning') }

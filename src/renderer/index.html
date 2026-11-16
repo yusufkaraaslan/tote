@@ -218,6 +218,9 @@
           <h2>About</h2>
           <p class="lede">tote — one window for all your agents.</p>
           <div class="set-row"><span class="grow"><span class="name">version</span></span><span class="val" id="set-version"></span></div>
+          <p class="lede">Check GitHub for a stable release. Updates are downloaded and installed manually; Tote never restarts an active session to update.</p>
+          <button id="set-update-check">Check for updates</button> <button id="set-update-open" hidden>Open download page</button>
+          <p id="set-update-status" role="status"></p><p id="set-update-advice"></p><p id="set-version-notice"></p>
           <div class="set-row"><span class="grow"><span class="name">config</span><span class="sub">providers, agents, apps, spaces — data, not code</span></span><button id="btn-open-config">open config folder</button></div>
           <div class="set-row"><span class="grow"><span class="name">setup</span><span class="sub">system checks, agent installs, Claude Desktop binding</span></span><button id="btn-run-wizard">run setup wizard</button></div>
           <div class="set-row"><span class="grow"><span class="name">repository</span></span><button id="btn-repo">open github</button></div>
@@ -317,6 +320,7 @@
   <script src="termclipboard.js"></script>
   <script src="viewsync.js"></script>
   <script src="../shared/diagnostics.js"></script>
+  <script src="../shared/updates.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

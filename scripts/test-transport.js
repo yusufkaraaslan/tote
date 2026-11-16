@@ -101,7 +101,7 @@ test('a slow viewer disconnects while a healthy viewer preserves output and grid
   const f = await fixture(t, { frames: 4, streamBytes: 32768 });
   let closed; const delayed = [];
   const slow = f.client({ onEvent: () => new Promise(r => delayed.push(r)), onClose: (code, reason) => { closed = { code, reason }; } });
-  const healthyTerm = new Terminal({ cols: 30, rows: 10, allowProposedApi: true }), healthyStream = stream(healthyTerm);
+  const healthyTerm = new Terminal({ cols: 30, rows: 10, scrollback: 5000, allowProposedApi: true }), healthyStream = stream(healthyTerm);
   t.after(() => { healthyStream.dispose(); healthyTerm.dispose(); });
   const healthy = f.client({ onEvent: (e, p) => e === 'pty:data' ? healthyStream.write(p) : undefined });
   await slow.connect(); const slowTransport = [...f.server.transports][0];
@@ -118,11 +118,12 @@ test('a slow viewer disconnects while a healthy viewer preserves output and grid
   await until(() => closed); await rejected;
   assert.equal(closed.code, 1013); assert.match(closed.reason, /fell behind/);
   assert.equal(slowTransport.pending.size, 0); assert.equal(f.viewers.size, 1);
+  assert.deepEqual(lines(healthyTerm), lines(f.sessions.map.get('s').mirror), 'healthy viewer keeps the complete streamed history');
   await healthy.call('pty:resize', [{ id: 's', cols: 51, rows: 17 }]);
   f.sessions.onData('s', '\x1b[?1049h\x1b[2J\x1b[3;7HCURSOR');
   await flush(f.sessions.map.get('s').mirror); await until(() => fastTransport.pending.size === 0);
   assert.equal(healthyTerm.cols, 51); assert.deepEqual(lines(healthyTerm), lines(f.sessions.map.get('s').mirror));
-  const replayTerm = new Terminal({ cols: 12, rows: 8, allowProposedApi: true }), replayStream = stream(replayTerm);
+  const replayTerm = new Terminal({ cols: 12, rows: 8, scrollback: 5000, allowProposedApi: true }), replayStream = stream(replayTerm);
   t.after(() => { replayStream.dispose(); replayTerm.dispose(); });
   replayTerm.write('STALE CONTENT'); await flush(replayTerm);
   const reconnected = f.client({ onEvent: (e, p) => e === 'pty:data' ? replayStream.write(p) : undefined });

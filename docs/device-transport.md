@@ -55,7 +55,7 @@ attach sends a reset/replay from the authoritative headless mirror, including
 the host grid. Bytes are never silently skipped in the middle of an ongoing
 terminal stream. Host sessions continue while Tote's host is running.
 
-Calls are never retried automatically. An input call may have reached the PTY
+Transport calls are never retried automatically. An input call may have reached the PTY
 even if its reply was lost, so the error tells the user to check the terminal
 before sending again. Calls rejected locally by the pending-call or outgoing
 buffer limit are not sent. Host overload closes the connection and rejects

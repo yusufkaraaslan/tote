@@ -25,6 +25,7 @@ export class DeviceClient {
         if (this.closed) return;
         let msg;
         try { msg = JSON.parse(event.data); } catch { fail(new Error('Invalid response from host.')); socket.close(); return; }
+        if (!msg || typeof msg !== 'object' || Array.isArray(msg)) { fail(new Error('Invalid response from host.')); return; }
         if (!greeted) {
           if (msg?.t !== 'hello' || msg.v !== 1 || msg.role !== 'host' || msg.error) {
             fail(new Error(msg?.error || 'Incompatible host. Update Tote on the computer.')); socket.close(); return;

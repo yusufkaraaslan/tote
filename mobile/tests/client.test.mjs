@@ -94,6 +94,15 @@ test('native asynchronous send failure rejects the call and closes without retry
   assert.equal(c.ready,false);assert.equal(c.pending.size,0);assert.equal(sent.filter(m=>m.t==='call').length,1);
 });
 
+test('malformed frames after hello reject pending calls instead of escaping the socket handler', async t => {
+  let socket;
+  const c=new DeviceClient({socketFactory:()=>socket={send(){},close(){}}});t.after(()=>c.close());
+  const connection=c.connect('unused',1);socket.onmessage({data:JSON.stringify({t:'hello',v:1,role:'host'})});await connection;
+  const pending=c.call('pty:write',[{id:'s',data:'once\r'}]);
+  socket.onmessage({data:'null'});await assert.rejects(pending,/Invalid response/);
+  assert.equal(c.pending.size,0);assert.equal(c.ready,false);
+});
+
 test('slow mobile parser is retired by the real host while its session survives for replay', async t => {
   const f=await fixture(t,{frames:2});let closed;
   const c=f.client([],{onEvent:()=>new Promise(()=>{}),onClose:e=>{closed=e;}});

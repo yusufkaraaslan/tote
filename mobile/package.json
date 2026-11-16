@@ -13,14 +13,14 @@
     "simulate": "node scripts/simulate.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "8.6.0",
+    "@capacitor/android": "8.6.2",
     "@capacitor/app": "^8.0.0",
-    "@capacitor/core": "8.6.0",
+    "@capacitor/core": "8.6.2",
     "@xterm/xterm": "5.5.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.0",
-    "esbuild": "^0.25.0"
+    "@capacitor/cli": "8.6.2",
+    "esbuild": "^0.28.2"
   },
   "allowScripts": {
     "esbuild": true

@@ -194,7 +194,25 @@ describe('watch', () => {
     } finally { h.cleanup(); }
   });
 
-  test('two viewed spaces each get a watcher and report their own id', async () => {
+  test('watcher callbacks retain the space they were created for', async () => {
+    const h = harness(['one/x.txt', 'two/y.txt']);
+    try {
+      h.wm.cfg.saveWorkspaces({ active: 'a', list: [
+        { id: 'a', name: 'A', path: path.join(h.root, 'one') },
+        { id: 'b', name: 'B', path: path.join(h.root, 'two') },
+      ] });
+      const callbacks = new Map(), seen = [];
+      h.wm.watchLocal = (space, budget, callback) => {
+        callbacks.set(space.id, callback);
+        return { close: async () => {} };
+      };
+      await h.wm.watchSpaces(['a', 'b'], id => seen.push(id));
+      callbacks.get('b')(); callbacks.get('a')(); callbacks.get('b')();
+      assert.deepStrictEqual(seen, ['b', 'a', 'b']);
+    } finally { await h.wm.watchSpaces([], () => {}); h.cleanup(); }
+  });
+
+  test('two viewed spaces each get a watcher and report a real file change', async () => {
     // Two windows on two spaces of one host: both trees must refresh, and the
     // ping has to say whose it is, because a viewer only refreshes its own.
     const h = harness(['one/x.txt', 'two/y.txt']);
@@ -208,15 +226,21 @@ describe('watch', () => {
       assert.deepStrictEqual([...h.wm.watchers.keys()].sort(), ['a', 'b']);
       await Promise.all(['a', 'b'].map((id) =>
         new Promise((r) => h.wm.watchers.get(id).watcher.on('ready', r))));
-      // macOS fs.watch reports a file written just before the watch began --
-      // the harness's own setup -- so let that settle before recording.
-      await new Promise((r) => setTimeout(r, 400));
-      seen.length = 0;
-      fs.writeFileSync(path.join(h.root, 'two', 'new.txt'), 'x');
-      for (let i = 0; i < 40 && !seen.length; i++) await new Promise((r) => setTimeout(r, 50));
-      assert.deepStrictEqual([...new Set(seen)], ['b']);
-      await h.wm.watchSpaces([], () => {});
-    } finally { h.cleanup(); }
+      const created = path.join(h.root, 'two', 'new.txt');
+      let observed = false;
+      h.wm.watchers.get('b').watcher.on('all', (event, file) => {
+        if (event === 'add' && path.resolve(file) === created) { observed = true; seen.length = 0; }
+      });
+      fs.writeFileSync(created, 'x');
+      // macOS may deliver setup invalidations late, even after `ready`.
+      // Wait for this file and its debounced callback, not the first event
+      // from either watcher. Exact callback routing is tested above.
+      for (let i = 0; i < 100 && !(observed && seen.includes('b')); i++)
+        await new Promise((r) => setTimeout(r, 50));
+      assert.ok(observed, 'the new file was not observed');
+      assert.ok(seen.includes('b'), 'space b did not refresh');
+      assert.ok(seen.every(id => id === 'a' || id === 'b'));
+    } finally { await h.wm.watchSpaces([], () => {}); h.cleanup(); }
   });
 });
 

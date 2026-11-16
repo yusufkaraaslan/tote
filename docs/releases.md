@@ -12,7 +12,7 @@ Desktop's download-page action rechecks **all local host sessions**, including o
 
 ## Build and review previews
 
-Pull requests touching packaging inputs run `.github/workflows/release.yml`. It builds Linux, macOS, Windows and Android previews, runs packaged Electron version/asset/real-PTY smoke tests, runs Android native tests/lint, and uploads a combined artifact bundle with checksums. macOS targets the selected runner's native architecture; the artifact filename identifies it. Preview macOS/Windows binaries are unsigned; preview Android APKs use a debug identity and are not a stable upgrade channel.
+Pull requests touching packaging inputs run `.github/workflows/release.yml`. It builds Linux, macOS, Windows and Android previews, runs packaged Electron version/asset/real-PTY smoke tests, runs Android native tests/lint, and uploads a combined artifact bundle with checksums. macOS targets the selected runner's native architecture; the artifact filename identifies it. Preview Windows binaries are unsigned; macOS previews use ad-hoc signing for Apple Silicon launch, without a publisher identity or notarization; preview Android APKs use a debug identity and are not a stable upgrade channel.
 
 A workflow_dispatch run without `signed` builds previews after the full Validation workflow. Local desktop packaging: `node scripts/build-release.js`, then `node scripts/test-packaged.js`. Output stays in `dist/release`. Local Android: `npm run mobile:apk`. Normal `npm run dist:*` targets still work and validate release metadata before packaging.
 

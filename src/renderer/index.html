@@ -219,13 +219,17 @@
           <h3>Background host — this computer</h3>
           <p>Terminals keep running when you close Tote. Stopping the host, signing out, or rebooting ends those processes. To continue a stopped agent, open a new terminal and use its resume command.</p>
           <p id="host-status" role="status"></p>
-          <button id="host-refresh">Refresh host status</button> <button id="host-start">Start host</button> <button id="host-stop">Stop host…</button>
+          <button id="host-refresh">Refresh host status</button> <button id="host-start">Start host</button> <button id="host-stop">Stop host…</button> <button id="host-upgrade" hidden>Upgrade idle host…</button>
           <label><input type="checkbox" id="host-startup" /> Start the host when I sign in</label>
           <p class="lede">tote — one window for all your agents.</p>
           <div class="set-row"><span class="grow"><span class="name">version</span></span><span class="val" id="set-version"></span></div>
           <p class="lede">Check GitHub for a stable release. Updates are downloaded and installed manually; Tote never restarts an active session to update.</p>
           <button id="set-update-check">Check for updates</button> <button id="set-update-open" hidden>Open download page</button>
-          <p id="set-update-status" role="status"></p><p id="set-update-advice"></p><p id="set-version-notice"></p>
+          <button id="set-update-download" hidden>Download update</button>
+            <button id="set-update-install" hidden>Install and reopen</button>
+            <button id="set-update-cancel" hidden>Cancel download</button>
+            <p id="set-update-progress" role="status"></p>
+            <p id="set-update-status" role="status"></p><p id="set-update-advice"></p><p id="set-version-notice"></p>
           <div class="set-row"><span class="grow"><span class="name">config</span><span class="sub">providers, agents, apps, spaces — data, not code</span></span><button id="btn-open-config">open config folder</button></div>
           <div class="set-row"><span class="grow"><span class="name">setup</span><span class="sub">system checks, agent installs, Claude Desktop binding</span></span><button id="btn-run-wizard">run setup wizard</button></div>
           <div class="set-row"><span class="grow"><span class="name">repository</span></span><button id="btn-repo">open github</button></div>
@@ -326,6 +330,7 @@
   <script src="viewsync.js"></script>
   <script src="../shared/diagnostics.js"></script>
   <script src="../shared/updates.js"></script>
+  <script src="../shared/updateLock.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

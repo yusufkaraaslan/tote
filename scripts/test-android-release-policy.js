@@ -27,3 +27,16 @@ test('release APK must match app ID, versions and manifest minimum and must not 
   for (const output of [manifest.replace('com.tote.mobile', 'unrelated.app'), manifest.replace("sdkVersion:'33'", "sdkVersion:'24'"), manifest.replace(`versionCode='${release.androidVersionCode}'`, "versionCode='1'"), manifest + 'application-debuggable\n', 'malformed'])
     assert.throws(() => S.verifyManifest(output, identity, release));
 });
+test('Android update content grants use a distinct provider component and a narrow package directory', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const root = path.join(__dirname,'../mobile/android/app/src/main');
+  const xml = fs.readFileSync(path.join(root,'AndroidManifest.xml'),'utf8');
+  const providers = [...xml.matchAll(/<provider\s+([^>]+)>/g)].map(m=>m[1]);
+  const components = providers.map(p=>p.match(/android:name="([^"]+)"/)[1]);
+  assert.equal(new Set(components).size,components.length,'Android aliases provider instances when their component class is reused');
+  const update = providers.find(p=>p.includes('${applicationId}.updates'));
+  assert(update && update.includes('android:exported="false"') && update.includes('android:grantUriPermissions="true"'));
+  const paths = fs.readFileSync(path.join(root,'res/xml/update_paths.xml'),'utf8');
+  assert.match(paths,/<files-path[^>]+path="updates\/packages\/"/);
+  assert(!/<(?:root|external|cache)-path/.test(paths));
+});

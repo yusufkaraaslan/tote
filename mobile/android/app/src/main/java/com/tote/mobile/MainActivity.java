@@ -6,6 +6,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ToteNativePlugin.class);
+        registerPlugin(ToteUpdaterPlugin.class);
         registerPlugin(ToteSpeechPlugin.class);
         registerPlugin(ToteDiscoveryPlugin.class);
         super.onCreate(savedInstanceState);

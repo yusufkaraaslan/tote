@@ -3291,10 +3291,21 @@ async function refreshHostStatus() {
       : status.stopping ? 'Stopping background host…' : 'Stopped or unavailable. ' + (status.error || '');
     $('#host-start').disabled = status.running || status.stopping;
     $('#host-stop').disabled = !status.running;
+    $('#host-upgrade').hidden = !status.running || window.ToteUpdates.compare(status.viewerVersion,status.version) !== 1;
+    $('#host-upgrade').disabled = status.terminals > 0;
+    $('#host-upgrade').title = status.terminals ? 'Finish host terminals before upgrading the host.' : '';
     $('#host-startup').checked = status.startAtLogin;
   } catch (error) { $('#host-status').textContent = error.message; }
 }
 $('#host-refresh').onclick = refreshHostStatus;
+$('#host-upgrade').onclick = async () => {
+  $('#host-upgrade').disabled = true;
+  try {
+    const result = await tote.hostUpgrade();
+    await refreshHostStatus();
+    if (result.deferred) $('#host-status').textContent = `${result.activeTerminals} host terminals are running. Finish them before upgrading the host.`;
+  } catch (error) { $('#host-status').textContent = error.message; $('#host-upgrade').disabled = false; }
+};
 for (const action of ['start', 'stop']) $('#host-' + action).onclick = async () => {
   $('#host-' + action).disabled = true;
   try {
@@ -3309,15 +3320,55 @@ $('#host-startup').onchange = async () => {
   catch (error) { $('#host-startup').checked = !$('#host-startup').checked; $('#host-status').textContent = error.message; }
 };
 
+let updateGuardToken = null, releaseUpdateLock = null;
+tote.onUpdateGuard?.(async ({ token, release }) => {
+  if (release) {
+    if (updateGuardToken === token) { releaseUpdateLock?.(); releaseUpdateLock = null; updateGuardToken = null; }
+    return;
+  }
+  updateGuardToken = token;
+  releaseUpdateLock?.(); releaseUpdateLock = window.ToteUpdateLock(document);
+  try {
+    await Promise.all([...layoutSyncs.values()].map(sync => sync.flush()));
+    const clean = [state, ...state.slices.values()].every(slice =>
+      [...slice.docs.values()].every(doc => doc.savedText == null || doc.text === doc.savedText)) &&
+      [...layoutSyncs.values()].every(sync => !sync.status().pending && !sync.status().busy);
+    if (updateGuardToken === token) tote.updateGuardReply(token, clean);
+  } catch { if (updateGuardToken === token) tote.updateGuardReply(token, false); }
+});
+function renderUpdateProgress(s) {
+  $('#set-update-install').hidden = s.phase !== 'ready' || s.supported === false;
+  $('#set-update-cancel').hidden = s.phase !== 'downloading';
+  $('#set-update-download').disabled = s.phase === 'downloading';
+  $('#set-update-progress').textContent = s.phase === 'downloading' ? (s.total ? `Downloading… ${Math.floor(100*s.received/s.total)}%` : 'Preparing download…')
+    : s.phase === 'ready' ? `Tote ${s.version} is verified and ready to install.` : s.message || '';
+}
+$('#set-update-download').onclick = async () => {
+  const poll = setInterval(() => tote.updateStatus().then(renderUpdateProgress).catch(() => {}), 500);
+  renderUpdateProgress({phase:'downloading'});
+  try { renderUpdateProgress(await tote.downloadUpdate()); }
+  catch (error) { renderUpdateProgress({phase:'error',message:error.message}); }
+  finally { clearInterval(poll); }
+};
+$('#set-update-cancel').onclick = () => tote.cancelUpdate();
+$('#set-update-install').onclick = async () => {
+  $('#set-update-install').disabled = true;
+  try { await tote.installUpdate(); }
+  catch (error) { $('#set-update-progress').textContent = error.message; }
+  finally { $('#set-update-install').disabled = false; }
+};
+
 $('#set-update-check').onclick = async () => {
-  $('#set-update-check').disabled = true; $('#set-update-open').hidden = true;
+  $('#set-update-check').disabled = true; $('#set-update-open').hidden = true; $('#set-update-download').hidden = true;
   $('#set-update-status').textContent = 'Checking GitHub…'; $('#set-update-advice').textContent = '';
   try {
     const r = await tote.checkUpdates();
     $('#set-update-status').textContent = r.available ? `Tote ${r.latest} is available. Installed: ${r.current}.`
       : `Installed: ${r.current}. Latest stable release: ${r.latest}. No newer stable release is available.`;
-    $('#set-update-advice').textContent = window.ToteUpdates.installAdvice(r.activeTerminals);
-    $('#set-update-open').hidden = !r.available; $('#set-update-open').disabled = r.activeTerminals > 0;
+    $('#set-update-advice').textContent = r.supported ? 'Install reopens the desktop viewer. Your background host and agents keep running.' : (r.reason || window.ToteUpdates.installAdvice(r.activeTerminals));
+    $('#set-update-download').hidden = !r.available || !r.supported;
+    if (tote.updateStatus) renderUpdateProgress(await tote.updateStatus());
+    $('#set-update-open').hidden = !r.available || r.supported; $('#set-update-open').disabled = r.activeTerminals > 0;
   } catch { $('#set-update-status').textContent = 'Could not check for updates. Check your internet connection and try later.'; }
   finally { $('#set-update-check').disabled = false; }
 };
@@ -3329,6 +3380,7 @@ $('#set-update-open').onclick = async () => {
 };
 
 function renderSettings() {
+  tote.updateStatus?.().then(renderUpdateProgress).catch(() => {});
   // spaces
   const wHost = $('#settings-workspaces');
   wHost.innerHTML = '';

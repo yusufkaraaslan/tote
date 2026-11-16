@@ -23,6 +23,8 @@ const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnipp
 const { LocalHost } = require('./localHost');
 const hostStartup = require('./hostStartup');
 let hostLaunch;
+let selfUpdater;
+let installingUpdate = false;
 const CH = require('../host/channels');
 const Diagnostics = require('../shared/diagnostics');
 const Updates = require('../shared/updates');
@@ -327,6 +329,7 @@ async function launchApp(entry, context) {
 // than one is allowed (app:newWindow) -- which is also how the host/viewer
 // split is exercised on one machine before any network exists.
 async function createWindow() {
+  if (installingUpdate) throw Error("Wait for the update operation to finish.");
   const win = new BrowserWindow({
     width: 1480,
     height: 920,
@@ -912,18 +915,52 @@ ipcMain.handle('diagnostics:export', async (e, report) => {
 });
 
 ipcMain.handle('updates:check', async () => ({ ...await checkUpdate(app.getVersion()),
-  activeTerminals: (await host.admin('local:status')).terminals,
+  ...selfUpdater.status(),
+  activeTerminals: (await host.admin('local:status').catch(() => null))?.terminals ?? null,
 }));
 ipcMain.handle('updates:open', () => require('./updates').openRelease({
   sessions: () => host.admin('pty:list'), check: checkUpdate, current: app.getVersion(), open: url => shell.openExternal(url),
 }));
+const updateGuard = require('./updateGuard').createGuard({
+  onReply: callback => ipcMain.on('updates:guardReply', callback),
+  validate: () => { if (wizardOwners.size) throw Error('Finish the running setup commands before updating the desktop.'); },
+  windows: () => BrowserWindow.getAllWindows().filter(w => host.viewers.has(viewerIdOf(w.webContents))),
+  confirm: async () => {
+    if (wizardOwners.size) throw Error('Finish the running setup commands before updating the desktop.');
+    const result = await dialog.showMessageBox(focusedWindow(), { type:'question',
+      buttons:['Cancel', 'Install and reopen Tote'], defaultId:0, cancelId:0,
+      message:'Install the downloaded desktop update?',
+      detail:'Save any drafts in provider web tabs first. All desktop windows will close. Your background host and its agents will keep running. The host can be upgraded separately after you finish its sessions.' });
+    return result.response === 1;
+  },
+});
+ipcMain.handle('updates:status', () => selfUpdater.restore());
+ipcMain.handle('updates:download', () => selfUpdater.start());
+ipcMain.handle('updates:cancel', () => { selfUpdater.cancel(); return true; });
+ipcMain.handle('updates:install', async () => {
+  if (installingUpdate || upgradingHost) throw Error('Another update operation is running.');
+  installingUpdate = true;
+  try {
+    return await selfUpdater.install(updateGuard, target => {
+      app.relaunch({ execPath:target, args:process.argv.slice(1) });
+      // Guards and explicit confirmation have completed. A provider's unload
+      // handler must not strand an old viewer after its binary was replaced.
+      // These are viewer connections/setup PTYs, never the detached host.
+      ptys.killAll(); host.close(); app.exit(0);
+    });
+  } finally { installingUpdate = false; }
+});
 const startupOptions = () => ({ ...hostLaunch, dataDir: app.getPath('userData') });
 ipcMain.handle('host:status', async () => {
   const status = await host.admin('local:status').catch(error => ({ running: false, error: error.message }));
-  return { ...status, startAtLogin: hostStartup.enabled(startupOptions()) };
+  return { ...status, viewerVersion:app.getVersion(), startAtLogin: hostStartup.enabled(startupOptions()) };
 });
-ipcMain.handle('host:start', async () => host.start());
+ipcMain.handle('host:start', async () => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
+  return host.start();
+});
 ipcMain.handle('host:stop', async e => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
   const status = await host.admin('local:status');
   if (status.terminals) {
     const result = await dialog.showMessageBox(winOf(e), { type: 'warning',
@@ -933,6 +970,18 @@ ipcMain.handle('host:stop', async e => {
     if (result.response !== 1) return { canceled: true };
   }
   return host.admin('local:stop', [{ force: status.terminals > 0 }]);
+});
+let upgradingHost = false;
+ipcMain.handle('host:upgrade', async e => {
+  if (upgradingHost || installingUpdate) throw Error('Another update operation is running.');
+  upgradingHost = true;
+  try {
+    const result = await require('./updates').upgradeHost({host,current:app.getVersion(),confirm:async()=>
+      (await dialog.showMessageBox(winOf(e), {type:'question',buttons:['Cancel','Upgrade idle host'],defaultId:0,cancelId:0,
+        message:'Upgrade the idle background host?',detail:'Connected viewers will briefly reconnect. This action refuses if any host terminal is running.'})).response === 1});
+    if (result.upgraded && hostStartup.enabled(startupOptions())) hostStartup.setEnabled(true,startupOptions());
+    return result;
+  } finally { upgradingHost = false; }
 });
 ipcMain.handle('host:startup', (_e, on) => hostStartup.setEnabled(on === true, startupOptions()));
 ipcMain.handle('app:version', () => app.getVersion());
@@ -981,6 +1030,7 @@ if (!gotLock) {
       app.quit();
       return;
     }
+    selfUpdater = new (require('./selfUpdate').SelfUpdater)({ dir:path.join(app.getPath('userData'),'updates'), current:app.getVersion(), protocol:require('../../release.json').protocol, target:app.isPackaged && process.platform === 'linux' ? process.env.APPIMAGE : null, check:checkUpdate });
     ptys = new PtyManager(); // only short-lived setup/wizard PTYs belong to the UI
     hostLaunch = await require('./hostInstall').installRuntime({ dataDir: app.getPath('userData'), executable: process.execPath, appPath: app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '../..'), packaged: app.isPackaged });
     host = new LocalHost(app.getPath('userData'), hostLaunch);

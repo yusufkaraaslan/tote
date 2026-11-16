@@ -18,8 +18,9 @@ const { Transport, LIMITS } = require('../host/transport');
 const CALL_TIMEOUT = 90 * 1000;   // a remote space's file op rides ssh on the far side
 
 class DeviceClient {
-  constructor({ address, port, device, role = 'viewer', onEvent, onClose, limits = {} }) {
+  constructor({ address, port, device, role = 'viewer', headers, onEvent, onClose, limits = {} }) {
     this.role = role;
+    this.headers = headers;
     this.url = `ws://${address.includes(':') ? '[' + address + ']' : address}:${port}`;
     this.device = device;
     this.onEvent = onEvent || (() => {});
@@ -31,7 +32,7 @@ class DeviceClient {
   connect() {
     if (this.ws) return Promise.reject(new Error('Create a new device client to reconnect'));
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.url, { maxPayload: P.MAX_FRAME, handshakeTimeout: this.limits.helloMs });
+      const ws = new WebSocket(this.url, { headers: this.headers, maxPayload: P.MAX_FRAME, handshakeTimeout: this.limits.helloMs });
       this.ws = ws;
       let greeted = false, transport, timer;
       const finish = (code, reason) => {

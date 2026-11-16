@@ -25,7 +25,7 @@
     return { ok:true, message:mismatch ? `This viewer is ${local}; the host is ${peer.tote}. They share protocol v${protocol}, but newer features may require updating both devices.` : '' };
   }
   function installAdvice(count) {
-    return count > 0 ? `${count} host terminal${count===1?' is':'s are'} running. Finish them before replacing or restarting desktop Tote; quitting currently stops those processes.`
+    return count > 0 ? `${count} host terminal${count===1?' is':'s are'} running. Finish them before replacing the host runtime. Closing desktop windows leaves background sessions running; installers and host upgrades still require a safe stop.`
       : 'Installation is manual. Save your documents and phone drafts before replacing or restarting Tote.';
   }
   const api={RELEASES,API,version,compare,latest,peer,installAdvice};

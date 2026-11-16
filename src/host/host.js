@@ -285,7 +285,7 @@ function methods(host) {
       const V = host.ws(ctx);
       const R = V.backend();
       if (R) await R.trash(rel);                 // moves into the space's .tote-trash/
-      else await host.platform.trash(V.resolveSafe(rel));
+      else await host.platform.trash(V.resolveSafe(rel), V.getRoot());
       return true;
     },
     // A file's bytes for the in-page attach, which runs on the viewer: the

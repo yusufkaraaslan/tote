@@ -72,7 +72,7 @@ what is included in the downloadable version.
   are swept at the next launch; these deletion rules apply only to temp spaces.
 - **Multiple windows:** each window can view its own workspace while sharing host
   terminal sessions. Opening a session in another window replays its screen and
-  scrollback. Sessions live while the host Tote app is running; quitting it ends them.
+  scrollback. Sessions live in a separate background host; closing or quitting the desktop keeps them running. Stop the host explicitly in Settings → About.
 
 ### Web LLMs and CLI agents
 
@@ -130,7 +130,7 @@ what is included in the downloadable version.
   **New remote space**. Files, edits, terminal processes and downloaded files live
   there. SSH authentication appears in a connect pane when needed.
 - **Keep awake:** the Devices settings can prevent idle sleep on the viewed host
-  while Tote runs. This does not override closing a laptop lid or quitting Tote.
+  while the host runs (macOS caffeinate, Windows power request, or Linux systemd-inhibit). This does not override closing a laptop lid, signing out, or stopping the host.
 
 ## Screenshots
 
@@ -185,6 +185,19 @@ The address is a Tailscale IPv4 address in `100.64.0.0/10`. Tote uses the instal
 Tailscale CLI for discovery and identity checks; it also detects the macOS app's
 bundled CLI. Tailscale is only needed for device sharing and Tailscale-based remote
 access; local workspaces work without it.
+
+### Background host
+
+Tote starts a separate host for this computer and reconnects to it on later launches.
+Closing every window or quitting the desktop leaves agents, Tailscale sharing and
+host file watching running. **Settings → About → Background host** shows its
+version and active terminal count, provides **Start host / Stop host**, and offers
+opt-in **Start the host when I sign in**. Stopping a busy host requires confirmation.
+
+Reboots, sign-out and a host crash still end its processes; starting again does not
+resubmit terminal input or revive a dead agent. Use the agent's own resume command.
+Desktop unsaved documents and provider drafts still belong to the desktop process.
+See [background host operation and troubleshooting](docs/background-host.md).
 
 ### 2. Share a desktop Tote host
 
@@ -405,6 +418,7 @@ Production signing support is available through the [release workflow](docs/rele
 ```sh
 npm test                 # desktop checks plus mobile protocol, model and reading tests
 npm run test:sidebar-ui   # isolated desktop Electron UI with a fake host
+npm run test:background-ui # real host/PTY survives desktop quit, crash and relaunch
 npm run test:terminal-ui  # two desktop renderers sharing a host terminal mirror
 npm run test:layout-sync-ui # layout conflicts, unsaved buffers and device switches
 npm run test:provider-ui  # isolated real app: provider cookies, popups and downloads
@@ -417,7 +431,7 @@ still needed for Android Tailscale networking, speech, keyboard behavior and
 background/foreground recovery.
 
 [GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
-runs the full logic suite on Linux, macOS and Windows with Node 22, the five
+runs the full logic suite on Linux, macOS and Windows with Node 22, the six
 renderer checks under a Linux virtual display, and Android native tests, lint and
 a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
 kept as workflow artifacts for seven days. These checks use isolated fixtures;
@@ -484,7 +498,7 @@ See [Android diagnostics and physical-device checks](mobile/README.md#diagnostic
 
 ### Releases and update checks
 
-Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Installation is manual. Desktop defers the download-page action while host terminals are running; Android asks you to save or clear phone drafts first. Save documents and finish desktop agents before replacing the app: quitting Tote still stops its host processes.
+Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Installation is manual. Desktop defers the download-page action while host terminals are running; Android asks you to save or clear phone drafts first. Save documents before replacing the desktop. Quitting the UI leaves background sessions running; finish agents before stopping or upgrading the host.
 
 Source now targets **0.5.0** on both desktop and Android; the download links above remain the last published release until a new build is published. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). [0.5.0 candidate notes](docs/releases/v0.5.0.md) describe the changes and verification still needed before publication.
 
@@ -507,12 +521,13 @@ scripts/         Setup, packaging helpers and regression checks
 A **host** owns spaces, files, saved layouts, watchers and PTYs. Each desktop window
 or Android connection is a **viewer** with its own active workspace. Host calls
 resolve that viewer's space at call time; they do not depend on a single global
-active folder. Desktop windows call the host through IPC; remote viewers use the
-same host protocol over WebSocket inside Tailscale.
+active folder. Desktop windows use IPC to their main process, which connects to
+the separate host over authenticated loopback WebSocket. Remote viewers use the
+same bounded protocol inside Tailscale.
 
 A headless terminal mirror supplies replay to new viewers, so a session belongs
-to the host rather than a window. Closing a window can leave its sessions available
-while the app remains running (including on macOS); quitting the host stops them.
+to the host rather than a window. Closing every desktop window or quitting the UI
+leaves sessions available. Explicitly stopping the host ends them.
 Workspace paths go through containment checks, and the desktop renderer has no
 Node.js access. The Android viewer never hosts files or terminals.
 

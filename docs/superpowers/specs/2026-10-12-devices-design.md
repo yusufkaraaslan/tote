@@ -1,6 +1,6 @@
 # Devices — every Tote you own, from any Tote you sit at
 
-**Status:** phases 1–4 implemented; host-only and client-only roles (section 10) remain future work
+**Status:** phases 1–4 implemented. The Android viewer and independent background host now implement the role split; see `docs/background-host.md` for the current lifecycle. The original design below records the earlier in-process arrangement.
 **Branch:** `feat/devices`
 
 ## Goal

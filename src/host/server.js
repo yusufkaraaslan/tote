@@ -9,14 +9,16 @@
 // upgrade completes, and only host methods are callable (protocol.allowedRemote).
 const { WebSocketServer } = require('ws');
 const P = require('./protocol');
+const { randomUUID } = require('node:crypto');
 const TS = require('./tailscale');
 const { Transport, LIMITS } = require('./transport');
 
 class DeviceServer {
   // authorize(ip) -> { ok, name, reason }. Injected so the tests can run the
   // whole thing over loopback; the real one asks `tailscale whois`.
-  constructor({ host, device, tote, authorize, advertise = false, limits = {} }) {
+  constructor({ host, device, tote, authorize, advertise = false, limits = {}, allowedMethod = P.allowedRemote }) {
     this.host = host;
+    this.allowedMethod = allowedMethod;
     this.device = device;
     this.tote = tote;
     this.authorize = authorize;
@@ -24,6 +26,7 @@ class DeviceServer {
     this.stopAdvertising = null;
     this.wss = null;
     this.seq = 0;
+    this.instance = randomUUID();
     this.address = null;
     this.limits = { ...LIMITS, ...limits };
     this.transports = new Set();
@@ -39,7 +42,7 @@ class DeviceServer {
         maxPayload: P.MAX_FRAME,
         verifyClient: (info, done) => {
           const ip = TS.peerIp(info.req.socket.remoteAddress);
-          Promise.resolve(this.authorize(ip))
+          Promise.resolve(this.authorize(ip, info.req))
             .then((a) => {
               if (!a || !a.ok) {
                 console.warn('[tote] refused device connection from ' + ip + ': ' + (a && a.reason));
@@ -97,13 +100,13 @@ class DeviceServer {
         }
         clearTimeout(helloTimer);
         transport.flow = msg.flow === 1;
-        vid = 'r' + (++this.seq) + ':' + (auth.name || 'device');
+        vid = this.instance + ':r' + (++this.seq) + ':' + (auth.name || 'device');
         this.host.addViewer({ id: vid, send: (e, p) => send({ t: 'ev', e, p }) });
         return send({ ...P.hello('host', this.device, this.tote), ...(transport.flow ? { flow: 1 } : {}) });
       }
       if (msg.t === 'ack') { if (transport.flow) transport.ack(msg.seq); return; }
       if (msg.t !== 'call') return;
-      if (!P.allowedRemote(msg.m)) {
+      if (!this.allowedMethod(msg.m)) {
         return send({ t: 'ret', id: msg.id, ok: false, e: 'Not callable from another device: ' + msg.m });
       }
       if (calls.has(msg.id)) return transport.stop(4000, 'Duplicate pending call id');

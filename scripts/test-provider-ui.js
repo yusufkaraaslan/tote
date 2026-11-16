@@ -28,7 +28,14 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.end('<!doctype html><title>Fixture provider</title><textarea id="draft"></textarea>');
 });
-function finish(code) {
+let finishing = false;
+async function finish(code) {
+  if (finishing) return; finishing = true;
+  const { LocalHost } = require('../src/main/localHost');
+  const control = new LocalHost(app.getPath('userData'));
+  await control.admin('local:stop', [{ force: true }]).catch(() => {});
+  control.close();
+  await new Promise(resolve => setTimeout(resolve, 300));
   for (const win of BrowserWindow.getAllWindows()) win.destroy();
   server.close();
   try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
@@ -70,9 +77,10 @@ server.listen(0, '127.0.0.1', async () => {
     assert.match(await popup.webContents.executeJavaScript('document.cookie'), /fixtureLogin=retained/);
     assert.equal(await popup.webContents.executeJavaScript('!!window.opener'), true, 'sandboxed provider popup retains its opener');
     assert.equal((await session.defaultSession.cookies.get({ url })).length, 0, 'provider cookies stay out of the viewer session');
-    popup.destroy();
+    await popup.webContents.executeJavaScript(`window.open(${JSON.stringify(url + '/nested')});void 0`);
+    const nested = await until(() => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/nested')), 'nested provider popup');
     await run(a, 'tote.newWindow()');
-    const b = await until(() => BrowserWindow.getAllWindows().find(w => w !== a), 'second window');
+    const b = await until(() => BrowserWindow.getAllWindows().find(w => w !== a && w !== popup && w !== nested), 'second window');
     await ready(b); await run(b, "switchWorkspace('second')"); await run(b, "openTab('fixture')");
     assert.equal(await run(b, 'state.workspaces.active'), 'second');
     const second = await guest(b);
@@ -85,12 +93,22 @@ server.listen(0, '127.0.0.1', async () => {
     await until(() => fs.existsSync(one) && fs.existsSync(two), 'routed downloads');
     assert.equal(fs.readFileSync(one, 'utf8'), 'download from one');
     assert.equal(fs.readFileSync(two, 'utf8'), 'download from two');
+    b.focus();
+    popup.webContents.downloadURL(url + '/download/popup');
+    nested.webContents.downloadURL(url + '/download/nested');
+    for (const name of ['popup', 'nested']) {
+      const file = path.join(scratch, 'global/inbox/fixture', name + '.txt');
+      await until(() => fs.existsSync(file), name + ' download stays with its original viewer');
+      assert.equal(fs.readFileSync(file, 'utf8'), 'download from ' + name);
+      assert.equal(fs.existsSync(path.join(scratch, 'second/inbox/fixture', name + '.txt')), false);
+    }
+    nested.destroy(); popup.destroy();
     await run(a, "switchWorkspace('second')"); await run(a, "switchWorkspace('global')");
     assert.equal((await guest(a)).id, first.id, 'switching spaces restores the original provider instance');
     assert.equal((await guest(b)).id, secondId, 'another window keeps its own active-space provider');
     assert.equal(await first.executeJavaScript("document.querySelector('#draft').value"), 'unsent provider draft');
     assert.deepEqual(errors, []);
-    console.log('Provider UI passed: real sandboxed preload, partition cookies, OAuth popup/opener, two-window download routing and preserved provider draft.');
+    console.log('Provider UI passed: real sandboxed preload, partition cookies, OAuth popup/opener, nested-popup and two-window download routing and preserved provider draft.');
     finish(0);
   } catch (error) { console.error(error, errors); finish(1); }
 });

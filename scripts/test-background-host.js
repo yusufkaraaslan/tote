@@ -114,7 +114,10 @@ test('a real PTY survives its starting process exiting and reconnect preserves s
   } finally {
     child?.kill('SIGKILL');
     await host.admin('local:stop', [{ force: true }]).catch(() => {});
-    host.close(); await pause(300); fs.rmSync(dir, { recursive: true, force: true });
+    host.close();
+    // Windows can retain the shell's working-directory handle briefly after
+    // shutdown. Retry transient cleanup locks, but still fail if they persist.
+    await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 

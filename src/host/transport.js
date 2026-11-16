@@ -73,7 +73,8 @@ class Transport {
     if (this.stopped) { if (this.ws.readyState === this.ws.CLOSED) clearTimeout(this.force); return; }
     this.stopped = true; clearInterval(this.timer);
     this.pending.clear(); this.bytes = this.replayBytes = 0;
-    this.onStop(code, reason);
+    // Consumer cleanup must not prevent the transport's own teardown.
+    try { this.onStop(code, reason); } catch { /* keep closing the socket */ }
     if (this.ws.readyState === this.ws.CLOSED) return;
     if (immediate) { this.ws.terminate(); return; }
     try { this.ws.close(code, reason.slice(0, 120)); } catch { this.ws.terminate(); }

@@ -49,6 +49,14 @@ test('replay has bounded extra allowance; acknowledgements cannot free unrelated
   t.stop(); ws.terminate();
 });
 
+test('a throwing consumer cleanup still closes and forcibly terminates the socket', async () => {
+  const ws = new Socket();
+  const transport = new Transport(ws, { limits: { closeMs: 10 }, onStop: () => { throw Error('consumer failed'); } });
+  assert.doesNotThrow(() => transport.stop(1013, 'overloaded'));
+  assert.equal(ws.closed.code, 1013);
+  await until(() => ws.terminated);
+});
+
 test('heartbeat and parser deadlines retire a viewer even after sleep or a stalled close handshake', async () => {
   for (const output of [false, true]) {
     const ws = new Socket(), t = new Transport(ws, { limits: { closeMs: 10 } });

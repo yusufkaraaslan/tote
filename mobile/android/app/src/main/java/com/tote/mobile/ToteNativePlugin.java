@@ -23,15 +23,16 @@ public class ToteNativePlugin extends Plugin {
     @PluginMethod public void connect(PluginCall call) {
         String id = call.getString("id"), address = call.getString("address", "");
         int port = call.getInt("port", 47821);
-        if (id == null || !id.matches("[0-9]{1,12}") || !TailnetAddress.valid(address) || port < 1 || port > 65535) {
+        if (id == null || !id.matches("(?:[0-9]{1,12}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})") || !TailnetAddress.valid(address) || port < 1 || port > 65535) {
             call.reject("Use a Tailscale IPv4 address and a valid port."); return;
         }
         Request request = new Request.Builder().url("ws://" + address + ":" + port).build();
         SocketBudget budget = new SocketBudget(72L * 1024 * 1024, 4096);
         SocketBudget previousBudget = budgets.put(id, budget); if (previousBudget != null) previousBudget.close();
         WebSocket socket = http.newWebSocket(request, new WebSocketListener() {
-            @Override public void onOpen(WebSocket ws, Response response) { emit(id, "open", null, null); }
+            @Override public void onOpen(WebSocket ws, Response response) { if (budgets.get(id) == budget) emit(id, "open", null, null); }
             @Override public void onMessage(WebSocket ws, String text) {
+                if (budgets.get(id) != budget) return;
                 if (text.length() > 64 * 1024 * 1024) { ws.cancel(); emit(id, "error", null, "Host frame exceeded the protocol limit."); return; }
                 long token = budget.reserve(text.length() * 2L);
                 if (token == 0) {
@@ -41,10 +42,13 @@ public class ToteNativePlugin extends Plugin {
                 emit(id, "message", text, null, token);
             }
             @Override public void onClosing(WebSocket ws, int code, String reason) { ws.close(code, reason); }
-            @Override public void onClosed(WebSocket ws, int code, String reason) { sockets.remove(id, ws); budget.close(); budgets.remove(id, budget); emit(id, "close", null, reason); }
+            @Override public void onClosed(WebSocket ws, int code, String reason) {
+                sockets.remove(id, ws); budget.close();
+                if (budgets.remove(id, budget)) emit(id, "close", null, reason);
+            }
             @Override public void onFailure(WebSocket ws, Throwable t, Response response) {
                 sockets.remove(id, ws);
-                budget.close(); budgets.remove(id, budget);
+                budget.close(); if (!budgets.remove(id, budget)) return;
                 String message = response != null && response.code() == 403
                     ? "Computer refused this phone. Use the same Tailscale owner on both devices."
                     : "Cannot reach Tote. Check Tailscale, Share device and the address. " + t.getMessage();

@@ -942,9 +942,11 @@ ipcMain.handle('updates:install', async () => {
   installingUpdate = true;
   try {
     return await selfUpdater.install(updateGuard, target => {
-      app.relaunch({ execPath:target, args:[] });
-      // Quit only the viewer; the detached host retains its immutable runtime.
-      app.quit();
+      app.relaunch({ execPath:target, args:process.argv.slice(1) });
+      // Guards and explicit confirmation have completed. A provider's unload
+      // handler must not strand an old viewer after its binary was replaced.
+      // These are viewer connections/setup PTYs, never the detached host.
+      ptys.killAll(); host.close(); app.exit(0);
     });
   } finally { installingUpdate = false; }
 });

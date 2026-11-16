@@ -79,6 +79,7 @@ async function replaceAppImage(target, staged, artifact, assertGuard = () => {})
     const fd = fs.openSync(next, 'r'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     await fs.promises.copyFile(target, backup, fs.constants.COPYFILE_EXCL);
     const old = fs.openSync(backup, 'r'); try { fs.fsyncSync(old); } finally { fs.closeSync(old); }
+    const recovery = fs.openSync(dir, 'r'); try { fs.fsyncSync(recovery); } finally { fs.closeSync(recovery); }
     const current = appImageTarget(target);
     if (current.ino !== original.ino || current.dev !== original.dev || current.size !== original.size || current.mtimeMs !== original.mtimeMs)
       throw Error('The installed AppImage changed. Restart Tote and check again.');
@@ -157,7 +158,8 @@ class SelfUpdater {
       if (!unlock) return { canceled:true };
       const result = await replaceAppImage(this.target, path.join(this.dir,'artifact'), artifact, unlock.assert);
       this.state = { phase:'installed', version:manifest.version, backup:result.backup };
-      await relaunch(this.target);
+      try { await relaunch(this.target); }
+      catch { throw Error('The update is installed, but Tote could not reopen. Launch the AppImage manually. Recovery copy: ' + result.backup); }
       return this.status();
     } finally { unlock?.(); this.busy = false; }
   }

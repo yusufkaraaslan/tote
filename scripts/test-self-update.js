@@ -115,3 +115,12 @@ test('explicit host upgrade defers live agents, refuses a late agent and adopts 
   assert((await upgradeHost({host,current:'0.5.0',confirm})).unchanged);
   assert.equal(starts,1);
 });
+test('relaunch failure retains installed executable and tells the user where recovery was kept', {skip:process.platform!=='linux'}, async () => {
+  const f=fixture();
+  try {
+    await f.updater.start();
+    await assert.rejects(f.updater.install(async()=>()=>{},()=>{throw Error('launcher unavailable');}),/update is installed.*Recovery copy/);
+    assert.deepEqual(fs.readFileSync(f.target),payload);
+    assert.equal(fs.readFileSync(f.updater.state.backup,'utf8'),'old executable');
+  } finally { f.close(); }
+});

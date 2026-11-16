@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { isDeepStrictEqual } = require('util');
 
 const DEFAULTS_DIR = path.join(__dirname, '..', '..', 'config');
 const FILES = ['providers.json', 'cli-profiles.json', 'workspaces.json', 'apps.json', 'settings.json', 'views.json'];
@@ -31,14 +32,26 @@ function replaceJson(file, text, io) {
   }
 }
 
-function inspect(file, io) {
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+function validData(name, data) {
+  if (name === 'providers.json' || name === 'cli-profiles.json') return Array.isArray(data);
+  if (!record(data)) return false;
+  if (name === 'apps.json' || name === 'workspaces.json') return Array.isArray(data.list);
+  if (name === 'views.json') return Object.values(data).every(record);
+  return true;
+}
+
+function inspect(file, io, name) {
   let text;
   try { text = io.readFileSync(file, 'utf8'); }
   catch (e) {
     if (e.code === 'ENOENT') return { missing: true };
     throw e; // Permission and device failures must never become empty config.
   }
-  try { return { text, data: JSON.parse(text) }; }
+  try {
+    const data = JSON.parse(text);
+    return validData(name, data) ? { text, data } : { text, invalid: true };
+  }
   catch (e) { return { text, invalid: true }; }
 }
 
@@ -52,8 +65,8 @@ class ConfigStore {
       const target = path.join(this.dir, name);
       // Only seed a new file when neither version exists. A missing primary
       // with an existing backup is recovery, including an interrupted seed.
-      const primary = inspect(target, io);
-      if (primary.missing && inspect(target + '.bak', io).missing) {
+      const primary = inspect(target, io, name);
+      if (primary.missing && inspect(target + '.bak', io, name).missing) {
         const text = io.readFileSync(path.join(DEFAULTS_DIR, name), 'utf8');
         JSON.parse(text);
         replaceJson(target + '.bak', text, io);
@@ -70,18 +83,18 @@ class ConfigStore {
 
   read(name) {
     const file = path.join(this.dir, name);
-    const current = inspect(file, this.io);
+    const current = inspect(file, this.io, name);
     if (!current.missing && !current.invalid) {
-      const backup = inspect(file + '.bak', this.io);
+      const backup = inspect(file + '.bak', this.io, name);
       if (backup.missing || backup.invalid) {
         if (backup.invalid) this.preserve(file + '.bak');
         replaceJson(file + '.bak', current.text, this.io);
       }
       return current.data;
     }
-    const backup = inspect(file + '.bak', this.io);
+    const backup = inspect(file + '.bak', this.io, name);
     if (backup.missing || backup.invalid) {
-      throw new Error(`Cannot load ${file}: configuration is ${current.missing ? 'missing' : 'invalid JSON'} and no valid backup is available. Restore this file before reopening Tote.`);
+      throw new Error(`Cannot load ${file}: configuration is ${current.missing ? 'missing' : 'invalid'} and no valid backup is available. Restore this file before reopening Tote.`);
     }
     const preserved = current.invalid ? this.preserve(file) : null;
     replaceJson(file, backup.text, this.io);
@@ -98,10 +111,15 @@ class ConfigStore {
   write(name, data) {
     const text = JSON.stringify(data, null, 2);
     if (text === undefined) throw new TypeError('Configuration must be JSON serializable');
+    const serialized = JSON.parse(text);
+    if (!validData(name, serialized)) throw new TypeError(`Invalid configuration structure: ${name}`);
     const file = path.join(this.dir, name);
     this.read(name); // Recover first; never replace good backup data with damage.
-    const current = inspect(file, this.io);
+    const current = inspect(file, this.io, name);
     if (current.missing || current.invalid) throw new Error(`Configuration changed while saving ${file}`);
+    // Startup normalization and repeated settings saves must not erase the
+    // previous distinct version just by writing the current value again.
+    if (isDeepStrictEqual(current.data, serialized)) return;
     replaceJson(file + '.bak', current.text, this.io);
     replaceJson(file, text, this.io);
   }

@@ -426,8 +426,9 @@ installers, or the physical-device behaviors above.
 
 Tote saves each JSON file in its application-data `config` folder through a flushed
 temporary file and an atomic rename. A sibling `.bak` holds the preceding valid
-version. On first use, it contains the initial configuration. Missing or invalid
-JSON is restored from that backup with a notice; damaged bytes remain in a
+distinct version; unchanged saves leave the backup intact. On first use, it contains
+the initial configuration. Missing JSON or an invalid top-level structure is
+restored from that backup with a notice; damaged bytes remain in a
 `.corrupt-…` file for inspection. If neither copy is usable, Tote reports the path
 and stops startup so you can restore it, instead of opening an empty configuration.
 

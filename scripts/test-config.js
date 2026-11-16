@@ -133,6 +133,30 @@ test('serialization errors leave configuration and backup untouched', t => {
   assert.equal(fs.readFileSync(f.file + '.bak', 'utf8'), backup);
 });
 
+test('unchanged saves retain the previous distinct version, including after reopening', t => {
+  const f = fixture(t);
+  f.store.saveSettings({ revision: 1 });
+  f.store.saveSettings({ revision: 2, enabled: true });
+  f.open().saveSettings({ enabled: true, revision: 2 });
+  assert.deepEqual(f.read(f.file + '.bak'), { revision: 1 });
+});
+
+test('structurally invalid JSON recovers and invalid writes leave both copies untouched', t => {
+  const f = fixture(t);
+  for (const [name, bad] of [['settings.json', null], ['providers.json', {}],
+    ['cli-profiles.json', {}], ['workspaces.json', { list: null }],
+    ['apps.json', { list: {} }], ['views.json', { global: null }]]) {
+    const file = path.join(f.store.getDir(), name);
+    const expected = f.read(file + '.bak');
+    fs.writeFileSync(file, JSON.stringify(bad));
+    assert.deepEqual(f.store.read(name), expected);
+    assert.throws(() => f.store.write(name, bad), /Invalid configuration structure/);
+    assert.deepEqual(f.read(file), expected);
+    assert.deepEqual(f.read(file + '.bak'), expected);
+  }
+  assert.equal(f.events.length, 6);
+});
+
 for (const after of [false, true]) {
   test(`process death ${after ? 'after' : 'before'} primary rename reopens a complete version`, t => {
     const f = fixture(t);

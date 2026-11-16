@@ -22,6 +22,15 @@ const stores = new Map(['', 'remote'].map(key => {
   return [key, new Views({ getViews: () => data, saveViews: v => { data = v; } }, id => id === 'a')];
 }));
 const windows = [], selected = new Map(), errors = [], writes = [];
+function finish(code) {
+  // These are disposable fixture windows. Avoid Chromium's graceful shutdown
+  // keeping the runner alive after all assertions have already completed.
+  for (const w of windows) if (!w.isDestroyed()) w.destroy();
+  try { fs.rmSync(scratch, { recursive: true, force: true }); }
+  catch (error) { console.warn('Could not remove temporary UI fixture:', error.code); }
+  app.exit(code);
+}
+setTimeout(() => { console.error('Layout sync UI harness exceeded 60 seconds'); finish(1); }, 60000).unref();
 const pause = ms => new Promise(r => setTimeout(r, ms));
 ipcMain.handle('fixture', async (e, name, args) => {
   const current = selected.get(e.sender.id) || '';
@@ -96,7 +105,6 @@ app.whenReady().then(async () => {
     assert.equal(stores.get('').snapshot().views.a.groups[0].name, 'Local pending');
     assert.deepEqual(errors, []);
     console.log('Layout sync UI passed: live pane identity, dirty buffers, conflict choice, saves captured before device switches, and rapid switching.');
-    app.quit();
-  } catch (e) { console.error(e, errors); app.exit(1); }
+    finish(0);
+  } catch (e) { console.error(e, errors); finish(1); }
 });
-app.on('will-quit', () => fs.rmSync(scratch, { recursive: true, force: true }));

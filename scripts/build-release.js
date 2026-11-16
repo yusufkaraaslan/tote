@@ -14,4 +14,4 @@ if(!signed && process.platform==='darwin') config.afterPack=async context=>{
     optionsForFile:()=>({hardenedRuntime:false})});
   require('node:child_process').execFileSync('codesign',['--verify','--deep','--strict',app],{stdio:'inherit'});
 };
-build({config,publish:'never'}).catch(error=>{console.error(error.message);process.exitCode=1;});
+build({config,publish:'never'}).catch(error=>{console.error(error.message);process.exit(1);});

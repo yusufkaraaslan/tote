@@ -52,7 +52,8 @@
         "pacman"
       ],
       "category": "Utility",
-      "synopsis": "One window for all your LLMs"
+      "synopsis": "One window for all your LLMs",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
@@ -88,12 +89,13 @@
   },
   "devDependencies": {
     "electron": "^45.3.3",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^26.18.1"
   },
   "allowScripts": {
     "node-pty@1.1.0": true
   },
   "engines": {
     "node": ">=22.12.0"
-  }
+  },
+  "desktopName": "tote.desktop"
 }

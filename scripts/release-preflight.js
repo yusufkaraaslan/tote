@@ -2,14 +2,17 @@
 const fs = require('node:fs'), path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { check } = require('./release-version');
+const { productionPlatforms } = require('./release-targets');
 const REPO = 'yusufkaraaslan/tote';
-const SIGNING_SECRETS = [
-  'MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID',
-  'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD',
-  'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD',
-];
+const PLATFORM_SECRETS = {
+  linux: [],
+  darwin: ['MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
+  win32: ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD'],
+  android: ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'],
+};
+const SIGNING_SECRETS = Object.values(PLATFORM_SECRETS).flat();
 const MANUAL = [
-  'Verify production signatures/notarization and the existing Android signing identity.',
+  'Verify selected-platform signatures and the Android signing transition from the existing installation.',
   'Record real provider login, OAuth, PDF/download and native Downloads-bridge checks.',
   'Verify sign-in startup, power behavior, phone discovery/voice/save and signed installed-app upgrades.',
   'Review the exact signed artifacts and checksums before explicitly publishing the draft.',
@@ -17,7 +20,9 @@ const MANUAL = [
 
 async function inspect({ sha, dirty, release, api }) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw Error('Invalid candidate commit');
-  const report = { version: release.version, commit: sha, checkedAt: new Date().toISOString(), checks: [], manualVerification: MANUAL };
+  const targets = productionPlatforms(release);
+  const requiredSecrets = targets.flatMap(p => PLATFORM_SECRETS[p]);
+  const report = { version: release.version, platforms: targets, commit: sha, checkedAt: new Date().toISOString(), checks: [], manualVerification: MANUAL };
   const add = (name, ok, detail) => report.checks.push({ name, status: ok ? 'pass' : 'blocked', detail });
   const read = async (name, endpoint, evaluate) => {
     try { evaluate(await api(endpoint)); }
@@ -58,7 +63,7 @@ async function inspect({ sha, dirty, release, api }) {
   await read('Signing secret names', '/environments/release-signing/secrets?per_page=100', result => {
     if (!Array.isArray(result.secrets) || !Number.isInteger(result.total_count) || result.total_count > result.secrets.length
       || result.secrets.some(s => typeof s.name !== 'string')) throw Error('Incomplete secret names');
-    const names = new Set(result.secrets.map(s => s.name)), missing = SIGNING_SECRETS.filter(s => !names.has(s));
+    const names = new Set(result.secrets.map(s => s.name)), missing = requiredSecrets.filter(s => !names.has(s));
     add('Signing secret names', !missing.length, missing.length ? 'Missing: ' + missing.join(', ')
       : 'All required environment secret names exist. Values and certificate validity are not inspected.');
   });
@@ -67,7 +72,7 @@ async function inspect({ sha, dirty, release, api }) {
 }
 
 function summary(report) {
-  return ['# Release preflight', '', `Candidate: ${report.version} at ${report.commit}`, `Checked: ${report.checkedAt}`, '',
+  return ['# Release preflight', '', `Candidate: ${report.version} at ${report.commit}`, `Production platforms: ${report.platforms.join(', ')}`, `Checked: ${report.checkedAt}`, '',
     ...report.checks.map(c => `- ${c.status.toUpperCase()} — ${c.name}: ${c.detail}`), '',
     report.readyForSignedBuild ? 'Configuration and candidate CI checks pass. A signed build and physical verification are still required.'
       : 'Not ready for a signed build. Resolve blocked or unknown evidence first.', '',

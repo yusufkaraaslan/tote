@@ -35,6 +35,8 @@ jobs:
     outputs:
       signed: ${{ steps.plan.outputs.signed }}
       version: ${{ steps.plan.outputs.version }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      android: ${{ steps.plan.outputs.android }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -57,22 +59,16 @@ jobs:
           fi
           echo "signed=$REQUEST_SIGNED" >> "$GITHUB_OUTPUT"
           node -e "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version='+require('./release.json').version+'\n')"
+          node -e "const r=require('./release.json'), t=require('./scripts/release-targets'), s=process.env.REQUEST_SIGNED==='true'; require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'desktop='+JSON.stringify(t.desktopMatrix(r,s))+'\nandroid='+t.platforms(r,s).includes('android')+'\n')"
   validation:
     if: github.event_name != 'pull_request'
     uses: ./.github/workflows/validation.yml
   desktop:
     needs: [plan, validation]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.desktop != '{"include":[]}' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform: linux
-          - os: macos-15
-            platform: darwin
-          - os: windows-2022
-            platform: win32
+      matrix: ${{ fromJSON(needs.plan.outputs.desktop) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     environment: ${{ needs.plan.outputs.signed == 'true' && 'release-signing' || 'preview' }}
@@ -116,7 +112,7 @@ jobs:
           retention-days: 7
   android:
     needs: [plan, validation]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.android == 'true' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: ${{ needs.plan.outputs.signed == 'true' && 'release-signing' || 'preview' }}
@@ -173,8 +169,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   assemble:
-    needs: [plan, desktop, android]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.desktop.result == 'success' && needs.android.result == 'success' }}
+    needs: [plan, validation, desktop, android]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.validation.result == 'success' || needs.validation.result == 'skipped') && (needs.desktop.result == 'success' || needs.desktop.result == 'skipped') && (needs.android.result == 'success' || needs.android.result == 'skipped') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

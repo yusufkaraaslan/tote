@@ -19,6 +19,13 @@ test('preflight distinguishes preparation from successful signing and publicatio
   assert.match(summary(report), /not publication approval/);
   assert(report.manualVerification.some(s => s.includes('signed installed-app upgrades')));
 });
+test('Linux and Android preparation does not require macOS or Windows secrets', async () => {
+  const data = fixture(), secretData = data['/environments/release-signing/secrets?per_page=100'];
+  secretData.secrets = secretData.secrets.filter(s => s.name.startsWith('ANDROID_'));
+  secretData.total_count = secretData.secrets.length;
+  assert.equal((await inspectFixture(data, { release: { ...release, releasePlatforms: ['linux', 'android'] } })).readyForSignedBuild, true);
+  assert.equal((await inspectFixture(data, { release: { ...release, releasePlatforms: ['linux', 'darwin', 'win32', 'android'] } })).readyForSignedBuild, false);
+});
 test('missing, malformed or inaccessible evidence never becomes a clean report or leaks error text', async () => {
   for (const endpoint of Object.keys(fixture())) {
     const data = fixture(); delete data[endpoint];

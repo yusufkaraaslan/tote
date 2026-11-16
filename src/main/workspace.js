@@ -20,7 +20,7 @@ const { RemoteConn, RemoteFs } = require('./remote');
 // rest of a project. `.godot` is why a Godot workspace broke every agent
 // terminal: 5k import-cache files, none of them anything a user wants to see.
 const IGNORE = new Set([
-  'node_modules', '.git', '.DS_Store', 'dist', 'out', '.cache',
+  'node_modules', '.git', '.DS_Store', 'dist', 'out', '.cache', '.tote-trash',
   '.godot', '__pycache__', '.venv', '.pytest_cache', '.mypy_cache', '.ruff_cache',
   '.next', '.nuxt', '.svelte-kit', '.turbo', '.parcel-cache', '.gradle',
   '.terraform', 'Pods',

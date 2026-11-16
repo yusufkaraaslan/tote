@@ -1685,7 +1685,7 @@ function renderDeviceChip() {
     ? 'This window shows ' + d.name + "'s Tote — click to switch"
     : "This window shows this machine's Tote — click for your other devices";
   document.body.classList.toggle('on-device', !!d);
-  document.body.classList.toggle('device-down', !!(d && state.deviceDown));
+  document.body.classList.toggle('device-down', !!state.deviceDown);
 }
 
 // Over a device that dropped: its panes stay (an empty screen would read as
@@ -1694,7 +1694,15 @@ function renderOfflineBanner() {
   const bar = $('#device-offline');
   const d = state.device;
   renderDeviceChip();
-  if (!d || !state.deviceDown) { bar.classList.add('hidden'); return; }
+  if (!state.deviceDown) { bar.classList.add('hidden'); return; }
+  if (!d) {
+    bar.replaceChildren();
+    const text = document.createElement('span');
+    text.textContent = 'Background host disconnected. Input is not sent or retried. Reconnecting; if the host stopped, start it in Settings → About.';
+    const settings = document.createElement('button'); settings.textContent = 'Host settings';
+    settings.onclick = () => { $('#btn-settings').click(); showSettingsSection('about'); };
+    bar.append(text, settings); bar.classList.remove('hidden'); return;
+  }
   bar.innerHTML = '';
   const msg = document.createElement('span');
   msg.textContent = d.name + ' is offline' + (state.deviceDownSince ? ' since ' + state.deviceDownSince : '') +
@@ -3237,7 +3245,7 @@ function showSettingsSection(sec) {
   for (const x of document.querySelectorAll('#set-content .sec')) x.classList.toggle('active', x.dataset.sec === sec);
   if (sec === 'devices') renderDevicesSection();
   if (sec === 'diagnostics') refreshDiagnostics();
-  if (sec === 'about') $('#set-version-notice').textContent = state.device?.versionNotice || '';
+  if (sec === 'about') { $('#set-version-notice').textContent = state.device?.versionNotice || ''; refreshHostStatus(); }
 }
 for (const n of document.querySelectorAll('#set-nav .ni')) n.onclick = () => showSettingsSection(n.dataset.sec);
 
@@ -3269,6 +3277,33 @@ $('#diagnostics-save').onclick = async () => {
   const snapshot = diagnosticsReport;
   try { if (await tote.diagnosticsExport(snapshot)) $('#diagnostics-status').textContent = 'Report saved.'; }
   catch { $('#diagnostics-status').textContent = 'Could not save the report.'; }
+};
+
+async function refreshHostStatus() {
+  if (!tote.hostStatus) return; // isolated UI fixtures may not provide host controls
+  try {
+    const status = await tote.hostStatus();
+    $('#host-status').textContent = status.running
+      ? `Running · host ${status.version} · ${status.terminals} active terminal(s).${status.keepAwakeError ? ' ' + status.keepAwakeError : ''}`
+      : status.stopping ? 'Stopping background host…' : 'Stopped or unavailable. ' + (status.error || '');
+    $('#host-start').disabled = status.running || status.stopping;
+    $('#host-stop').disabled = !status.running;
+    $('#host-startup').checked = status.startAtLogin;
+  } catch (error) { $('#host-status').textContent = error.message; }
+}
+$('#host-refresh').onclick = refreshHostStatus;
+for (const action of ['start', 'stop']) $('#host-' + action).onclick = async () => {
+  $('#host-' + action).disabled = true;
+  try {
+    await (action === 'start' ? tote.hostStart() : tote.hostStop());
+    // Stop acknowledges before disconnecting; wait briefly for the status probe.
+    if (action === 'stop') await new Promise(resolve => setTimeout(resolve, 300));
+    await refreshHostStatus();
+  } catch (error) { $('#host-status').textContent = error.message; $('#host-' + action).disabled = false; }
+};
+$('#host-startup').onchange = async () => {
+  try { $('#host-startup').checked = await tote.hostStartup($('#host-startup').checked); }
+  catch (error) { $('#host-startup').checked = !$('#host-startup').checked; $('#host-status').textContent = error.message; }
 };
 
 $('#set-update-check').onclick = async () => {

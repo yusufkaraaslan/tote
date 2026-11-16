@@ -28,7 +28,14 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.end('<!doctype html><title>Fixture provider</title><textarea id="draft"></textarea>');
 });
-function finish(code) {
+let finishing = false;
+async function finish(code) {
+  if (finishing) return; finishing = true;
+  const { LocalHost } = require('../src/main/localHost');
+  const control = new LocalHost(app.getPath('userData'));
+  await control.admin('local:stop', [{ force: true }]).catch(() => {});
+  control.close();
+  await new Promise(resolve => setTimeout(resolve, 300));
   for (const win of BrowserWindow.getAllWindows()) win.destroy();
   server.close();
   try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}

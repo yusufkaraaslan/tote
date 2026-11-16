@@ -29,10 +29,10 @@ function checker(fetch = fetchLatest, now = Date.now) {
   };
 }
 async function openRelease({ sessions, check, current, open }) {
-  let activeTerminals=sessions().filter(s=>s.alive).length;
+  let activeTerminals=(await sessions()).filter(s=>s.alive).length;
   if(activeTerminals) return {deferred:true,activeTerminals};
   const release=await check(current);
-  activeTerminals=sessions().filter(s=>s.alive).length;
+  activeTerminals=(await sessions()).filter(s=>s.alive).length;
   if(activeTerminals) return {deferred:true,activeTerminals};
   if(!release.available)return {available:false};
   await open(release.url); return {opened:true};

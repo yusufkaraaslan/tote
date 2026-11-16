@@ -216,6 +216,11 @@
         </section>
         <section class="sec" data-sec="about">
           <h2>About</h2>
+          <h3>Background host — this computer</h3>
+          <p>Terminals keep running when you close Tote. Stopping the host, signing out, or rebooting ends those processes. To continue a stopped agent, open a new terminal and use its resume command.</p>
+          <p id="host-status" role="status"></p>
+          <button id="host-refresh">Refresh host status</button> <button id="host-start">Start host</button> <button id="host-stop">Stop host…</button>
+          <label><input type="checkbox" id="host-startup" /> Start the host when I sign in</label>
           <p class="lede">tote — one window for all your agents.</p>
           <div class="set-row"><span class="grow"><span class="name">version</span></span><span class="val" id="set-version"></span></div>
           <p class="lede">Check GitHub for a stable release. Updates are downloaded and installed manually; Tote never restarts an active session to update.</p>

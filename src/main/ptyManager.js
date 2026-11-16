@@ -68,6 +68,7 @@ class PtyManager {
   // observe a session it is also streaming to the renderer -- which is how
   // RemoteConn reads its own connect output while the user watches it in a pane.
   launch({ file, args, cwd, cols, rows }, sender, onData, onExit) {
+    if (this.stopping) throw new Error('Host is stopping; no new terminal was started');
     if (!pty) {
       throw new Error('node-pty failed to load: ' + ptyLoadError);
     }

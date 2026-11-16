@@ -62,6 +62,8 @@ jobs:
         run: xvfb-run -a npm run test:layout-sync-ui
       - name: Provider sessions, popups and workspace download routing
         run: xvfb-run -a npm run test:provider-ui
+      - name: Background host survives desktop quit and crash
+        run: xvfb-run -a npm run test:background-ui
       - name: Mobile navigation, reading and speech draft
         run: xvfb-run -a npm run test:mobile-ui
 

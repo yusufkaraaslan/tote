@@ -8,7 +8,7 @@
 // views, terminals -- and serves VIEWERS. Every window is a viewer with its own
 // active space. This file is the viewer side: windows, web sessions, native
 // apps, the wizard, and the IPC routing in front of the host.
-const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, powerSaveBlocker, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, webContents, Menu, clipboard } = require('electron');
 const { editMenu } = require('./editMenu');
 const path = require('path');
 const fs = require('fs');
@@ -16,14 +16,14 @@ const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const http = require('http');
-const { spawn, execSync, execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 const { ConfigStore } = require('./config');
-const { WorkspaceManager, originApp } = require('./workspace');
 const { PtyManager } = require('./ptyManager');
 const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
-const { Host } = require('../host/host');
+const { LocalHost } = require('./localHost');
+const hostStartup = require('./hostStartup');
+let hostLaunch;
 const CH = require('../host/channels');
-const { DeviceServer, tailnetAuthorizer } = require('../host/server');
 const Diagnostics = require('../shared/diagnostics');
 const Updates = require('../shared/updates');
 const checkUpdate = require('./updates').checker();
@@ -71,96 +71,12 @@ function migrateFromOmniHub() {
   }
 }
 
-// --- inherited agent session ------------------------------------------------
-// The environment that opened Tote is not the environment Tote should hand to
-// its children, and it hands process.env to all of them: every pty, the
-// wizard's installs, `cli:check`, local services.
-//
-// That matters when the thing that opened it was itself a CLI agent session.
-// `npm run install:mac` is normally run from a docked terminal, its watcher
-// reopens the app with `open`, and macOS passes that shell's environment
-// straight through (the app comes up with ppid 1 and the agent's full marker
-// set). Every terminal spawned afterwards then looks to Claude Code like a
-// nested child of a session that has long since ended, so it turns transcript
-// saving off and prints `inherited CLAUDE_CODE_CHILD_SESSION marker` -- for the
-// entire life of that app instance, in every space.
-//
-// A terminal in Tote is a fresh top-level session, so the markers are dropped
-// once, here, rather than at each spawn site.
-//
-// The list is explicit rather than a `CLAUDE_*` / `CLAUDE_CODE_*` wildcard on
-// purpose: real user configuration lives under the same prefixes
-// (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_USE_BEDROCK` / `_USE_VERTEX`,
-// `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, an api-key helper's TTL), and silently
-// deleting somebody's Bedrock or config-dir setting would be a worse bug than
-// the one this fixes. A marker that is not on the list costs a warning; a
-// config var that is costs a broken install.
-const AGENT_SESSION_VARS = [
-  'CLAUDECODE',
-  'CLAUDE_CODE_CHILD_SESSION',
-  'CLAUDE_CODE_SESSION_ID',
-  'CLAUDE_CODE_ENTRYPOINT',
-  'CLAUDE_CODE_EXECPATH',
-  'CLAUDE_CODE_VERSION',
-  'CLAUDE_CODE_MESSAGING_SOCKET',
-  'CLAUDE_CODE_MESSAGING_TOKEN',
-  'CLAUDE_CODE_SSE_PORT',
-  'CLAUDE_PID',
-  'CLAUDE_EFFORT',
-  'AI_AGENT',
-];
-function dropInheritedAgentSession() {
-  const found = AGENT_SESSION_VARS.filter((k) => process.env[k] !== undefined);
-  for (const k of found) delete process.env[k];
-  if (found.length) {
-    console.log('[tote] dropped inherited agent-session vars: ' + found.join(', '));
-  }
-}
-
-// --- login-shell PATH ------------------------------------------------------
-// A GUI launch (Finder, Dock, .desktop entry) hands the app a minimal PATH —
-// /usr/bin:/bin:/usr/sbin:/sbin on macOS — so npm, git and any CLI behind a
-// version manager are invisible to everything we exec from here: the wizard's
-// system check reports them missing, `cli:check` marks every profile
-// uninstalled, and local services fail to start. Read the real PATH from the
-// user's login shell once and adopt it. Agent terminals don't rely on this —
-// ptyManager gives each one its own login shell so per-shell setups stay live.
-function adoptLoginShellPath() {
-  if (process.platform === 'win32') return;
-  const shell = process.env.SHELL || '/bin/bash';
-  const mark = '__TOTE_PATH__';
-  try {
-    // -i so the interactive rc file (where fnm/nvm/asdf hook in) is sourced;
-    // markers because rc files are free to print banners around our output.
-    const out = execFileSync(shell, ['-l', '-i', '-c', `printf '${mark}%s${mark}' "$PATH"`], {
-      stdio: ['ignore', 'pipe', 'ignore'], // stdin closed: an rc file that reads gets EOF, not a hang
-      timeout: 5000,
-      encoding: 'utf8',
-    });
-    const found = out.split(mark)[1];
-    if (!found) return;
-    // Login shell wins on order, but keep anything it didn't mention.
-    const seen = new Set();
-    const merged = [];
-    for (const dir of [...found.split(':'), ...(process.env.PATH || '').split(':')]) {
-      if (dir && !seen.has(dir)) {
-        seen.add(dir);
-        merged.push(dir);
-      }
-    }
-    process.env.PATH = merged.join(':');
-  } catch (e) {
-    console.error('could not read PATH from login shell:', e.message);
-  }
-}
+const { dropInheritedAgentSession, adoptLoginShellPath } = require('./environment');
 
 let configStore;
-let workspace;
 let ptys;
 let host;
 let lastFocused = null;   // viewer id of the window that last had focus
-let deviceServer = null;  // this machine's listener, while sharing is on
-let shareError = null;    // why sharing is not on, when it should be
 // webContents id -> { current, devices: Map(key -> device) }. A window keeps a
 // connection to every machine it has opened -- their panes stay alive, hidden,
 // the way another space's do -- and `current` says which one it is showing
@@ -172,15 +88,6 @@ const partitionFor = (providerId) => `persist:tote-${providerId}`;
 
 // A window's viewer id. One webContents per window, and it outlives nothing.
 const viewerIdOf = (wc) => 'w' + wc.id;
-
-// The space a window is looking at; the most recently focused window's for
-// events that come from no window at all (a native app's download).
-function spaceOfWindow(wc) {
-  const v = wc && host.viewers.get(viewerIdOf(wc));
-  if (v) return v.wsId;
-  const last = lastFocused && host.viewers.get(lastFocused);
-  return last ? last.wsId : workspace.activeId();
-}
 
 const winOf = (e) => BrowserWindow.fromWebContents(e.sender) || undefined;
 
@@ -207,33 +114,6 @@ async function selfName() {
 function localOnly(e, what) {
   const d = deviceOf(e.sender);
   if (d) throw new Error(what + ' is not available while viewing ' + d.name);
-}
-
-/* Share this machine: listen on its tailnet address, and only there. Opt-in
- * (settings.shareDevice) -- a machine nobody meant to expose must not become
- * reachable because Tote updated. Re-applied on every settings save. */
-async function applyShareSetting() {
-  const want = configStore.getSettings().shareDevice === true;
-  const port = devicePort();
-  if (deviceServer && (!want || !deviceServer.address.endsWith(':' + port))) {
-    await deviceServer.stop();
-    deviceServer = null;
-  }
-  shareError = null;
-  if (!want || deviceServer) return;
-  try {
-    const bind = await TS.ip4();
-    const server = new DeviceServer({
-      host, device: await selfName(), tote: app.getVersion(), authorize: tailnetAuthorizer(), advertise: true,
-    });
-    await server.start({ bind, port });
-    deviceServer = server;
-    console.log('[tote] sharing this device on ' + server.address);
-  } catch (e) {
-    diagnosticLog.add('sharing', e);
-    shareError = e.code === 'EADDRINUSE' ? 'port ' + port + ' is already in use' : e.message;
-    console.error('[tote] could not share this device:', shareError);
-  }
 }
 
 function uniquePath(p) {
@@ -290,117 +170,37 @@ function setupProviderSession(provider) {
       });
       return;
     }
-    const W = workspace.scoped(spaceOfWindow(owner));
-    const space = W.active();
-    const remote = workspace.isRemote(space);
-    const inbox = remote ? W.stagingDir(provider.id) : W.inboxDir(provider.id);
-    fs.mkdirSync(inbox, { recursive: true });
-    const target = uniquePath(path.join(inbox, item.getFilename() || 'download'));
+    const stage = path.join(app.getPath('userData'), 'host-downloads');
+    fs.mkdirSync(stage, { recursive: true, mode: 0o700 });
+    const folder = fs.mkdtempSync(path.join(stage, 'download-'));
+    const target = path.join(folder, path.basename(item.getFilename() || 'download'));
     item.setSavePath(target);
-    item.once('done', async (e, state) => {
-      let landed = target;
-      let outcome = state;
-      if (remote && state === 'completed') {
+    const destination = owner
+      ? host.call('local:download', viewerIdOf(owner), [])
+      : host.admin('local:download');
+    // Attach rejection handling immediately, even for a long-running download.
+    const pinned = destination.then(value => ({ value }), error => ({ error }));
+    item.once('done', async (_event, state) => {
+      let landed = target, where = 'This computer', outcome = state;
+      if (state === 'completed') {
         try {
-          landed = await workspace.ingestInto(space.id, target, provider.id);
-          fs.rmSync(target, { force: true });        // the staged copy has served its purpose
-        } catch (err) {
-          outcome = 'interrupted: ' + err.message;   // the file is still in staging
-        }
+          const result = await pinned;
+          if (result.error) throw result.error;
+          const res = await host.admin('local:ingest', [{ wsId: result.value.wsId, file: target, providerId: provider.id }]);
+          landed = res.path; where = res.workspace;
+          fs.rmdirSync(folder);
+        } catch (error) { outcome = 'interrupted: ' + error.message + ' (staged at ' + target + ')'; }
       }
-      if (owner && !owner.isDestroyed()) {
-        owner.send('download:done', {
-          providerId: provider.id,
-          provider: provider.name,
-          workspace: space.name,
-          filename: path.basename(landed),
-          path: landed,
-          state: outcome,
-        });
-      }
+      if (owner && !owner.isDestroyed()) owner.send('download:done', {
+        providerId: provider.id, provider: provider.name, workspace: where,
+        filename: path.basename(landed), path: landed, state: outcome,
+      });
     });
   });
 }
 
 function setupAllProviderSessions() {
   for (const p of configStore.getProviders()) setupProviderSession(p);
-}
-
-// --- Downloads bridge (native apps -> active workspace) -------------------------
-
-// Web tabs never come through here -- their downloads are intercepted by
-// setupProviderSession() and written straight into inbox/<provider>/. This
-// bridge exists only for NATIVE apps (Claude Desktop, ChatGPT.app, ...), which
-// save wherever the OS tells them to, i.e. ~/Downloads.
-
-// Names the quarantine stamp may carry for an app we consider ours. macOS
-// records the app's bundle name ("Claude"), which is not always the label we
-// show ("Claude Desktop"), so accept both -- for the built-in list and for
-// anything the user added to apps.json themselves. Rebuilt per event so a
-// newly added app works without a restart.
-function bridgeAllowlist() {
-  const names = new Set();
-  const add = (n) => { const v = String(n || '').trim().toLowerCase(); if (v) names.add(v); };
-  const bundleName = (p) => path.basename(String(p || ''), '.app');
-  for (const ka of KNOWN_APPS) {
-    add(ka.name);
-    for (const cand of ka.candidates.darwin || []) add(bundleName(cand));
-  }
-  for (const entry of configStore.getApps().list) {
-    add(entry.name);
-    add(bundleName(entry.path));
-  }
-  return names;
-}
-
-// Keep awake: hold a power-save blocker while the setting is on, so a device
-// left running agents stays reachable instead of idling to sleep. It stops
-// IDLE sleep only -- closing a lid still sleeps the Mac unless it is in
-// clamshell mode, and nothing an app can ask for changes that.
-let awakeBlocker = null;
-function applyKeepAwake() {
-  const on = configStore.getSettings().keepAwake === true;
-  if (on && awakeBlocker === null) {
-    awakeBlocker = powerSaveBlocker.start('prevent-app-suspension');
-  } else if (!on && awakeBlocker !== null) {
-    powerSaveBlocker.stop(awakeBlocker);
-    awakeBlocker = null;
-  }
-}
-
-function applyBridgeSetting() {
-  const on = configStore.getSettings().bridgeDownloads !== false;
-  workspace.unwatchDownloads();
-  // macOS is the only platform that records WHICH app downloaded a file, and
-  // without that the bridge cannot tell a Claude Desktop export from a bank
-  // statement -- so it stays off everywhere else rather than guess (issue #1).
-  if (!on || process.platform !== 'darwin') return;
-  workspace.watchDownloads(async (absPath) => {
-    const app = await originApp(absPath);
-    // No origin (hand-made file) or an app we don't own (a browser, Slack,
-    // AirDrop): not ours to touch.
-    if (!app || !bridgeAllowlist().has(app.toLowerCase())) return;
-    // No window started it, so it goes to the space of the window you were
-    // last in -- the closest thing to "where you are" a native app has.
-    const W = workspace.scoped(spaceOfWindow(null));
-    try {
-      const target = await W.ingest(absPath, '_desktop');
-      host.emit('download:done', {
-        providerId: '_desktop',
-        provider: app,
-        workspace: W.active().name,
-        filename: path.basename(target),
-        path: target,
-        state: 'completed',
-      });
-    } catch (e) {
-      host.emit('download:done', {
-        providerId: '_desktop', provider: app,
-        workspace: W.active().name,
-        filename: path.basename(absPath), path: absPath, state: 'interrupted: ' + e.message,
-      });
-    }
-  });
 }
 
 // --- local services (e.g. DeepSeek Harness Web UI) ------------------------------
@@ -472,9 +272,9 @@ function detectApps() {
   configStore.saveApps(data);
 }
 
-async function launchApp(entry, W) {
-  const wsName = W.active().name;
-  const rootPath = W.getRoot();
+async function launchApp(entry, context) {
+  const wsName = context.space.name;
+  const rootPath = context.root;
   let note = null;
   if (entry.kind === 'claude') {
     try {
@@ -497,7 +297,7 @@ async function launchApp(entry, W) {
 // Every window is a viewer of the local host, with its own active space. More
 // than one is allowed (app:newWindow) -- which is also how the host/viewer
 // split is exercised on one machine before any network exists.
-function createWindow() {
+async function createWindow() {
   const win = new BrowserWindow({
     width: 1480,
     height: 920,
@@ -520,10 +320,6 @@ function createWindow() {
   // This machine's events carry no device tag; another machine's carry its key
   // as a second argument (see openDevice), and the renderer files each under
   // the right device -- including the ones whose panes are hidden right now.
-  host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
-  lastFocused = vid;
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-
   // Its terminals keep running: the sessions belong to the host, and another
   // window -- or a later one -- re-attaches with a replay.
   const wcId = wc.id;
@@ -533,15 +329,25 @@ function createWindow() {
       viewing.delete(wcId);
       for (const d of w.devices.values()) { clearTimeout(d.retry); d.gone = true; if (d.client) d.client.close(); }
     }
+    for (const [id, owner] of wizardOwners) if (owner === wcId) { ptys.kill(id); wizardOwners.delete(id); }
     host.removeViewer(vid);
     if (lastFocused === vid) lastFocused = null;
   });
+
+  try {
+    await host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
+  } catch (error) { if (!win.isDestroyed()) win.destroy(); throw error; }
+  if (win.isDestroyed()) return;
+  lastFocused = vid;
+  host.call('local:focus', vid, []).catch(() => {});
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   // Re-activation is the renderer's cue to put keyboard focus back inside the
   // focused pane. The main process is the authority on window activation: the
   // renderer's own `focus` event is ambiguous once a webview guest is involved.
   win.on('focus', () => {
     lastFocused = vid;
+    host.call('local:focus', vid, []).catch(() => {});
     if (!wc.isDestroyed()) wc.send('win:focus');
   });
 
@@ -624,6 +430,14 @@ app.on('web-contents-created', (event, contents) => {
 // A window viewing another device sends the same call to THAT device's host
 // instead. The renderer cannot tell the difference, which is the point.
 function route(e, name, args) {
+  if (typeof args[0]?.id === 'number' && ['pty:write', 'pty:resize', 'pty:kill'].includes(name)) {
+    const request = args[0];
+    if (wizardOwners.get(request.id) !== e.sender.id) return Promise.reject(Error('Unknown setup terminal'));
+    if (name === 'pty:write') ptys.write(request.id, request.data);
+    if (name === 'pty:resize') ptys.resize(request.id, request.cols, request.rows);
+    if (name === 'pty:kill') { ptys.kill(request.id); wizardOwners.delete(request.id); }
+    return Promise.resolve();
+  }
   let d = deviceOf(e.sender);
   // Layout requests outlive the selected device (debounce, reconnect, reply).
   // Bind them to the captured device, restricted to this window's connections.
@@ -685,7 +499,7 @@ ipcMain.handle('workspaces:add', async (e, name) => {
 // disk moves; open terminals keep their old cwd.
 ipcMain.handle('workspaces:setPath', async (e, id) => {
   localOnly(e, 'Picking a folder');
-  const w = workspace.space(id);
+  const w = (await hostCall(e, 'workspaces:list')).list.find(w => w.id === id);
   if (!w) throw new Error('Unknown workspace: ' + id);
   const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Pick the folder for workspace "' + w.name + '"',
@@ -723,7 +537,7 @@ ipcMain.handle('workspaces:discard', async (e, id) => {
 
 ipcMain.handle('workspaces:promote', async (e, id) => {
   localOnly(e, 'Picking a folder');
-  const w = workspace.space(id);
+  const w = (await hostCall(e, 'workspaces:list')).list.find(w => w.id === id);
   if (!w) throw new Error('Unknown workspace: ' + id);
   const res = await dialog.showOpenDialog(winOf(e), {
     title: 'Keep "' + w.name + '" -- pick its permanent folder',
@@ -737,21 +551,22 @@ ipcMain.handle('workspaces:promote', async (e, id) => {
 // Reveal selects the item in the OS file manager; openPath hands it to its
 // default application instead. Both stay inside resolveSafe.
 
-const viewerWs = (e) => workspace.scoped(spaceOfWindow(e.sender));
-ipcMain.handle('workspace:openPath', (e, rel) => {
-  localOnly(e, 'Opening with this machine\'s apps');
-  return shell.openPath(viewerWs(e).resolveSafe(rel));
+const localCall = (e, method, ...args) => host.call(method, viewerIdOf(e.sender), args);
+const viewerContext = e => localCall(e, 'local:space');
+ipcMain.handle('workspace:openPath', async (e, rel) => {
+  localOnly(e, 'Opening with this machine’s apps');
+  return shell.openPath(await localCall(e, 'local:resolve', rel));
 });
-ipcMain.handle('workspace:revealPath', (e, rel) => {
-  localOnly(e, 'Revealing in this machine\'s file manager');
-  shell.showItemInFolder(viewerWs(e).resolveSafe(rel));
+ipcMain.handle('workspace:revealPath', async (e, rel) => {
+  localOnly(e, 'Revealing in this machine’s file manager');
+  shell.showItemInFolder(await localCall(e, 'local:resolve', rel));
 });
 
 // --- IPC: devices ------------------------------------------------------------------------
 
 // Your other machines with Tote, probed live, plus whether this one is shared.
 ipcMain.handle('devices:list', async () => {
-  const share = { on: !!deviceServer, address: deviceServer && deviceServer.address, error: shareError };
+  const share = await host.admin('local:status').then(r => r.share, e => ({ on: false, error: e.message }));
   try {
     return { ...(await discover({ port: devicePort(), device: await selfName() })), share };
   } catch (e) {
@@ -848,6 +663,7 @@ function connectDevice(wc, d) {
 }
 
 ipcMain.on('devices:outputAck', (e, key, id) => {
+  if (!key) { host.ack(viewerIdOf(e.sender), id); return; }
   const output = viewing.get(e.sender.id)?.devices.get(key)?.output;
   const resolve = output?.get(id);
   if (resolve) { output.delete(id); resolve(); }
@@ -912,16 +728,7 @@ ipcMain.handle('config:saveProviders', (e, list) => {
 ipcMain.handle('config:openDir', () => shell.openPath(configStore.getDir()));
 
 ipcMain.handle('settings:get', () => configStore.getSettings());
-ipcMain.handle('settings:save', (e, s) => {
-  // keepAwake is the HOST's setting (device:setKeepAwake), which another
-  // machine may have changed since this window read its copy -- never let a
-  // stale renderer copy write it back.
-  configStore.saveSettings({ ...s, keepAwake: configStore.getSettings().keepAwake === true });
-  applyBridgeSetting();
-  applyKeepAwake();
-  applyShareSetting();
-  return true;
-});
+ipcMain.handle('settings:save', (e, s) => localCall(e, 'local:settings', s));
 
 // --- IPC: apps -----------------------------------------------------------------------------
 
@@ -947,11 +754,11 @@ ipcMain.handle('apps:remove', (e, id) => {
   return data.list;
 });
 
-ipcMain.handle('apps:launch', (e, id) => {
+ipcMain.handle('apps:launch', async (e, id) => {
   const entry = configStore.getApps().list.find((a) => a.id === id);
   if (!entry) throw new Error('Unknown app: ' + id);
   localOnly(e, 'Launching a native app into a space');
-  return launchApp(entry, viewerWs(e));
+  return launchApp(entry, await viewerContext(e));
 });
 
 // --- IPC: setup wizard / connections -------------------------------------------------------------
@@ -964,25 +771,26 @@ ipcMain.handle('setup:fixNpmPrefix', () => fixNpmPrefix());
 
 ipcMain.handle('conn:claudeStatus', () => claudeStatus());
 
-ipcMain.handle('conn:bindClaude', (e) => {
+ipcMain.handle('conn:bindClaude', async (e) => {
   localOnly(e, 'Binding Claude Desktop');
-  const W = viewerWs(e);
-  if (workspace.isRemote(W.active())) {
+  const W = await viewerContext(e);
+  if (W.space.host) {
     throw new Error('Claude Desktop runs on this machine and cannot be bound to a remote space');
   }
-  const cfgPath = bindClaudeToWorkspace(W.getRoot());
-  return { cfgPath, workspace: W.active().name, root: W.getRoot() };
+  const cfgPath = bindClaudeToWorkspace(W.root);
+  return { cfgPath, workspace: W.space.name, root: W.root };
 });
 
-ipcMain.handle('conn:mcpSnippet', (e) => {
+ipcMain.handle('conn:mcpSnippet', async (e) => {
   localOnly(e, 'An MCP snippet for this machine');
-  return mcpSnippet(viewerWs(e).getRoot());
+  return mcpSnippet((await viewerContext(e)).root);
 });
 
 // Run an arbitrary install/setup command in a PTY rooted at the window's
 // space, so the wizard can stream real output into a mini terminal. Not a host
 // session: the wizard installs on THIS machine, and nobody else watches it.
-ipcMain.handle('pty:run', (e, { command, args }) => {
+const wizardOwners = new Map();
+ipcMain.handle('pty:run', async (e, { command, args }) => {
   let cmd = command;
   let argv = args || [];
   if (argv.length === 0 && command.includes(' ')) {
@@ -990,7 +798,8 @@ ipcMain.handle('pty:run', (e, { command, args }) => {
     cmd = parts[0];
     argv = parts.slice(1);
   }
-  const id = ptys.spawn({ command: cmd, args: argv }, viewerWs(e).localCwd(), 110, 28, e.sender);
+  const id = ptys.spawn({ command: cmd, args: argv }, (await viewerContext(e)).cwd, 110, 28, e.sender);
+  wizardOwners.set(id, e.sender.id);
   return { id };
 });
 
@@ -1035,7 +844,7 @@ ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
 
 // --- IPC: misc ---------------------------------------------------------------------------------------
 
-ipcMain.handle('app:newWindow', () => { createWindow(); });
+ipcMain.handle('app:newWindow', async () => { await createWindow(); return true; });
 
 async function localDiagnostics() {
   let network;
@@ -1046,8 +855,8 @@ async function localDiagnostics() {
     diagnosticLog.add('tailscale', error);
     network = { state: 'unavailable', reason: Diagnostics.classify(error) };
   }
-  return { events: diagnosticLog.snapshot(), network: { host: network }, sharing: { enabled: configStore.getSettings().shareDevice === true,
-    listening: !!deviceServer, reason: shareError ? Diagnostics.classify(shareError) : null } };
+  const share = await host.admin('local:status').then(r => r.share, () => ({ on: false }));
+  return { events: diagnosticLog.snapshot(), network: { host: network }, sharing: { enabled: configStore.getSettings().shareDevice === true, listening: share.on } };
 }
 
 ipcMain.handle('diagnostics:get', async (e, metrics = {}) => {
@@ -1089,11 +898,29 @@ ipcMain.handle('diagnostics:export', async (e, report) => {
 });
 
 ipcMain.handle('updates:check', async () => ({ ...await checkUpdate(app.getVersion()),
-  activeTerminals: host.sessions.list().filter(s => s.alive).length,
+  activeTerminals: (await host.admin('local:status')).terminals,
 }));
 ipcMain.handle('updates:open', () => require('./updates').openRelease({
-  sessions: () => host.sessions.list(), check: checkUpdate, current: app.getVersion(), open: url => shell.openExternal(url),
+  sessions: () => host.admin('pty:list'), check: checkUpdate, current: app.getVersion(), open: url => shell.openExternal(url),
 }));
+const startupOptions = () => ({ ...hostLaunch, dataDir: app.getPath('userData') });
+ipcMain.handle('host:status', async () => {
+  const status = await host.admin('local:status').catch(error => ({ running: false, error: error.message }));
+  return { ...status, startAtLogin: hostStartup.enabled(startupOptions()) };
+});
+ipcMain.handle('host:start', async () => host.start());
+ipcMain.handle('host:stop', async e => {
+  const status = await host.admin('local:status');
+  if (status.terminals) {
+    const result = await dialog.showMessageBox(winOf(e), { type: 'warning',
+      buttons: ['Cancel', 'Stop host and terminals'], defaultId: 0, cancelId: 0,
+      message: `Stop the background host and its ${status.terminals} running terminal(s)?`,
+      detail: 'Agents on this computer will stop, including sessions viewed from other devices. Reopening Tote cannot restore a stopped process.' });
+    if (result.response !== 1) return { canceled: true };
+  }
+  return host.admin('local:stop', [{ force: status.terminals > 0 }]);
+});
+ipcMain.handle('host:startup', (_e, on) => hostStartup.setEnabled(on === true, startupOptions()));
 ipcMain.handle('app:version', () => app.getVersion());
 
 ipcMain.on('app:openExternal', (e, url) => {
@@ -1114,14 +941,14 @@ if (!gotLock) {
     // is about to create it.
     const win = focusedWindow();
     if (!win) {
-      if (app.isReady()) createWindow();
+      if (app.isReady() && host) createWindow().catch(error => dialog.showErrorBox('Tote could not open a viewer', error.message));
       return;
     }
     if (win.isMinimized()) win.restore();
     win.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     migrateFromOmniHub();
     dropInheritedAgentSession();     // before anything can spawn a child
     adoptLoginShellPath();
@@ -1140,78 +967,23 @@ if (!gotLock) {
       app.quit();
       return;
     }
-    workspace = new WorkspaceManager(configStore);
-    // Stale temp spaces go at launch and only at launch, so nothing can vanish
-    // mid-session. The report is pushed once the window can show a toast.
-    swept = workspace.sweepTemp(configStore.getSettings().scratchDays ?? 7);
-    ptys = new PtyManager();
-    host = new Host({
-      cfg: configStore, workspace, ptys,
-      platform: {
-        version: app.getVersion(),
-        diagnostics: localDiagnostics,
-        trash: (abs) => shell.trashItem(abs),
-        openExternal: (url) => shell.openExternal(url),
-        applyKeepAwake: () => applyKeepAwake(),
-      },
-    });
+    ptys = new PtyManager(); // only short-lived setup/wizard PTYs belong to the UI
+    hostLaunch = await require('./hostInstall').installRuntime({ dataDir: app.getPath('userData'), executable: process.execPath, appPath: app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '../..'), packaged: app.isPackaged });
+    host = new LocalHost(app.getPath('userData'), hostLaunch);
+    const status = await host.start();
+    swept = status.swept || [];
     registerHostChannels();
-    // RemoteConn needs a pty it can both stream to a pane and read itself, plus
-    // the userData paths; main.js is the only layer that has all three. Its pty
-    // is a host session, so every viewer can see the connect pane.
-    workspace.configureRemote({
-      socketDir: path.join(app.getPath('userData'), 'ssh'),
-      cacheDir: path.join(app.getPath('userData'), 'remote'),
-      launchPty: (spec, owner, onData, onExit) => host.launchRemotePty(spec, owner, onData, onExit),
-      onState: (info) => host.emit('remote:state', info),
-      // Tailscale's check blocks the ssh session until this page is visited, so
-      // opening it is what unblocks the connect -- in the system browser of the
-      // machine the user is AT, where their Tailscale login lives. The host
-      // sends it to the viewer that clicked connect; its renderer opens it.
-      onAuthUrl: (url, owner) => host.authUrl(url, owner),
-    });
     setupAllProviderSessions();
     detectApps();
-    // If the active space is remote, its master is very likely still up from
-    // the last run. Try it silently before the window appears, so the usual case
-    // is a tree that is simply there.
-    const active = workspace.active();
-    if (workspace.isRemote(active)) {
-      workspace.conn(active).silentConnect().then(() => host.syncWatches()).catch(() => {});
-    }
-    applyBridgeSetting();
-    applyKeepAwake();
-    applyShareSetting();
-    createWindow();
+    await createWindow();
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (BrowserWindow.getAllWindows().length === 0) createWindow().catch(error => dialog.showErrorBox('Tote could not open a viewer', error.message));
     });
-  });
+  }).catch(error => { dialog.showErrorBox('Tote could not connect to its background host', error.message); app.quit(); });
 
-  // The normal macOS quit never reaches `window-all-closed`. Cmd+Q (and any
-  // `app.quit()`) closes the windows itself and then goes straight to
-  // `will-quit` -- measured: `before-quit -> will-quit`, no `window-all-closed`
-  // -- so this is the only hook that sees it. Without it the ptys are still
-  // alive when Node tears the environment down, node-pty's exit-callback thread
-  // fires its ThreadSafeFunction into a dying env, and napi throws a C++
-  // exception with no JS left to throw it into: `abort()`, a SIGABRT crash
-  // report on every single quit, and a `will-quit` that never finishes.
-  app.on('before-quit', () => {
-    ptys && ptys.killAll();
-  });
-
-  app.on('window-all-closed', () => {
-    // The ssh masters are deliberately left running: ControlPersist=yes outlives
-    // Tote, so the next launch reconnects to a still-authenticated connection
-    // instead of sending the user back to a browser login.
-    //
-    // On macOS the app outlives its windows, and so do its terminals now: they
-    // belong to the host, and the next window re-attaches to them with a
-    // replay. Elsewhere the last window closing is a quit.
-    if (process.platform !== 'darwin') {
-      ptys && ptys.killAll();
-      app.quit();
-    }
-  });
+  // Quit ends the viewer and its setup jobs. Host sessions, sharing and
+  // watchers belong to the detached process and keep running.
+  app.on('before-quit', () => { ptys?.killAll(); host?.close(); });
+  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 }

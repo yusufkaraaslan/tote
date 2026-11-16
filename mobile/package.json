@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.2",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.28.2"
   },
   "allowScripts": {
     "esbuild": true

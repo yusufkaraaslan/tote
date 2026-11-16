@@ -10,3 +10,4 @@ dist-next/
 
 # Local dependency advisory evidence
 /reports/dependencies/
+/reports/releases/

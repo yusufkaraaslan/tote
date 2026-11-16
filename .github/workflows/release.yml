@@ -9,6 +9,9 @@ on:
       - 'mobile/android/**'
       - 'scripts/*release*'
       - 'scripts/test-packaged.js'
+      - 'src/host/**'
+      - 'src/main/hostInstall.js'
+      - 'src/main/localHost.js'
       - '.github/workflows/release.yml'
   push:
     tags: ['v*']

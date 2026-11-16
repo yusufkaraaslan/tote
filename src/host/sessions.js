@@ -30,6 +30,13 @@ class Sessions {
     return [...this.map.values()].map((s) => ({ ...s.meta }));
   }
 
+  diagnostics(viewerId) {
+    return [...this.map.values()].slice(0, 64).map(s => ({
+      id: s.meta.id, alive: s.meta.alive, host: { cols: s.meta.cols, rows: s.meta.rows },
+      controller: !s.sizeOwner ? 'unclaimed' : s.sizeOwner === viewerId ? 'this-viewer' : 'another-viewer',
+    }));
+  }
+
   get(sid) {
     const s = this.map.get(sid);
     return s ? { ...s.meta } : null;

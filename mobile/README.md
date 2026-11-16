@@ -55,6 +55,16 @@ This is a debug build for testing, not a Play Store release. Release signing and
 
 Not yet included: mobile provider web sessions, PDF/binary previews, file editing/upload/download, desktop app launch, creating/rearranging groups, agent-status notifications, or background audio recording.
 
+## Diagnostics
+
+Use **⋮ → Diagnostics** inside a workspace, or **Diagnostics** on the Computers screen. The report includes Android/host versions, connection state, native queue counts, Tailscale installation, host sharing/network status, categorized errors, host terminal dimensions, the local viewport and sizing controller. Opening diagnostics never resizes a terminal or sends input.
+
+Disconnected hosts use a clearly marked cached snapshot if one has been collected. Older hosts without this method show unsupported host diagnostics. Expand **Review JSON report**, then **Save reviewed report** to choose a destination with Android's document picker. Only that snapshot is saved; no upload is performed. Terminal contents, paths, device names/addresses, session IDs, tokens and cookies are excluded. The report holds at most 64 terminal rows and 50 categorized errors and is limited to 64 KiB; errors stay in memory only. Tailscale **installed** does not assert that its VPN is connected.
+
+<img src="../docs/screenshots/diagnostics-android.png" alt="Android diagnostics with simulated host data" width="330">
+
+Renderer tests verify the reviewed export and disconnected snapshots; the APK build and lint check the native save integration. On a physical phone, verify choosing/canceling a document destination, reopening the saved JSON, and collecting diagnostics after switching Tailscale off and on. Those native UI/VPN checks are not covered by the simulated renderer.
+
 ## Validation
 
 ```sh

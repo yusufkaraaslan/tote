@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Diagnostics: desktop Settings and Android show connection/host versions, Tailscale and sharing status, terminal grid/viewport/sizing control, and recent categorized errors. Review and save a bounded JSON report without terminal contents, private paths, device identifiers, tokens or cookies; disconnected hosts use explicitly cached snapshots.
+
 - Devices: detect stalled connections, bound socket/output/call queues, and acknowledge terminal output after parsing on desktop and Android. An overloaded viewer reconnects with a fresh synchronized replay while its PTYs and other viewers continue; input is never retried automatically.
 - Android: bound native-to-WebView message queues and outgoing socket buffers, surface disconnect reasons, and retain reconnect backoff for repeatedly overloaded links.
 - Shared layouts: save per workspace with host-checked revisions. Keep conflicting local layouts under an explicit choice, protect unsaved document buffers, and bind delayed saves to the device where the edit happened. Older hosts allow temporary local layout changes only.

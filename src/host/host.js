@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
+const Diagnostics = require('../shared/diagnostics');
 const { Sessions } = require('./sessions');
 const { Views } = require('./views');
 const { shellCommand } = require('../main/ptyManager');
@@ -38,6 +39,7 @@ class Host {
     this.workspace = workspace;
     this.ptys = ptys;
     this.platform = platform;
+    this.diagnostics = Diagnostics.createLog();
     // viewerId -> { id, wsId, send(event, payload) }
     this.viewers = new Map();
     this.views = new Views(cfg, id => !!workspace.space(id));
@@ -86,7 +88,11 @@ class Host {
   async call(name, viewerId, args) {
     const fn = Object.hasOwn(this.methods, name) ? this.methods[name] : null;
     if (typeof fn !== 'function') throw new Error('Not a host method: ' + name);
-    return fn(this.ctx(viewerId), ...(args || []));
+    try { return await fn(this.ctx(viewerId), ...(args || [])); }
+    catch (error) {
+      if (name.startsWith('pty:')) this.diagnostics.add('terminal', error);
+      throw error;
+    }
   }
 
   emit(event, payload, filter = () => true) {
@@ -339,6 +345,12 @@ function methods(host) {
     // Keep-awake is about the machine that stays awake, so it is set THERE --
     // including from another machine that is looking at it. Sharing is not
     // here on purpose: exposing a machine is decided at that machine.
+    'device:diagnostics': async ctx => {
+      const operational = await host.platform.diagnostics?.() || {};
+      const safe = Diagnostics.report({ ...operational, host: { version: host.platform.version, state: 'current' }, events: [...(operational.events || []), ...host.diagnostics.snapshot()].sort((a,b) => a.at - b.at) });
+      // IDs associate live local viewports only. The export sanitizer removes them.
+      return { ...safe, terminals: host.sessions.diagnostics(ctx.viewer.id) };
+    },
     'device:peers': () => require('./discovery').discoverPeers(Number(cfg.getSettings().devicePort) || 47821),
     'device:settings': () => ({ keepAwake: cfg.getSettings().keepAwake === true }),
     'device:setKeepAwake': (ctx, on) => {

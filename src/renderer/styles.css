@@ -941,3 +941,7 @@ body.sidebar-collapsed .ws-right #btn-settings { justify-content: center; paddin
   #set-content { padding: 14px; }
   #set-top { padding: 14px; }
 }
+
+#diagnostics-preview { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+#diagnostics-summary table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+#diagnostics-summary td { padding: 5px 10px 5px 0; }

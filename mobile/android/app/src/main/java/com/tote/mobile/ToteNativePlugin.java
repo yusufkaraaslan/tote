@@ -1,6 +1,11 @@
 package com.tote.mobile;
 
 import android.content.Context;
+import android.content.Intent;
+import android.app.Activity;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.annotation.ActivityCallback;
+import java.io.OutputStream;
 import android.view.inputmethod.InputMethodManager;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
@@ -88,6 +93,38 @@ public class ToteNativePlugin extends Plugin {
         SocketBudget budget = budgets.get(call.getString("id", ""));
         if (budget != null) budget.release(call.getLong("seq", 0L));
         call.resolve();
+    }
+    @PluginMethod public void diagnostics(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("tailscaleInstalled", getContext().getPackageManager().getLaunchIntentForPackage("com.tailscale.ipn") != null);
+        long bytes = 0, queued = 0; int frames = 0;
+        for (SocketBudget budget : budgets.values()) { bytes += budget.bytes(); frames += budget.pendingFrames(); }
+        for (WebSocket socket : sockets.values()) queued += socket.queueSize();
+        result.put("pendingBytes", bytes); result.put("pendingFrames", frames); result.put("queuedBytes", queued);
+        call.resolve(result);
+    }
+    @PluginMethod public void exportDiagnostics(PluginCall call) {
+        String text = call.getString("text", "");
+        if (text.getBytes(StandardCharsets.UTF_8).length > 65536) { call.reject("Diagnostic report is too large."); return; }
+        try {
+            if (!"tote-diagnostics-v1".equals(new JSObject(text).getString("format"))) throw new Exception("format");
+        } catch (Exception e) { call.reject("Invalid diagnostic report."); return; }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, "tote-diagnostics.json");
+        startActivityForResult(call, intent, "diagnosticsSaved");
+    }
+    @ActivityCallback private void diagnosticsSaved(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject response = new JSObject();
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            response.put("saved", false); call.resolve(response); return;
+        }
+        try (OutputStream stream = getContext().getContentResolver().openOutputStream(result.getData().getData(), "wt")) {
+            if (stream == null) throw new java.io.IOException("No output stream");
+            stream.write(call.getString("text", "").getBytes(StandardCharsets.UTF_8));
+            response.put("saved", true); call.resolve(response);
+        } catch (Exception e) { call.reject("Could not save the diagnostic report."); }
     }
     @PluginMethod public void showKeyboard(PluginCall call) {
         getActivity().runOnUiThread(() -> {

@@ -8,8 +8,10 @@ import { DeviceClient } from './client.js';
 import { Native, Speech, Discovery, initNative, socketFactory } from './native.js';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
+import Diagnostics from '../../src/shared/diagnostics.js';
 import TermStream from '../../src/renderer/termstream.js';
 
+const diagnosticLog = Diagnostics.createLog(), diagnosticCache = new Map(), hostVersions = new Map();
 const $ = id => document.getElementById(id);
 $('build-version').textContent = 'Android ' + version;
 const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -72,7 +74,7 @@ $('scan').onclick = findComputers;
 $('open-tailscale').onclick = () => Discovery.openTailscale().catch(e => notify(e.message));
 const selectionKey = () => JSON.stringify([selectedDevice?.id, wsId]);
 const inputKey = () => draftKey(selectedDevice?.id, wsId, pane?.ref || pane?.id);
-function notify(message) { $('notice').textContent = message; $('notice').hidden = false; clearTimeout(messageTimer); messageTimer = setTimeout(() => $('notice').hidden = true, 6500); }
+function notify(message) { diagnosticLog.add('terminal', message); $('notice').textContent = message; $('notice').hidden = false; clearTimeout(messageTimer); messageTimer = setTimeout(() => $('notice').hidden = true, 6500); }
 function banner(message) { $('connection-banner').textContent = message; $('connection-banner').hidden = !message; }
 function rememberDraft() { if (selectedDevice && pane) drafts.set(inputKey(), $('draft').value); }
 function fitDraft() { const d = $('draft'); d.style.height = '44px'; d.style.height = Math.min(140, Math.max(44, d.scrollHeight + 2)) + 'px'; }
@@ -135,13 +137,15 @@ async function connect() {
     onClose: error => {
       if (client !== c) return;
       if (connectedAt && Date.now() - connectedAt >= 30000) retry = 0;
+      diagnosticLog.add('connection', error);
       ready = false; attached = null; controls(); clearInterval(polling); banner(error.message);
       scheduleReconnect();
     },
   });
   try {
-    await c.connect(device.address, device.port);
+    const hello = await c.connect(device.address, device.port);
     if (epoch !== connectionEpoch) return;
+    hostVersions.set(device.id, Diagnostics.report({host:{version:hello.tote}}).host.version);
     ready = true; connectedAt = Date.now(); await refresh(true);
     if (epoch !== connectionEpoch) return;
     banner(''); controls(); learnComputers(c); polling = setInterval(() => refresh().catch(e => notify(e.message)), 10000);
@@ -398,6 +402,63 @@ $('cancel-voice').onclick = cancelVoice;
 $('recording').addEventListener('cancel', e => { e.preventDefault(); cancelVoice(); });
 function home() { navigation.close(); cancelVoice(); rememberDraft(); selectedDevice = null; stopConnection(); $('workspace').hidden = true; $('home').hidden = false; findComputers(); }
 $('back').onclick = home;
+let diagnosticReport = null, diagnosticRequest = 0;
+async function refreshDiagnostics() {
+  const ticket = ++diagnosticRequest, device = selectedDevice, c = client;
+  diagnosticReport = null; $('diagnostics-save').disabled = true;
+  $('diagnostics-preview').textContent = ''; $('diagnostics-summary').replaceChildren();
+  $('diagnostics-status').textContent = 'Collecting diagnostics…';
+  let snapshot = diagnosticCache.get(device?.id), status = snapshot ? 'cached' : 'unavailable';
+  const metrics = device && pane?.kind === 'term' && terminalSession === pane.ref && term ? [{ id: pane.ref, focused: true,
+    alive: pane.session?.alive, host: {cols: pane.session?.cols, rows: pane.session?.rows},
+    local: { cols: term.cols, rows: term.rows, width: $('stage').clientWidth, height: $('stage').clientHeight } }] : [];
+  try {
+    if (c?.ready) {
+      try {
+        const result = await Diagnostics.withTimeout(c.call('device:diagnostics'));
+        if (!result || result.format !== 'tote-diagnostics-v1') throw new Error('Incompatible host diagnostics');
+        // Keep only redacted fields plus transient session IDs for viewport matching.
+        const safe = Diagnostics.report(result);
+        snapshot = { ...safe, terminals: safe.terminals.map((t,i) => ({ ...t, id: result.terminals[i]?.id })) };
+        diagnosticCache.set(device.id, snapshot); status = 'current';
+      } catch (error) {
+        diagnosticLog.add('diagnostics', error);
+        if (!snapshot && /Not a host method|incompatible/i.test(error.message)) status = 'unsupported';
+      }
+    }
+    const [native, info] = await Promise.all([
+      Native.diagnostics().catch(error => { diagnosticLog.add('diagnostics', error); return {}; }),
+      App.getInfo ? App.getInfo().catch(() => null) : null,
+    ]);
+    if (ticket !== diagnosticRequest || !$('diagnostics-dialog').open) return;
+    if (device !== selectedDevice || c !== client) { $('diagnostics-status').textContent = 'Connection changed. Refresh diagnostics.'; return; }
+    diagnosticReport = Diagnostics.compose({ snapshot, status, metrics,
+      viewer: { kind: 'android', platform: 'android', version: info?.version || version },
+      hostVersion: hostVersions.get(device?.id), native,
+      connection: { mode: device ? 'remote' : 'none', state: c?.ready ? 'connected' : device ? 'disconnected' : 'unknown',
+        flow: c?.flow, pendingCalls: c?.pending.size || 0, queuedBytes: c?.outputBytes || 0, pendingFrames: c?.output.size || 0 },
+      events: diagnosticLog.snapshot(),
+    });
+    Diagnostics.render($('diagnostics-summary'), diagnosticReport);
+    $('diagnostics-preview').textContent = Diagnostics.stringify(diagnosticReport);
+    $('diagnostics-save').disabled = false;
+    $('diagnostics-status').textContent = 'Snapshot ready. Raw error messages are excluded.';
+  } catch { if (ticket === diagnosticRequest) $('diagnostics-status').textContent = 'Could not collect diagnostics. Try refreshing.'; }
+}
+function openDiagnostics() { $('diagnostics-dialog').showModal(); refreshDiagnostics(); }
+$('home-diagnostics').onclick = openDiagnostics; $('open-diagnostics').onclick = openDiagnostics;
+$('diagnostics-close').onclick = () => $('diagnostics-dialog').close();
+$('diagnostics-refresh').onclick = refreshDiagnostics;
+$('diagnostics-save').onclick = async () => {
+  if (!diagnosticReport) return;
+  $('diagnostics-save').disabled = true;
+  try {
+    const result = await Native.exportDiagnostics({ text: Diagnostics.stringify(diagnosticReport) });
+    $('diagnostics-status').textContent = result.saved ? 'Report saved.' : 'Save canceled.';
+  } catch { $('diagnostics-status').textContent = 'Could not save the report.'; }
+  finally { $('diagnostics-save').disabled = !diagnosticReport; }
+};
+
 async function init() {
   renderDevices();
   await initNative();
@@ -409,6 +470,6 @@ async function init() {
   discoveryInitialized = true; findComputers();
   await Speech.addListener('state', event => { if (!$('recording').open) return; $('recording-title').textContent = event.listening ? 'Recording…' : 'Transcribing…'; $('stop-voice').disabled = !event.listening; if (event.text) $('partial').textContent = event.text; });
   await App.addListener('appStateChange', ({ isActive }) => { paused = !isActive; if (paused) { stopSearch(); cancelVoice(); rememberDraft(); stopConnection(); } else if (selectedDevice) connect(); else findComputers(); });
-  await App.addListener('backButton', () => { if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
+  await App.addListener('backButton', () => { if ($('diagnostics-dialog').open) $('diagnostics-dialog').close(); else if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
 }
 init().catch(e => notify('Android initialization failed: ' + e.message));

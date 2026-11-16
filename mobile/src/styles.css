@@ -21,3 +21,9 @@
 .reading #terminal{position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none}
 #terminal-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;font:13px/1.6 monospace;color:var(--fg);tab-size:4;user-select:text}
 #reading-mode[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+
+#diagnostics-dialog { max-height: 85dvh; overflow: auto; width: min(560px, 92vw); }
+#diagnostics-preview { font-size: 11px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+#diagnostics-summary { font-size: 13px; overflow-wrap: anywhere; }
+#diagnostics-summary td { padding: 5px 12px 5px 0; vertical-align: top; }
+#diagnostics-summary p { margin: 12px 0; }

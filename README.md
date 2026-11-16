@@ -469,6 +469,18 @@ local and is never resent automatically. Update both desktops and Android for
 output acknowledgements after terminal parsing. See [connection limits and
 recovery](docs/device-transport.md) for compatibility, limits and test coverage.
 
+### Connection and terminal diagnostics
+
+Open **Settings → Diagnostics** on desktop, or **⋮ → Diagnostics** in an Android workspace. Android also offers Diagnostics on the Computers screen, before connecting.
+
+The panel shows viewer/host versions, connection state, Tailscale availability, sharing failures, recent categorized errors, and each terminal's host grid, local viewport and sizing controller. This helps distinguish a narrow phone viewport from a shared PTY resize. A disconnected device can show the last collected host snapshot, explicitly marked **cached**; older hosts show **unsupported**, with local sizing still available.
+
+Expand **Review JSON report**, inspect the snapshot, then choose **Save reviewed report**. Desktop uses a file picker; Android uses its document picker. Nothing is uploaded automatically. Reports exclude terminal output, file contents, paths, device names/addresses, session IDs, tokens and browser cookies. They retain at most 64 anonymous terminal rows and 50 categorized errors, with a 64 KiB export limit. Raw error strings are discarded when recorded; recent errors are memory-only and cover this app run. Android reports whether Tailscale is installed, not whether its VPN is active.
+
+![Desktop diagnostics with simulated host data](docs/screenshots/diagnostics-desktop.png)
+
+See [Android diagnostics and physical-device checks](mobile/README.md#diagnostics).
+
 ## Architecture
 
 ```text

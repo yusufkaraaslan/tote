@@ -67,7 +67,8 @@ class DeviceServer {
   accept(ws, auth) {
     let vid = null;
     const calls = new Set();
-    const transport = new Transport(ws, { limits: this.limits, onStop: () => {
+    const transport = new Transport(ws, { limits: this.limits, onStop: (code, reason) => {
+      if (code !== 1000) this.host.diagnostics?.add('connection', reason);
       clearTimeout(helloTimer);
       if (vid) this.host.removeViewer(vid);
       vid = null; this.transports.delete(transport);

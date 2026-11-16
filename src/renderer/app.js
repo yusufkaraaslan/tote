@@ -3320,14 +3320,14 @@ $('#host-startup').onchange = async () => {
   catch (error) { $('#host-startup').checked = !$('#host-startup').checked; $('#host-status').textContent = error.message; }
 };
 
-let updateGuardToken = null;
+let updateGuardToken = null, releaseUpdateLock = null;
 tote.onUpdateGuard?.(async ({ token, release }) => {
   if (release) {
-    if (updateGuardToken === token) { document.body.inert = false; updateGuardToken = null; }
+    if (updateGuardToken === token) { releaseUpdateLock?.(); releaseUpdateLock = null; updateGuardToken = null; }
     return;
   }
   updateGuardToken = token;
-  document.body.inert = true;
+  releaseUpdateLock?.(); releaseUpdateLock = window.ToteUpdateLock(document);
   try {
     await Promise.all([...layoutSyncs.values()].map(sync => sync.flush()));
     const clean = [state, ...state.slices.values()].every(slice =>

@@ -45,5 +45,5 @@ export const Updater={
  status:async()=>state.updateState || {phase:'idle'},
  download:async()=>{state.updateDownloads=(state.updateDownloads||0)+1;return state.updateState={phase:'ready',version:updateVersion};},
  cancel:async()=>{state.updateState={phase:'idle'};},
- install:async()=>{state.updateInstalls=(state.updateInstalls||0)+1;return {permissionStep:true,allowed:true};},
+ install:async()=>{state.updateInstalls=(state.updateInstalls||0)+1;if(state.holdInstall)return new Promise(resolve=>{state.completeInstall=resolve;});return {permissionStep:true,allowed:true};},
 };

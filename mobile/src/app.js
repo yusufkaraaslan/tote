@@ -9,6 +9,7 @@ import { Native, Updater, Speech, Discovery, initNative, socketFactory } from '.
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
 import Updates from '../../src/shared/updates.js';
+import lockUpdateEditing from '../../src/shared/updateLock.js';
 import Diagnostics from '../../src/shared/diagnostics.js';
 import TermStream from '../../src/renderer/termstream.js';
 
@@ -509,14 +510,14 @@ $('updates-install').onclick = async () => {
   }
   // Keep editing frozen through verification, permission settings and the OS
   // installer. Returning from settings never automatically starts installation.
-  document.body.inert = true;
+  const unlock = lockUpdateEditing(document);
   try {
     const result = await Updater.install();
     $('updates-progress').textContent = result.permissionStep
       ? (result.allowed ? 'Installation allowed. Tap Install update again to continue.' : 'Android permission was not granted. Tap Install update to try again.')
       : 'Returned from Android’s installer. If installation was canceled, you can try again.';
   } catch (error) { $('updates-progress').textContent = error.message; }
-  finally { document.body.inert = false; }
+  finally { unlock(); }
 };
 $('home-updates').onclick = openUpdates; $('open-updates').onclick = openUpdates;
 $('updates-close').onclick = () => $('updates-dialog').close();

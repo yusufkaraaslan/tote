@@ -28,6 +28,13 @@ app.whenReady().then(async()=>{
   await run("document.querySelector('#updates-install').click()");await until("document.querySelector('#updates-progress').textContent.includes('Tap Install update again')");
   assert.equal(await run("testState.updateInstalls"),1,'returning from permission settings does not auto-install');
   assert.equal(await run("document.body.inert"),false,'editing resumes after returning from settings');
+  await run("testState.holdInstall=true;document.querySelector('#updates-install').click()");
+  await until("testState.updateInstalls===2");
+  assert.equal(await run("document.querySelector('#updates-dialog').inert"),true,'modal cannot escape the edit lock');
+  await run("document.querySelector('#updates-install').click()");
+  assert.equal(await run("testState.updateInstalls"),2,'repeated install click is blocked while native confirmation is pending');
+  await run("testState.holdInstall=false;testState.completeInstall({permissionStep:true,allowed:true})");
+  await until("!document.body.inert && !document.querySelector('#updates-dialog').inert");
   await run("document.querySelector('#updates-open').click()");await until("testState.updateOpened===1");
   assert.equal(await run('testState.openedVersion'),updateVersion);
   await run("testState.updateFail=true;document.querySelector('#updates-check').click()");
@@ -92,7 +99,7 @@ app.whenReady().then(async()=>{
   assert.match(await run("document.querySelector('#updates-status').textContent"),/Save or clear/);
   await run("document.querySelector('#updates-install').click()");
   assert.match(await run("document.querySelector('#updates-progress').textContent"),/Save or clear/);
-  assert.equal(await run("testState.updateInstalls"),1,'unsent draft blocks native installer');
+  assert.equal(await run("testState.updateInstalls"),2,'unsent draft blocks native installer');
   assert.equal(await run("testState.updateOpened"),1,'unsent phone drafts defer installation guidance');
   await run("document.querySelector('#updates-close').click()");
   await select('groups','review');await until("document.querySelector('#workspace').dataset.pane==='l2'");

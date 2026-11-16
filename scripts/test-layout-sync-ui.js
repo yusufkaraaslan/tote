@@ -80,9 +80,14 @@ app.whenReady().then(async () => {
     }
     const [a, b] = windows;
     const guard = require('../src/main/updateGuard').createGuard({onReply:cb=>ipcMain.on('updates:guardReply',cb),windows:()=>windows,confirm:async()=>true});
+    await run(a,"window.guardKeys=0;window.addEventListener('keydown',()=>window.guardKeys++)");
     const unlock = await guard();
     assert.equal(await run(a,'document.body.inert'),true);assert.equal(await run(b,'document.body.inert'),true);
+    await run(a,"document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true}))");
+    assert.equal(await run(a,'window.guardKeys'),0,'global shortcuts cannot change state during installation');
     unlock();await until(a,'!document.body.inert');
+    await run(a,"document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'F24',bubbles:true,cancelable:true}))");
+    assert.equal(await run(a,'window.guardKeys'),1);
     await run(b, "window.originalPane=document.querySelector('.pane');window.originalEditor=document.querySelector('.doc-src');window.pendingRead=loadDoc('doc');originalEditor.value='unsaved text';originalEditor.dispatchEvent(new Event('input',{bubbles:true}));pendingRead");
     assert.equal(await run(b, "state.docs.get('doc').text"), 'unsaved text', 'typing during a disk refresh must win');
     await assert.rejects(guard(),/Save documents/);

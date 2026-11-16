@@ -338,7 +338,7 @@ screen. Ctrl+C remains the terminal interrupt.
 
 ### Desktop
 
-Use **Node.js 20+**, npm and Git. A C++ toolchain may be needed for node-pty:
+Use **Node.js 22.12+**, npm and Git. Desktop builds use Electron 45 and require macOS 13+ or a supported 64-bit Windows/Linux system. A C++ toolchain may be needed for node-pty:
 
 | Platform | Build prerequisites |
 |---|---|
@@ -407,6 +407,7 @@ npm test                 # desktop checks plus mobile protocol, model and readin
 npm run test:sidebar-ui   # isolated desktop Electron UI with a fake host
 npm run test:terminal-ui  # two desktop renderers sharing a host terminal mirror
 npm run test:layout-sync-ui # layout conflicts, unsaved buffers and device switches
+npm run test:provider-ui  # isolated real app: provider cookies, popups and downloads
 npm run test:mobile-ui    # isolated mobile UI with fake network and speech
 ```
 
@@ -416,7 +417,7 @@ still needed for Android Tailscale networking, speech, keyboard behavior and
 background/foreground recovery.
 
 [GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
-runs the full logic suite on Linux, macOS and Windows with Node 22, the four
+runs the full logic suite on Linux, macOS and Windows with Node 22, the five
 renderer checks under a Linux virtual display, and Android native tests, lint and
 a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
 kept as workflow artifacts for seven days. These checks use isolated fixtures;

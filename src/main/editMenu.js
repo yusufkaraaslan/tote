@@ -16,7 +16,10 @@ function editMenu(contents, params, clipboard) {
     items.push(action('Paste', 'paste', flags.canPaste),
       action('Select all', 'selectAll', flags.canSelectAll));
   }
-  if (params.linkURL) items.push({ label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) });
+  if (params.linkURL) items.push({ label: 'Copy link address', click: async () => {
+    try { await clipboard.writeText(params.linkURL); }
+    catch { console.warn('Could not copy link to the clipboard'); }
+  } });
   if (params.mediaType === 'image') items.push({ label: 'Copy image', click: () => {
     if (!contents.isDestroyed()) contents.copyImageAt(params.x, params.y);
   } });

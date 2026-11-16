@@ -32,7 +32,7 @@ macOS/Windows credentials are passed only to their builder step. Production buil
 
 The repo currently has no signing secrets configured. Unsigned preview validation is possible now; production certificate/notarization and installed-app upgrade validation require that provisioning. A checksummed preview must never be relabeled a signed release.
 
-See [electron-builder signing](https://www.electron.build/code-signing.html) and [Android app signing](https://developer.android.com/studio/publish/app-signing). The workflow uses electron-builder 25's installed APIs; assess configuration changes separately when upgrading that dependency.
+See [electron-builder signing](https://www.electron.build/code-signing.html) and [Android app signing](https://developer.android.com/studio/publish/app-signing). The workflow uses electron-builder 26's installed APIs; assess configuration changes separately when upgrading that dependency.
 
 ## Create a draft release
 

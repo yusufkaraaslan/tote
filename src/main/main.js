@@ -666,7 +666,7 @@ ipcMain.handle('clipboard:readText', (e) => {
 ipcMain.handle('clipboard:writeText', (e, text) => {
   if (!host?.viewers.has(viewerIdOf(e.sender))) throw new Error('Not a Tote viewer');
   if (typeof text !== 'string') throw new Error('Expected clipboard text');
-  clipboard.writeText(text);
+  return clipboard.writeText(text);
 });
 
 // --- IPC: split channels (a picker here, the operation on the host) ------------------

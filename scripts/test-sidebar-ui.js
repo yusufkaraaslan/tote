@@ -8,6 +8,13 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, '..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tote-sidebar-ui-'));
 app.setPath('userData', path.join(scratch, 'profile'));
+function finish(code) {
+  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  try { fs.rmSync(scratch, { recursive: true, force: true }); }
+  catch (error) { console.warn('Could not remove temporary UI fixture:', error.code); }
+  app.exit(code);
+}
+setTimeout(() => { console.error('Sidebar UI harness exceeded 90 seconds'); finish(1); }, 90000).unref();
 const source = fs.readFileSync(path.join(root, 'src/renderer/app.js'), 'utf8');
 const names = [...new Set([...source.matchAll(/\btote\.(\w+)/g)].map(m => m[1]))];
 const preload = path.join(scratch, 'preload.js');
@@ -48,7 +55,7 @@ api.patchViews = async patch => {
 contextBridge.exposeInMainWorld('tote', api);
 `);
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true } });
+  const win = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, backgroundThrottling: false } });
   const errors = [];
   win.webContents.on('console-message', (_e, _level, message) => { if (/Uncaught|TypeError|ReferenceError/.test(message)) errors.push(message); });
   const run = code => win.webContents.executeJavaScript(code);
@@ -178,11 +185,9 @@ app.whenReady().then(async () => {
     assert.equal(await run("document.querySelector('#ws-bar').offsetWidth"), 62, 'collapsed preference survives reload');
     assert.deepEqual(errors, []);
     console.log('Sidebar Electron checks passed: layout, nested groups, compact rail, pane identity, flyouts, workspace switch, short window, persisted preference, Settings saves, terminal creation, web panes, app launch routing, existing files theme.');
-    app.quit();
+    finish(0);
   } catch (error) {
     console.error(error, errors);
-    process.exitCode = 1;
-    app.quit();
+    finish(1);
   }
 });
-app.on('will-quit', () => fs.rmSync(scratch, { recursive: true, force: true }));

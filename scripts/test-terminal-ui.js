@@ -21,6 +21,14 @@ const windows = new Map(), errors = [], resizes = [];
 const sessions = new Sessions({launch:()=>1,write(){},resize:(_,cols,rows)=>resizes.push([cols,rows]),kill(){}},
   (id,event,p) => windows.get(id)?.webContents.send(event,p));
 sessions.spawn({sid:'shared',meta:{wsId:'work',title:'Shared terminal'},spec:{cols:100,rows:24}});
+function finish(code) {
+  sessions.forget('shared');
+  for (const win of windows.values()) if (!win.isDestroyed()) win.destroy();
+  try { fs.rmSync(scratch, { recursive: true, force: true }); }
+  catch (error) { console.warn('Could not remove temporary UI fixture:', error.code); }
+  app.exit(code);
+}
+setTimeout(() => { console.error('Terminal UI harness exceeded 60 seconds'); finish(1); }, 60000).unref();
 ipcMain.handle('fixture', (e,name,args) => {
   const id=String(e.sender.id);
   switch(name) {
@@ -52,25 +60,30 @@ app.whenReady().then(async()=>{
     const [a,b]=[...windows.values()];
     const run=(w,code)=>w.webContents.executeJavaScript(code);
     const size=w=>run(w,"({cols:state.terms.get('shared').term.cols,rows:state.terms.get('shared').term.rows})");
-    async function settled() {
-      let stable=0;
-      for(let i=0;i<100;i++) {
+    async function settled(timeout = 5000) {
+      let stable=0, last;
+      const deadline=Date.now()+timeout;
+      while(Date.now()<deadline) {
         await pause(50);
         const h=sessions.get('shared');let ready=true;
+        last={host:{cols:h.cols,rows:h.rows},viewers:[]};
         for(const w of windows.values()) {
           const v=await run(w,"(()=>{const t=state.terms.get('shared');return t && {width:innerWidth,cols:t.term.cols,rows:t.term.rows,wants:t.alive&&t.controlsSize?t.fit.proposeDimensions():null};})()");
+          last.viewers.push({bounds:w.getContentBounds(),terminal:v});
           ready &&= !!v && v.width===w.getContentBounds().width && v.cols===h.cols && v.rows===h.rows && (!v.wants || (v.wants.cols===h.cols && v.wants.rows===h.rows));
         }
         if(ready) {if(++stable===4)return;} else stable=0;
       }
-      throw Error('Terminal geometry did not settle');
+      throw Error('Terminal geometry did not settle: '+JSON.stringify(last));
     }
     async function check() {
       const host=sessions.get('shared');
       assert.deepEqual(await size(a),{cols:host.cols,rows:host.rows});
       assert.deepEqual(await size(b),await size(a));
     }
-    await settled(); await check();
+    // Cold renderer/font initialization can take longer on a shared runner.
+    // Subsequent resize transitions retain the five-second deadline.
+    await settled(15000); await check();
     assert.equal(resizes.length,0,'opening passive windows preserves host dimensions');
     await run(a,"document.querySelector('.pane .pane-body').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))");
     await settled(); await check();const wide=sessions.get('shared').cols;
@@ -97,7 +110,6 @@ app.whenReady().then(async()=>{
     }
     assert.deepEqual(errors,[]);
     console.log('Shared terminal UI passed: different window sizes, passive attach, control transfer, passive resize, background layout, live cursor-addressed output and owner resize.');
-    app.quit();
-  } catch(e) { console.error(e,errors);app.exit(1); }
+    finish(0);
+  } catch(e) { console.error(e,errors);finish(1); }
 });
-app.on('will-quit',()=>{sessions.forget('shared');fs.rmSync(scratch,{recursive:true,force:true});});

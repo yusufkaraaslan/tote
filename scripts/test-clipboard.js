@@ -45,8 +45,16 @@ async function run() {
   const selection = editMenu(guest, { selectionText: 'hello', editFlags: { canCopy: true } }, clipboard);
   assert.deepEqual(selection.map((i) => i.label), ['Copy']);
   const link = editMenu(guest, { linkURL: 'https://example.com/' }, clipboard);
-  link[0].click();
+  await link[0].click();
   assert.equal(copied, 'https://example.com/');
+  const originalWarn = console.warn; let warned = false;
+  try {
+    console.warn = () => { warned = true; };
+    await editMenu(guest, { linkURL: 'https://example.com/' }, {
+      writeText: async () => { throw new Error('denied'); },
+    })[0].click();
+    assert(warned, 'asynchronous clipboard failures are handled by native menu actions');
+  } finally { console.warn = originalWarn; }
   console.log('Clipboard and edit menu tests passed');
 }
 run().catch((e) => { console.error(e); process.exitCode = 1; });

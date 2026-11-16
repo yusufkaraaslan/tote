@@ -7,3 +7,6 @@ src/renderer/vendor/
 .remember/
 inbox/
 dist-next/
+
+# Local dependency advisory evidence
+/reports/dependencies/

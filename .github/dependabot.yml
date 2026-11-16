@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    groups:
+      terminal-libraries:
+        patterns: ['@xterm/*']
+      desktop-minor-patch:
+        patterns: ['*']
+        exclude-patterns: ['electron', 'electron-builder', 'node-pty', '@xterm/*']
+        update-types: [minor, patch]
+    # Electron, builder and PTY proposals stay separate; major upgrades are not ignored.
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    groups:
+      capacitor:
+        patterns: ['@capacitor/*']
+      mobile-minor-patch:
+        patterns: ['*']
+        exclude-patterns: ['@capacitor/*', '@xterm/*']
+        update-types: [minor, patch]
+  - package-ecosystem: gradle
+    directory: /mobile/android
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ['*']

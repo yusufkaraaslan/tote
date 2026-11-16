@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 const { Sessions } = require('./sessions');
+const { Views } = require('./views');
 const { shellCommand } = require('../main/ptyManager');
 const { shq } = require('../main/sshfix');
 const { expandTilde } = require('../main/workspace');
@@ -39,6 +40,7 @@ class Host {
     this.platform = platform;
     // viewerId -> { id, wsId, send(event, payload) }
     this.viewers = new Map();
+    this.views = new Views(cfg, id => !!workspace.space(id));
     this.sessions = new Sessions(ptys, (viewerId, ev, payload) => {
       const v = this.viewers.get(viewerId);
       if (v) v.send(ev, payload);
@@ -349,11 +351,19 @@ function methods(host) {
     // CLI profiles live where the agents run.
     'config:getCliProfiles': () => cfg.getCliProfiles(),
     'config:saveCliProfiles': (ctx, list) => { cfg.saveCliProfiles(list); return true; },
-    'views:get': () => cfg.getViews(),
-    // Last edit wins, and everyone else sees it live.
+    'views:get': (ctx) => {
+      ctx.viewer.viewsBaseline = host.views.snapshot();
+      return ctx.viewer.viewsBaseline.views;
+    },
+    'views:snapshot': () => host.views.snapshot(),
+    'views:patch': (ctx, data) => {
+      const result = host.views.patch(data);
+      if (result.ok) host.emit('views:changed', result.snapshot.views, v => v !== ctx.viewer);
+      return result;
+    },
     'views:save': (ctx, data) => {
-      cfg.saveViews(data);
-      host.emit('views:changed', data, (v) => v !== ctx.viewer);
+      const result = host.views.legacy(ctx.viewer, data);
+      host.emit('views:changed', result.snapshot.views, (v) => v !== ctx.viewer);
       return true;
     },
 

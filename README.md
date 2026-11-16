@@ -406,6 +406,7 @@ Release signing and Play Store packaging are not configured.
 npm test                 # desktop checks plus mobile protocol, model and reading tests
 npm run test:sidebar-ui   # isolated desktop Electron UI with a fake host
 npm run test:terminal-ui  # two desktop renderers sharing a host terminal mirror
+npm run test:layout-sync-ui # layout conflicts, unsaved buffers and device switches
 npm run test:mobile-ui    # isolated mobile UI with fake network and speech
 ```
 
@@ -415,7 +416,7 @@ still needed for Android Tailscale networking, speech, keyboard behavior and
 background/foreground recovery.
 
 [GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
-runs the full logic suite on Linux, macOS and Windows with Node 22, the three
+runs the full logic suite on Linux, macOS and Windows with Node 22, the four
 renderer checks under a Linux virtual display, and Android native tests, lint and
 a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
 kept as workflow artifacts for seven days. These checks use isolated fixtures;
@@ -434,10 +435,30 @@ and stops startup so you can restore it, instead of opening an empty configurati
 
 Backups cover settings, workspaces, provider and CLI profiles, apps and saved
 layouts. They do not back up workspace files or unsaved editor buffers. Only one
-prior version is retained, and concurrent layout edits still use last-edit-wins.
+prior distinct version is retained.
 Recovery assumes the filesystem supports atomic sibling renames; Windows flushes
 the file, while supported POSIX filesystems also flush the containing directory.
 An abrupt process exit can leave an unused `.tmp` file, which Tote ignores.
+
+### Shared layout conflicts
+
+Desktop windows save only changed workspaces, with a revision checked by the
+host. Editing separate spaces does not overwrite each other's layouts. When two
+viewers edit the same space, a banner keeps the local layout available and offers
+**Use saved layout** or **Replace saved layout**. Replacement requires confirmation
+and is checked again if another edit arrived meanwhile. Save or close affected
+unsaved documents before loading a layout that removes or retargets them.
+
+Pending saves remain bound to their original device across switches and
+reconnects. They remain in memory until acknowledged; quitting the app still loses
+uncommitted local layout drafts. Existing pane elements remain in place when their
+instances survive an update.
+
+Update both desktops for the conflict UI. An older desktop talking to an updated
+host can save against its last layout read, but stale writes are rejected; reload
+that window to refresh its baseline. An updated viewer on an older host shows a
+notice and keeps layout changes local until the host is updated. Android keeps
+its own group and pane selection and never saves desktop layouts.
 
 ## Architecture
 

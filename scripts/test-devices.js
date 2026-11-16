@@ -342,6 +342,7 @@ describe('viewers', () => {
       const r1 = recorder(), r2 = recorder();
       h.host.addViewer({ id: 'v1', send: r1.send });
       h.host.addViewer({ id: 'v2', send: r2.send });
+      await h.host.call('views:get', 'v1', []);
       await h.host.call('views:save', 'v1', [{ a: { tabs: [] } }]);
       assert.ok(!r1.got.some(([e]) => e === 'views:changed'), 'echoed back to the saver');
       assert.deepStrictEqual(r2.got.find(([e]) => e === 'views:changed')[1], { a: { tabs: [] } });

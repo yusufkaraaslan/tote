@@ -625,10 +625,67 @@ function wsViews(wsId = state.workspaces.active) {
   if (!state.views[wsId]) state.views[wsId] = { tabs: [], active: null };
   return state.views[wsId];
 }
-let saveViewsTimer = null;
+const layoutSyncs = new Map();
+const layoutRenders = new Map();
+const renderedViews = new Map();
+function protectsDrafts(key, wsId, next) {
+  const S = sliceFor(key);
+  if (!S) return false;
+  const wanted = new Map((next?.docs || []).map(d => [d.id, d]));
+  return (S.views[wsId]?.docs || []).some(doc => {
+    const buffer = S.docs.get(doc.id), replacement = wanted.get(doc.id);
+    return buffer && buffer.savedText != null && buffer.text !== buffer.savedText &&
+      (!replacement || replacement.path !== doc.path);
+  });
+}
+function layoutSync(key = state.deviceKey) {
+  if (!layoutSyncs.has(key)) layoutSyncs.set(key, ViewSync.create({
+    read: () => tote.getViewsSnapshot(key),
+    write: patch => tote.patchViews(patch, key),
+    protect: (id, next) => protectsDrafts(key, id, next),
+    onChange: views => {
+      const S = sliceFor(key);
+      if (!S) return;
+      S.views = views;
+      if (S === state && S.sliceLoaded) reconcileViews(key);
+    },
+    onStatus: () => { if (key === state.deviceKey) renderLayoutStatus(); },
+  }));
+  return layoutSyncs.get(key);
+}
 function saveViews() {
-  clearTimeout(saveViewsTimer);
-  saveViewsTimer = setTimeout(() => tote.saveViews(state.views), 200);
+  // Capture edits and their device NOW, never from the state selected when a
+  // timer fires. Each device's controller serializes its own saves and reads.
+  layoutSync().edit(state.views);
+}
+function renderLayoutStatus() {
+  const bar = $('#layout-status'), sync = layoutSyncs.get(state.deviceKey);
+  const status = sync?.status();
+  bar.replaceChildren();
+  bar.classList.toggle('hidden', !status || (!status.error && !status.conflicts.length && status.supported !== false));
+  if (!status) return;
+  const message = document.createElement('span');
+  bar.appendChild(message);
+  const button = (label, action) => {
+    const b = document.createElement('button'); b.textContent = label;
+    b.disabled = status.busy; b.onclick = action; bar.appendChild(b);
+  };
+  if (status.supported === false) {
+    message.textContent = 'Update Tote on this device to save layouts safely. Layout changes here are temporary.';
+  } else if (status.conflicts.length) {
+    const id = status.conflicts.includes(state.workspaces.active) ? state.workspaces.active : status.conflicts[0];
+    const name = state.workspaces.list.find(w => w.id === id)?.name || id;
+    message.textContent = `Layout changed elsewhere for “${name}”. Your local layout is kept.`;
+    button('Use saved layout', () => {
+      if (!sync.resolve(id, 'saved')) toast('Save or close the affected unsaved documents before using the saved layout.', 'error');
+    });
+    button('Replace saved layout', () => {
+      if (confirm(`Replace the saved layout for “${name}” with this window’s layout? Other viewers will receive your layout.`)) sync.resolve(id, 'local');
+    });
+  } else if (status.error) {
+    message.textContent = 'Layout not saved: ' + status.error;
+    button('Retry', () => sync.refresh());
+  }
 }
 const providerOf = (id) => state.providers.find((p) => p.id === id);
 const newId = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -709,6 +766,7 @@ function showWorkspaceViews() {
   // space that was in the background catch up the moment it comes forward.
   recheckDocs();
   focusActivePaneContent();
+  renderLayoutStatus();
 }
 
 $('#btn-add-tab').onclick = (e) => {
@@ -981,6 +1039,7 @@ async function retargetDoc(leaf, rel) {
   saveViews();
 }
 
+const docLoads = new Map();
 async function loadDoc(id) {
   const doc = docOf(id);
   const p = docPane(id);
@@ -989,6 +1048,9 @@ async function loadDoc(id) {
   p.el.title = doc.path;
 
   const wanted = doc.path;
+  const key = state.deviceKey, requestKey = JSON.stringify([key, id]);
+  const ticket = Symbol(), original = state.docs.get(id)?.text;
+  docLoads.set(requestKey, ticket);
   let res;
   try {
     res = await tote.readDoc(wanted);
@@ -997,8 +1059,13 @@ async function loadDoc(id) {
   }
   // Two fast clicks start two reads. Whichever returns second must not win if
   // the pane has already been pointed somewhere else.
-  if (!docOf(id) || docOf(id).path !== wanted) return;
-  state.docs.set(id, {
+  const S = sliceFor(key);
+  const stillOpen = S && Object.values(S.views).flatMap(v => v.docs || []).find(d => d.id === id);
+  if (!stillOpen || stillOpen.path !== wanted || docLoads.get(requestKey) !== ticket) return;
+  const buffer = S.docs.get(id);
+  // Typing during an asynchronous refresh wins over the disk response.
+  if (buffer && buffer.text !== original && buffer.text !== buffer.savedText) { buffer.stale = true; return; }
+  S.docs.set(id, {
     path: doc.path,
     kind: res.kind,
     text: res.text == null ? '' : res.text,
@@ -1010,7 +1077,7 @@ async function loadDoc(id) {
     error: res.error || null,
     stale: false,
   });
-  renderDocBody(id);
+  if (S === state) renderDocBody(id);
 }
 
 // Rebuild the pane's BODY. The pane element itself is never touched, never
@@ -1550,7 +1617,8 @@ function unstashSlice(key) {
 async function loadHostState() {
   state.profiles = await tote.getCliProfiles();
   state.workspaces = await tote.listWorkspaces();
-  state.views = (await tote.getViews()) || {};
+  await layoutSync().refresh();
+  if (layoutSync().status().error) throw new Error(layoutSync().status().error);
   await refreshSessions();     // before the first applyTiles, or every term leaf is pruned
   // Control sockets outlive Tote (ControlPersist=yes), so a remote space is
   // usually already connected by the time we ask -- which is the point.
@@ -1560,6 +1628,7 @@ async function loadHostState() {
   state.sliceLoaded = true;
   renderWorkspaceSwitcher();
   showWorkspaceViews();
+  renderedViews.set(state.deviceKey, JSON.parse(JSON.stringify(state.views)));
   await refreshTree();
 }
 
@@ -1578,7 +1647,8 @@ async function catchUpSlice() {
   if (state.needsReattach) { await reattachSlice(); return; }
   try {
     state.workspaces = await tote.listWorkspaces();
-    await adoptViews((await tote.getViews()) || {});
+    await layoutSync().refresh();
+    await reconcileViews(state.deviceKey);
   } catch {}
   renderWorkspaceSwitcher();
   showWorkspaceViews();
@@ -1599,7 +1669,8 @@ async function reattachSlice() {
   }
   try {
     state.workspaces = await tote.listWorkspaces();
-    await adoptViews((await tote.getViews()) || {});
+    await layoutSync().refresh();
+    await reconcileViews(state.deviceKey);
   } catch {}
   renderWorkspaceSwitcher();
   showWorkspaceViews();
@@ -1643,7 +1714,12 @@ function renderOfflineBanner() {
  * Main connects (once per device per window) and routes from then on; here
  * the current slice is stashed and the target's is brought back, or loaded
  * for the first time. */
-async function switchDevice(target, { force = false } = {}) {
+let deviceSwitchQueue = Promise.resolve();
+function switchDevice(target, options = {}) {
+  deviceSwitchQueue = deviceSwitchQueue.catch(() => {}).then(() => performDeviceSwitch(target, options));
+  return deviceSwitchQueue;
+}
+async function performDeviceSwitch(target, { force = false } = {}) {
   $('#device-menu').classList.add('hidden');
   let info;
   try {
@@ -2192,8 +2268,11 @@ function adoptSession(meta) {
 }
 
 async function refreshSessions() {
+  const key = state.deviceKey;
   try {
-    state.sessions = new Map((await tote.ptyList()).map((m) => [m.id, m]));
+    const sessions = new Map((await tote.ptyList()).map((m) => [m.id, m]));
+    const S = sliceFor(key);
+    if (S) S.sessions = sessions;
   } catch {}
 }
 
@@ -3682,7 +3761,7 @@ $('#btn-run-wizard').onclick = () => {
 const onScreen = (dev) => keyOf(dev) === state.deviceKey;
 tote.onWorkspaceChanged((dev) => { if (onScreen(dev)) { refreshTree(); recheckDocs(); } });
 tote.onWorkspacesChanged((dev) => { if (onScreen(dev)) onSpacesChanged(); });
-tote.onViewsChanged((views, dev) => { if (onScreen(dev)) adoptViews(views); });
+tote.onViewsChanged((_views, dev) => { layoutSyncs.get(keyOf(dev))?.refresh(); });
 
 /* Another window changed the space registry: a space added, renamed,
  * re-pointed, reordered -- or removed, in which case the host has already
@@ -3697,15 +3776,18 @@ async function onSpacesChanged() {
   }
 }
 
-/* Another window saved views.json: last edit wins, and this window shows it.
+/* Apply the controller's accepted state without replacing pane elements.
  * Sessions are re-listed FIRST -- a term leaf for a terminal the other window
  * just started would otherwise be pruned here as unknown, and the next save
  * from this window would delete it from theirs. Then every instance that no
  * longer exists anywhere is torn down, the way closePane would have. */
-async function adoptViews(views) {
+async function reconcileViews(key) {
+  if (key !== state.deviceKey) return;
+  const ticket = (layoutRenders.get(key) || 0) + 1;
+  layoutRenders.set(key, ticket);
   await refreshSessions();
-  const before = state.views;
-  state.views = views || {};
+  if (key !== state.deviceKey || ticket !== layoutRenders.get(key)) return;
+  const before = renderedViews.get(key) || {};
   const tabs = new Set(), docs = new Map(), terms = new Set();
   for (const V of Object.values(state.views)) {
     for (const t of V.tabs || []) tabs.add(t.id);
@@ -3731,6 +3813,7 @@ async function adoptViews(views) {
   }
   applyTiles();
   renderGroupBar();
+  renderedViews.set(key, JSON.parse(JSON.stringify(state.views)));
 }
 tote.onWindowFocus(() => focusActivePaneContent({ claim: true }));
 // A pane key pressed inside a web page, caught by main before the page saw it:

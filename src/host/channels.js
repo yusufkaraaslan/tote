@@ -26,7 +26,7 @@ const HOST = new Set([
   'workspace:write', 'workspace:createFile', 'workspace:createFolder', 'workspace:rename',
   'workspace:trash',
   'config:getCliProfiles', 'config:saveCliProfiles',
-  'views:get', 'views:save',
+  'views:get', 'views:save', 'views:snapshot', 'views:patch',
   'pty:available', 'pty:spawn', 'pty:list', 'pty:attach', 'pty:detach',
   // resize's optional claim flag distinguishes explicit control from layout
   // updates; pty:data events carry the authoritative grid and control status.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Shared layouts: save per workspace with host-checked revisions. Keep conflicting local layouts under an explicit choice, protect unsaved document buffers, and bind delayed saves to the device where the edit happened. Older hosts allow temporary local layout changes only.
+- Documents: preserve text typed during an asynchronous file refresh and keep responses on their originating device.
 - Configuration: flush and atomically replace JSON saves, keep the preceding valid version in a `.bak` file, and recover missing or damaged files with a visible notice. Damaged files are preserved; unrecoverable configuration stops startup instead of silently resetting it.
 - Validation: GitHub Actions checks desktop logic on Linux, macOS and Windows, renderer regressions on Linux, and Android native tests, lint and debug APK builds.
 - Windows: keep watching workspace roots named `dist` or another ignored cache name when the watcher normalizes path separators.

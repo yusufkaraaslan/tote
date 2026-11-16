@@ -619,10 +619,22 @@ app.on('web-contents-created', (event, contents) => {
 // A window viewing another device sends the same call to THAT device's host
 // instead. The renderer cannot tell the difference, which is the point.
 function route(e, name, args) {
-  const d = deviceOf(e.sender);
+  let d = deviceOf(e.sender);
+  // Layout requests outlive the selected device (debounce, reconnect, reply).
+  // Bind them to the captured device, restricted to this window's connections.
+  if (name === 'views:snapshot' || name === 'views:patch') {
+    const key = args.pop();
+    if (typeof key !== 'string') return Promise.reject(new Error('Layout request needs a device'));
+    d = key ? viewing.get(e.sender.id)?.devices.get(key) : null;
+    if (key && !d) return Promise.reject(new Error('Layout device is no longer open'));
+  }
   if (!d) return host.call(name, viewerIdOf(e.sender), args);
   if (!d.up) return Promise.reject(new Error(d.name + ' is offline'));
-  const call = d.client.call(name, args);
+  let call = d.client.call(name, args);
+  if (name === 'views:snapshot') call = call.catch(error => {
+    if (!/(?:Not a host method|Not callable from another device): views:snapshot$/.test(error.message)) throw error;
+    return d.client.call('views:get', []).then(views => ({ protocol: 0, views }));
+  });
   // A doc pane is handed a file:// URL for a PDF or an HTML page, and on
   // another machine that URL names a file that is not here: fetch it first.
   return name === 'workspace:readDoc' ? call.then((r) => localizeDoc(d, args[0], r)) : call;

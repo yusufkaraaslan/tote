@@ -89,7 +89,10 @@ code {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   grid-template-rows: 40px minmax(0, 1fr) auto;
 }
-#main { display: flex; min-height: 0; min-width: 0; grid-column: 2; grid-row: 2; }
+#main { display: flex; flex-direction: column; min-height: 0; min-width: 0; grid-column: 2; grid-row: 2; }
+#layout-status { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--warn-line); font-size: 12px; }
+#layout-status.hidden { display: none; }
+#layout-status span { flex: 1; }
 #ws-bar {
   grid-column: 1; grid-row: 1 / -1; min-height: 0;
   display: flex; flex-direction: column; padding: 0 10px;

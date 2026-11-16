@@ -498,7 +498,7 @@ See [Android diagnostics and physical-device checks](mobile/README.md#diagnostic
 
 ### Releases and update checks
 
-Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Installation is manual. Desktop defers the download-page action while host terminals are running; Android asks you to save or clear phone drafts first. Save documents and finish desktop agents before replacing the app: quitting Tote still stops its host processes.
+Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Installation is manual. Desktop defers the download-page action while host terminals are running; Android asks you to save or clear phone drafts first. Save documents before replacing the desktop. Quitting the UI leaves background sessions running; finish agents before stopping or upgrading the host.
 
 Source now targets **0.5.0** on both desktop and Android; the download links above remain the last published release until a new build is published. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). [0.5.0 candidate notes](docs/releases/v0.5.0.md) describe the changes and verification still needed before publication.
 
@@ -521,12 +521,13 @@ scripts/         Setup, packaging helpers and regression checks
 A **host** owns spaces, files, saved layouts, watchers and PTYs. Each desktop window
 or Android connection is a **viewer** with its own active workspace. Host calls
 resolve that viewer's space at call time; they do not depend on a single global
-active folder. Desktop windows call the host through IPC; remote viewers use the
-same host protocol over WebSocket inside Tailscale.
+active folder. Desktop windows use IPC to their main process, which connects to
+the separate host over authenticated loopback WebSocket. Remote viewers use the
+same bounded protocol inside Tailscale.
 
 A headless terminal mirror supplies replay to new viewers, so a session belongs
-to the host rather than a window. Closing a window can leave its sessions available
-while the app remains running (including on macOS); quitting the host stops them.
+to the host rather than a window. Closing every desktop window or quitting the UI
+leaves sessions available. Explicitly stopping the host ends them.
 Workspace paths go through containment checks, and the desktop renderer has no
 Node.js access. The Android viewer never hosts files or terminals.
 

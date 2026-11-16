@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -80,7 +80,10 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
       - run: npm ci
       - run: npm ci --prefix mobile
       - run: npm run mobile:build

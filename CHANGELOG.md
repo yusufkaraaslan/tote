@@ -4,6 +4,7 @@
 
 - Configuration: flush and atomically replace JSON saves, keep the preceding valid version in a `.bak` file, and recover missing or damaged files with a visible notice. Damaged files are preserved; unrecoverable configuration stops startup instead of silently resetting it.
 - Validation: GitHub Actions checks desktop logic on Linux, macOS and Windows, renderer regressions on Linux, and Android native tests, lint and debug APK builds.
+- Windows: keep watching workspace roots named `dist` or another ignored cache name when the watcher normalizes path separators.
 - Android: preserve ANSI, 256-color and truecolor foreground/background colors, bold and other text styles in the phone-width wrapped view. Attribute-only redraws now update even when the text is unchanged.
 - Shared terminals: synchronize the host grid across desktop and Android viewers, including replay and live size changes. Desktop focus/input takes sizing control; background viewers cannot override it through layout updates.
 - Queue terminal parsing, resizing and replay in order so concurrent viewers do not wrap cursor-addressed output at different widths. Smaller passive desktop panes can scroll the host grid.

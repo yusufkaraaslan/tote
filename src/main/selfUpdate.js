@@ -56,7 +56,7 @@ async function verify(file, artifact) {
   if (hash.digest('hex') !== artifact.sha256) throw Error('Update checksum failed. Download again.');
 }
 function appImageTarget(file) {
-  if (!file || !path.isAbsolute(file)) throw Error('In-app installation requires a Linux AppImage. Use your package manager for this installation.');
+  if (!file || !path.isAbsolute(file)) throw Error('In-app installation currently supports Linux AppImage. Use the release page or your Linux package manager for this installation.');
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || fs.realpathSync(file) !== path.resolve(file) || stat.nlink !== 1) throw Error('The AppImage must be a regular file, without links.');
   fs.accessSync(file, fs.constants.W_OK);

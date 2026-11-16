@@ -11,7 +11,7 @@ const manifest = () => ({ updateSchema:1, signed:true, version:'0.6.0', protocol
   files:[{name:'Tote-0.6.0-linux-x64.AppImage',platform:'linux',size:payload.length,sha256}] });
 const policy = { current:'0.5.0',latest:'0.6.0',platform:'linux',arch:'x64',protocol:1 };
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(),'tote-updater-')), target = path.join(root,'Tote.AppImage');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'tote-updater-'))), target = path.join(root,'Tote.AppImage');
   fs.writeFileSync(target,'old executable', {mode:0o700});
   const fetch = async (url, options) => download(url, {...options,get:async()=>Readable.from([url.endsWith('.json') ? Buffer.from(JSON.stringify(manifest())) : payload])});
   const updater = new SelfUpdater({dir:path.join(root,'cache'),target,...policy,check:async()=>({available:true,latest:'0.6.0'}),fetch});

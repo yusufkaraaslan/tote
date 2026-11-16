@@ -23,6 +23,11 @@ app.whenReady().then(async()=>{
   await run("document.querySelector('#home-updates').click();document.querySelector('#updates-check').click()");
   await until("!document.querySelector('#updates-open').hidden");
   assert((await run("document.querySelector('#updates-status').textContent")).includes(updateVersion+' is available'));
+  await run("document.querySelector('#updates-download').click()");await until("!document.querySelector('#updates-install').hidden");
+  assert.equal(await run("testState.updateDownloads"),1);
+  await run("document.querySelector('#updates-install').click()");await until("document.querySelector('#updates-progress').textContent.includes('Tap Install update again')");
+  assert.equal(await run("testState.updateInstalls"),1,'returning from permission settings does not auto-install');
+  assert.equal(await run("document.body.inert"),false,'editing resumes after returning from settings');
   await run("document.querySelector('#updates-open').click()");await until("testState.updateOpened===1");
   assert.equal(await run('testState.openedVersion'),updateVersion);
   await run("testState.updateFail=true;document.querySelector('#updates-check').click()");
@@ -85,6 +90,9 @@ app.whenReady().then(async()=>{
   await until("!document.querySelector('#updates-open').hidden");
   await run("document.querySelector('#updates-open').click()");
   assert.match(await run("document.querySelector('#updates-status').textContent"),/Save or clear/);
+  await run("document.querySelector('#updates-install').click()");
+  assert.match(await run("document.querySelector('#updates-progress').textContent"),/Save or clear/);
+  assert.equal(await run("testState.updateInstalls"),1,'unsent draft blocks native installer');
   assert.equal(await run("testState.updateOpened"),1,'unsent phone drafts defer installation guidance');
   await run("document.querySelector('#updates-close').click()");
   await select('groups','review');await until("document.querySelector('#workspace').dataset.pane==='l2'");

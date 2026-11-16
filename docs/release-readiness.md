@@ -6,7 +6,7 @@ The background host implementation is merged in #41. The agreed first self-updat
 2. Review the remaining dependency proposals. Keep desktop/mobile terminal libraries aligned and major Capacitor/Gradle/runtime changes separate. Repeat affected release checks after changing dependencies.
 3. Implement in-app download/verification and installation. Use the published stable channel and the verified platform artifact; retain explicit user control, unsaved-buffer/draft guards and host compatibility checks. Never replace or restart an active host automatically.
 
-The current app checks versions and opens the release page; it does not install updates. Neither merging source nor generating preview artifacts updates an installed app.
+The source now implements guarded in-app updates for Linux AppImage and Android; see [installation and recovery](self-updates.md). Dependency review is complete for this checkpoint; the five major/toolchain proposals remain separately tracked in [dependency decisions](dependencies.md). Neither merging source nor generating preview artifacts updates an installed app. The first updater-capable release must be installed manually, and publishing remains a separate step after the physical checks and signing-key backup below.
 
 ## Automated evidence
 

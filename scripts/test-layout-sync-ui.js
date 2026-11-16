@@ -12,6 +12,8 @@ const preload = path.join(scratch, 'preload.js');
 fs.writeFileSync(preload, `
 const {contextBridge,ipcRenderer}=require('electron');
 const api=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,name.startsWith('on')?()=>{}:(...args)=>ipcRenderer.invoke('fixture',name,args)]));
+api.onUpdateGuard=cb=>ipcRenderer.on('updates:guard',(_e,request)=>cb(request));
+api.updateGuardReply=(token,clean)=>ipcRenderer.send('updates:guardReply',token,clean);
 api.onViewsChanged=cb=>ipcRenderer.on('views:changed',(_e,views,key)=>cb(views,key));
 contextBridge.exposeInMainWorld('tote',api);
 `);
@@ -77,8 +79,17 @@ app.whenReady().then(async () => {
       await until(w, "state.sliceLoaded && document.querySelector('.doc-src') && !layoutSync().status().busy");
     }
     const [a, b] = windows;
+    const guard = require('../src/main/updateGuard').createGuard({onReply:cb=>ipcMain.on('updates:guardReply',cb),windows:()=>windows,confirm:async()=>true});
+    const unlock = await guard();
+    assert.equal(await run(a,'document.body.inert'),true);assert.equal(await run(b,'document.body.inert'),true);
+    unlock();await until(a,'!document.body.inert');
     await run(b, "window.originalPane=document.querySelector('.pane');window.originalEditor=document.querySelector('.doc-src');window.pendingRead=loadDoc('doc');originalEditor.value='unsaved text';originalEditor.dispatchEvent(new Event('input',{bubbles:true}));pendingRead");
     assert.equal(await run(b, "state.docs.get('doc').text"), 'unsaved text', 'typing during a disk refresh must win');
+    await assert.rejects(guard(),/Save documents/);
+    await until(b,'!document.body.inert');
+    await run(b,"switchDevice({key:'remote'})");await until(b,"state.deviceKey==='remote' && state.sliceLoaded");
+    await assert.rejects(guard(),/Save documents/);await until(b,'!document.body.inert');
+    await run(b,"switchDevice(null)");await until(b,"state.deviceKey==='' && state.sliceLoaded");
     await run(a, "state.views.a.groups[0].name='Changed elsewhere';saveViews();layoutSync().flush()");
     await until(b, "state.views.a.groups[0].name==='Changed elsewhere' && !layoutSync().status().busy");
     assert.equal(await run(b, "document.querySelector('.pane')===originalPane && document.querySelector('.doc-src')===originalEditor && originalEditor.value==='unsaved text'"), true);

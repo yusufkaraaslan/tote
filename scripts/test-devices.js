@@ -109,7 +109,8 @@ const preloadChannels = () =>
   new Set([...read('src/preload/preload.js').matchAll(/ipcRenderer\.(?:invoke|send|on)\('([^']+)'/g)].map((m) => m[1]));
 const mainLiterals = () =>
   new Set([...read('src/main/main.js').matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
-const EVENTS = new Set(['pty:data', 'pty:exit', 'workspace:changed', 'workspaces:changed', 'views:changed',
+const EVENTS = new Set([
+  'updates:guard','pty:data', 'pty:exit', 'workspace:changed', 'workspaces:changed', 'views:changed',
                         'remote:state', 'workspace:swept', 'download:done', 'win:focus', 'win:key', 'devices:lost', 'devices:back', 'remote:auth']);
 
 describe('channels', () => {

@@ -39,7 +39,7 @@ const FIRE = new Set(['pty:write', 'pty:resize', 'pty:kill', 'pty:detach']);
 
 const VIEWER = new Set([
   'host:status', 'host:start', 'host:stop', 'host:startup',
-  'updates:check', 'updates:open',
+  'updates:check', 'updates:open', 'updates:status', 'updates:download', 'updates:cancel', 'updates:install', 'updates:guardReply',
   'diagnostics:get', 'diagnostics:export',
   'clipboard:readText', 'clipboard:writeText',
   'config:getProviders', 'config:saveProviders', 'config:openDir',

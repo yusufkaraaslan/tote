@@ -5,7 +5,7 @@ import { renderTerminalReading, TERMINAL_THEME } from './reading.js';
 import { createNavigation } from './navigation.js';
 import { ComputerSearch } from './discovery.js';
 import { DeviceClient } from './client.js';
-import { Native, Speech, Discovery, initNative, socketFactory } from './native.js';
+import { Native, Updater, Speech, Discovery, initNative, socketFactory } from './native.js';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
 import Updates from '../../src/shared/updates.js';
@@ -485,19 +485,51 @@ function renderUpdateDrafts() {
   }
   $('updates-draft-review').hidden = !list.children.length;
 }
-function openUpdates() { renderUpdateDrafts(); $('updates-dialog').showModal(); }
+function updateProgress(s) {
+  $('updates-install').hidden = s.phase !== 'ready';
+  $('updates-cancel').hidden = s.phase !== 'downloading';
+  $('updates-download').disabled = s.phase === 'downloading';
+  $('updates-progress').textContent = s.phase === 'downloading' ? (s.total ? `Downloading… ${Math.floor(100*s.received/s.total)}%` : 'Preparing download…')
+    : s.phase === 'ready' ? `Tote ${s.version} is verified and ready to install.` : s.message || '';
+}
+function openUpdates() { renderUpdateDrafts(); $('updates-dialog').showModal(); Updater.status().then(updateProgress).catch(() => {}); }
+$('updates-download').onclick = async () => {
+  if (!updateVersion) return;
+  updateProgress({phase:'downloading'});
+  const poll = setInterval(() => Updater.status().then(updateProgress).catch(() => {}), 500);
+  try { updateProgress(await Updater.download({version:updateVersion})); }
+  catch (error) { updateProgress({phase:'error',message:error.message}); }
+  finally { clearInterval(poll); }
+};
+$('updates-cancel').onclick = () => Updater.cancel();
+$('updates-install').onclick = async () => {
+  cancelVoice(); renderUpdateDrafts();
+  if ([...drafts.values()].some(text => text.trim())) {
+    $('updates-progress').textContent = 'Save or clear your phone drafts before installing an update. Review unsent drafts above.'; return;
+  }
+  // Keep editing frozen through verification, permission settings and the OS
+  // installer. Returning from settings never automatically starts installation.
+  document.body.inert = true;
+  try {
+    const result = await Updater.install();
+    $('updates-progress').textContent = result.permissionStep
+      ? (result.allowed ? 'Installation allowed. Tap Install update again to continue.' : 'Android permission was not granted. Tap Install update to try again.')
+      : 'Returned from Android’s installer. If installation was canceled, you can try again.';
+  } catch (error) { $('updates-progress').textContent = error.message; }
+  finally { document.body.inert = false; }
+};
 $('home-updates').onclick = openUpdates; $('open-updates').onclick = openUpdates;
 $('updates-close').onclick = () => $('updates-dialog').close();
 $('updates-check').onclick = async () => {
   updateVersion = null;
-  $('updates-check').disabled = true; $('updates-open').hidden = true;
+  $('updates-check').disabled = true; $('updates-open').hidden = true; $('updates-download').hidden = true;
   $('updates-status').textContent = 'Checking GitHub…';
   try {
     const info = App.getInfo ? await App.getInfo().catch(() => null) : null;
     const r = Updates.latest(await Native.checkUpdates(), info?.version || version);
     $('updates-status').textContent = r.available ? `Tote ${r.latest} is available. Installed: ${r.current}.` : `Installed: ${r.current}. Latest stable: ${r.latest}. No newer stable release is available.`;
     updateVersion = r.available ? r.latest : null;
-    $('updates-open').hidden = !r.available;
+    $('updates-open').hidden = !r.available; $('updates-download').hidden = !r.available;
   } catch { $('updates-status').textContent = 'Could not check for updates. Check your internet connection and try later.'; }
   finally { $('updates-check').disabled = false; }
 };

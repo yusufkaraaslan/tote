@@ -40,3 +40,10 @@ export const Discovery={
  start:async({id})=>{queueMicrotask(()=>{discoveryListeners.candidate?.({scan:id,address:'100.64.1.2',port:47821,name:'Studio',peers:[{address:'100.64.1.3',port:47821}]});discoveryListeners.finished?.({scan:id});});},
  stop:async()=>{},openTailscale:async()=>{},
 };
+
+export const Updater={
+ status:async()=>state.updateState || {phase:'idle'},
+ download:async()=>{state.updateDownloads=(state.updateDownloads||0)+1;return state.updateState={phase:'ready',version:updateVersion};},
+ cancel:async()=>{state.updateState={phase:'idle'};},
+ install:async()=>{state.updateInstalls=(state.updateInstalls||0)+1;return {permissionStep:true,allowed:true};},
+};

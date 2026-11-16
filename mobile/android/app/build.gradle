@@ -1,7 +1,10 @@
 apply plugin: 'com.android.application'
 def releaseMetadata = new groovy.json.JsonSlurper().parse(file('../../../release.json'))
 
+def updateIdentity = new groovy.json.JsonSlurper().parse(file('../../signing/identity.json'))
+
 android {
+    buildFeatures { buildConfig = true }
     namespace = "com.tote.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
@@ -10,6 +13,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode releaseMetadata.androidVersionCode
         versionName releaseMetadata.version
+        buildConfigField 'int', 'UPDATE_PROTOCOL', releaseMetadata.protocol.toString()
+        buildConfigField 'String', 'UPDATE_CERTIFICATE', '"' + updateIdentity.certificateSha256 + '"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

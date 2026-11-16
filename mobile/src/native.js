@@ -1,4 +1,5 @@
 import { registerPlugin } from '@capacitor/core';
+export const Updater = registerPlugin('ToteUpdater');
 export const Native = registerPlugin('ToteNative');
 export const Discovery = registerPlugin('ToteDiscovery');
 export const Speech = registerPlugin('ToteSpeech');

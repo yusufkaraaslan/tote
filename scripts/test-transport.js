@@ -142,6 +142,33 @@ test('a slow viewer disconnects while a healthy viewer preserves output and grid
   assert.deepEqual(f.writes, ['one command\r']); assert.equal(f.sessions.get('s').alive, true);
 });
 
+test('pending automatic pong floods disconnect only the affected peer in both directions', async t => {
+  for (const direction of ['host', 'viewer']) {
+    const f = await fixture(t);
+    const flooding = f.client();
+    await flooding.connect(); await flooding.call('pty:attach', ['s']);
+    const hostSocket = [...f.server.wss.clients][0];
+    let received = '';
+    const healthy = f.client({ onEvent: (event, payload) => { if (event === 'pty:data') received += payload.data; } });
+    await healthy.connect(); await healthy.call('pty:attach', ['s']);
+    const target = direction === 'host' ? hostSocket : flooding.ws;
+    const source = direction === 'host' ? flooding.ws : hostSocket;
+    // Hold socket writes to model a non-reading peer without relying on OS
+    // buffer sizes or allocating an unbounded flood. The library's default
+    // limit must apply through Tote's actual server and client constructors.
+    target._socket.cork();
+    t.after(() => target.terminate());
+    for (let i = 0; i < 61; i++) source.ping('probe');
+    await until(() => target.readyState === WebSocket.CLOSED && f.viewers.size === 1);
+    assert.equal(f.sessions.map.get('s').subs.size, 1);
+    assert.equal(f.sessions.get('s').alive, true);
+    f.sessions.onData('s', 'AFTER-PING-FLOOD\r\n');
+    await until(() => received.includes('AFTER-PING-FLOOD'));
+    await healthy.call('pty:write', [{ id: 's', data: 'still usable\r' }]);
+    assert.deepEqual(f.writes, ['still usable\r']);
+  }
+});
+
 test('overload during replay cannot resurrect a detached subscription', async t => {
   const f = await fixture(t, { frames: 0 }); let closed = false;
   const c = f.client({ onClose: () => { closed = true; } });

@@ -39,7 +39,7 @@ With a phone connected and USB debugging enabled:
 adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-This is a debug build for testing, not a Play Store release. Production signing support is available through the release workflow, but credentials still need provisioning; Play Store packaging is not configured.
+Current source builds require Android 13+ (API 33). This is a debug build for testing, not a Play Store release. Production signing runs through the restricted release workflow; use release:preflight for current configuration status; Play Store packaging is not configured.
 
 ## Included
 
@@ -59,7 +59,7 @@ Not yet included: mobile provider web sessions, PDF/binary previews, file editin
 
 Use **Updates** on the Computers screen or in workspace tools, then **Check for updates**. This explicitly contacts GitHub over native HTTPS; normal device sockets remain restricted to Tailscale. Tote shows published stable releases only and opens the release page after you save or clear phone drafts. The link opens the exact version checked. **Review unsent drafts** lets you copy and explicitly discard drafts, including those from removed computers or sessions. It does not install an APK itself. Desktop/Android share the version in `release.json`; protocol-compatible older hosts remain usable with feature fallbacks and a version notice.
 
-Preview APKs use debug signing. Production APKs require the existing app's stable signing identity; a different key cannot upgrade an installed app. See [release and signing setup](../docs/releases.md).
+Preview APKs use debug signing. Production APKs use the pinned dedicated identity and approved proof of rotation from 0.4.0 on Android 13+. An unrelated key cannot upgrade an installed app. The API 33/35 emulator migrations preserve app data; physical phone verification remains pending. See [identity and key recovery](signing/README.md) and [release setup](../docs/releases.md).
 
 ## Diagnostics
 

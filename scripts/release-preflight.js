@@ -87,6 +87,12 @@ async function main() {
   const run = (file, args) => execFileSync(file, args, { cwd: root, encoding: 'utf8', timeout: 20000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const release = check(root);
   check(root, 'v' + release.version);
+  if (productionPlatforms(release).includes('android')) {
+    const signing = path.join(root, 'mobile/signing');
+    const identity = require('./android-release-signing').policy(JSON.parse(fs.readFileSync(path.join(signing, 'identity.json'), 'utf8')),
+      fs.readFileSync(path.join(signing, 'production.lineage')));
+    if (identity.minSdkVersion !== release.androidMinSdkVersion) throw Error('Signing minimum differs from the release');
+  }
   const report = await inspect({ release, sha: run('git', ['rev-parse', 'HEAD']), dirty: !!run('git', ['status', '--porcelain']),
     api: endpoint => JSON.parse(run('gh', ['api', `repos/${REPO}${endpoint}`])) });
   fs.writeFileSync(path.join(out, 'preflight.json'), JSON.stringify(report, null, 2) + '\n');

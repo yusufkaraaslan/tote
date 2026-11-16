@@ -7,6 +7,7 @@ on:
       - 'package*.json'
       - 'mobile/package*.json'
       - 'mobile/android/**'
+      - 'mobile/signing/**'
       - 'scripts/*release*'
       - 'scripts/test-packaged.js'
       - 'src/host/**'
@@ -155,7 +156,7 @@ jobs:
             node -e "if(!process.env.ANDROID_KEYSTORE_BASE64)throw Error('Missing ANDROID_KEYSTORE_BASE64'); require('fs').writeFileSync(process.env.ANDROID_KEYSTORE_PATH,Buffer.from(process.env.ANDROID_KEYSTORE_BASE64,'base64'),{mode:0o600})"
             node scripts/release-signing.js android
             mobile/android/gradlew -p mobile/android --no-daemon testReleaseUnitTest lintRelease assembleRelease
-            cp mobile/android/app/build/outputs/apk/release/app-release.apk "apk-out/Tote-${RELEASE_VERSION}-android.apk"
+            node scripts/android-release-signing.js mobile/android/app/build/outputs/apk/release/app-release.apk "apk-out/Tote-${RELEASE_VERSION}-android.apk"
           else
             mobile/android/gradlew -p mobile/android --no-daemon testDebugUnitTest lintDebug assembleDebug
             cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "apk-out/Tote-${RELEASE_VERSION}-android-preview.apk"

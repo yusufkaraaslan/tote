@@ -39,7 +39,7 @@ test('HTTP metadata is bounded; redirects, invalid JSON and rate limits fail saf
 test('release validation rejects drift and missing signing without printing secrets',()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tote-release-test-'));
  try {
-  for(const name of ['release.json','package.json','package-lock.json','mobile/package.json','mobile/package-lock.json','mobile/android/app/build.gradle','docs/releases/'+releaseTag+'.md']) {const dest=path.join(dir,name);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(__dirname,'..',name),dest);}
+  for(const name of ['release.json','package.json','package-lock.json','mobile/package.json','mobile/package-lock.json','mobile/android/app/build.gradle','mobile/android/variables.gradle','docs/releases/'+releaseTag+'.md']) {const dest=path.join(dir,name);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(__dirname,'..',name),dest);}
   const {check}=require('./release-version');assert.equal(check(dir,releaseTag).version,release.version);assert.throws(()=>check(dir,'v9999.9999.9999'),/Tag/);
   const p=path.join(dir,'mobile/package.json');const data=JSON.parse(fs.readFileSync(p));data.version=release.version+'.1';fs.writeFileSync(p,JSON.stringify(data));assert.throws(()=>check(dir),/mismatch/);
   // Simulate the next documented metadata bump without changing test sources.

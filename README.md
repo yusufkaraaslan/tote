@@ -411,7 +411,7 @@ adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Use `npm --prefix mobile run android` to sync assets and open Android Studio.
-Production signing support is available through the [release workflow](docs/releases.md), but signing credentials still need provisioning. Play Store packaging is not configured.
+Android 0.5.0 source requires Android 13+. The [release workflow](docs/releases.md) verifies its dedicated production identity and approved signing history; see [key custody and migration](mobile/signing/README.md). Play Store packaging is not configured.
 
 ### Checks
 

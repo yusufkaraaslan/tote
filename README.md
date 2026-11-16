@@ -1,268 +1,451 @@
 # Tote
 
-**One window for all your LLMs — organized around workspaces, not chats.**
+**Your AI workspace, across your computers and Android phone.**
 
-*Tote: a bag you carry everything in.* Web LLM tabs, native apps and CLI agents
-(Claude Code, Codex, Gemini CLI, Kimi, OpenCode) live in one window; switch a
-workspace and every tab, terminal, download and layout follows. The Android companion
-connects to your computers over Tailscale so you can use their live terminals from your phone.
+Tote brings web LLMs, CLI agents, files and project layouts into one desktop app.
+Research in a web tab, save its downloads into your project, and continue with an
+agent in a real terminal beside it. Connect from another computer or your Android
+phone over Tailscale to use the same running agents.
 
-![Tote — workspace strip on top, files pane, a web LLM tab and Claude Code docked right](docs/screenshots/hero.png)
+*Tote: a bag you carry everything in.* Bring your own provider accounts and CLI tools;
+Tote organizes their windows and files while each provider keeps its own conversations.
 
-Tote doesn't try to merge every model into one conversation. Instead it gives you
-**spaces**: one Global workspace plus as many project workspaces as you like. A workspace
-is the routing context — when a space is active, every frontend you fire (web LLM tab,
-native app, or CLI agent) works against *that folder*, and every file that lands goes
-to the right place. Research in a web tab, download, resume in Claude Code — no manual
-file shuffling.
+[Download](#download) · [Features](#features) · [Screenshots](#screenshots) ·
+[Tailscale setup](#tailscale-setup) · [Android](#android-companion) ·
+[Build from source](#build-from-source) · [Shortcuts](#keyboard-shortcuts)
 
-## Download v0.4.0
+![Tote with its workspace sidebar, files dock, terminal and rendered project notes](docs/screenshots/desktop-sidebar.png)
 
-[Release notes and all downloads](https://github.com/yusufkaraaslan/tote/releases/tag/v0.4.0) · [Changelog](CHANGELOG.md)
+*Current desktop UI with sample project content in an isolated preview.*
+
+## Download
+
+[**v0.4.0 release and checksums**](https://github.com/yusufkaraaslan/tote/releases/tag/v0.4.0) ·
+[Release notes](docs/releases/v0.4.0.md) · [Changelog](CHANGELOG.md)
 
 | Platform | Download |
 |---|---|
 | Linux x64 — portable | [AppImage](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/Tote-0.4.0.AppImage) |
 | Debian / Ubuntu x64 | [.deb package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote_0.4.0_amd64.deb) |
 | Arch Linux x64 | [.pacman package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-0.4.0.pacman) |
-| Android | [Tote Android APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk) |
+| Android | [APK preview](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk) |
+| macOS / Windows | [Build from source](#build-from-source) |
 
-For AppImage, mark the downloaded file executable and open it. The Android APK is a debug-signed preview, not a Play Store release; it updates the earlier Tote test APKs without changing the app identity. Checksums are included with the release. macOS and Windows can be built from source using the commands below; this release supplies Linux and Android binaries.
+Mark the AppImage executable before opening it. On Android, allow installation from
+the app opening the APK when prompted. The APK is a debug-signed preview, not a Play
+Store release. v0.4.0 supplies Linux and Android binaries; macOS and Windows have
+source build targets. This README describes the repository; release notes identify
+what is included in the downloadable version.
 
-### On your phone
+## Start with a project
 
-Enable **Share device** in desktop Tote and connect Tailscale on both devices using the same owner account. Open Tote on Android and choose your computer. A wired desktop works too; no matching Wi-Fi network is required.
+1. Open Tote and follow the setup wizard to check your system and install the CLI
+   agents you want. Sign in to each provider or agent using its own login flow.
+2. Add a workspace from the sidebar and choose an existing project folder, or use
+   the default **Global** space at `~/tote/workspace`.
+3. Use **Open web** to open a provider. Its downloads go into that workspace's
+   `inbox/<provider>/` folder, such as `inbox/kimi/`.
+4. Use **New terminal** to start an agent in the same project folder. Ask it to work
+   with the downloaded file, then open its output in a file pane beside the terminal.
+5. Enable **Settings → Devices → share this device** to reach its spaces and agents
+   from your other computers and Android phone. Follow [Tailscale setup](#tailscale-setup).
 
-- Open the **☰ side panel** to switch workspaces, groups and terminals.
-- Terminal text **wraps to the phone width** without resizing the desktop terminal. Toggle **Wrap text** in the toolbar for the original terminal grid.
-- Speak with the microphone beside the composer, stop recording, edit the transcription, then send.
-- Terminal sessions stay on the computer and reconnect when the phone returns.
+## Features
 
-| Workspace and group navigation | Phone-width terminal output |
+### Spaces, groups and panes
+
+- **Project workspaces:** one Global space plus your own folders, each with its own
+  web tabs, terminals, documents and saved layout. Rename, reorder, change folders
+  or remove spaces from the sidebar or Settings. Removing a regular space only
+  unregisters it; changing its folder only updates the path.
+- **Collapsible sidebar:** switch devices and workspaces, find groups nested beneath
+  the active workspace, and drag workspace rows to save a new order.
+- **Groups:** several layouts within one workspace, like virtual desktops. Hidden
+  web tabs and agents keep running. Move panes between groups by dragging their
+  title bars onto a group, using the title-bar menu, or using a shortcut.
+- **Tiling panes:** web views, terminals and documents share a resizable layout.
+  Drag title bars to rearrange, resize dividers, or zoom a pane. The files dock keeps
+  the full left edge and remembers its width.
+- **Temporary spaces:** create a scratch project without a folder picker. **Keep…**
+  moves it to a permanent folder while preserving its layout. **Discard** deletes
+  the temporary folder and its files. By default, temp spaces unused for seven days
+  are swept at the next launch; these deletion rules apply only to temp spaces.
+- **Multiple windows:** each window can view its own workspace while sharing host
+  terminal sessions. Opening a session in another window replays its screen and
+  scrollback. Sessions live while the host Tote app is running; quitting it ends them.
+
+### Web LLMs and CLI agents
+
+| Interface | Included defaults |
 |---|---|
-| <img src="docs/screenshots/android-navigation.png" width="280" alt="Android side panel with workspaces, nested groups and terminals"> | <img src="docs/screenshots/android-terminal.png" width="280" alt="Live terminal text wrapping within the Android screen"> |
+| Web providers | ChatGPT, Claude, Gemini, Kimi, MiniMax, Z.ai, Qwen, DeepSeek |
+| Local web UI | DeepSeek Harness (`npx -y @deepseek-ai/dsh web`), started on first use |
+| CLI profiles | Claude Code, Codex CLI, Gemini CLI, Kimi Code CLI, OpenCode, plain shell |
+| Native apps | Launch installed apps from the apps menu; configure entries in Settings |
 
-[Android setup, development and current limitations](mobile/README.md)
+- Open multiple tabs of the same provider. Provider logins use separate persistent
+  browser partitions, and OAuth popups stay in the provider's session.
+- Agents run in **real PTYs**, so interactive and full-screen terminal programs work.
+  On POSIX systems, profiles launch through your login shell to find tools installed
+  with shell-managed environments such as nvm, fnm or asdf.
+- **Shift+Enter** inserts a newline in an agent prompt. Shift+arrows scroll terminal
+  history; Alt+Up/Down reach agents that use them for prompt navigation.
+- Drop a file onto a terminal to insert its shell-escaped path for you to review and
+  send. Terminal context menus support Copy/Paste; plain Ctrl+C still interrupts.
+- Add providers, CLI profiles and native apps in Settings. Defaults live in
+  [`config/`](config/); runtime configuration is plain JSON, accessible through
+  **Settings → About → open config folder**.
 
-## The workflow it exists for
+### Files, previews and downloads
 
-1. Click your project space in the sidebar (e.g. `nexus-core`).
-2. Open the **Kimi** or **Claude** web tab, do your research, hit download —
-   the file lands in `nexus-core/inbox/kimi/`, not your Downloads folder.
-3. Open a terminal pane (Ctrl+`), fire **Claude Code** — it starts `cd`'d into
-   `nexus-core`. Say "continue from inbox/kimi/…". Tip: `claude -c` and `kimi -C`
-   resume the agent's previous session directly.
-4. Prefer the vendor's native app (app-only discounts, voice, etc.)? Launch it
-   from the **apps** menu — what it downloads to your system Downloads is copied
-   into the active workspace automatically. Claude Desktop is even bound to the
-   workspace folder over MCP before launch, so it opens *on* that folder.
+- **Workspace inboxes:** web downloads go to the downloading window's active space,
+  under `inbox/<provider>/`, including when viewing a shared device or SSH workspace.
+- **File tree:** create, rename, trash, reveal, copy paths and open files externally.
+  **Send to active tab** is an experimental way to attach a file to a web chat.
+- **Editable documents:** text and code open in panes with explicit Save. Markdown,
+  HTML and SVG have source/preview modes; HTML loads its own CSS, scripts and images.
+  Images and PDFs are viewable on desktop; other formats open in a system app.
+- **Side-by-side review:** click a file to reuse a document pane, or Cmd/Ctrl-click to
+  open another. Clean documents refresh when a file changes; unsaved edits get a
+  changed-on-disk prompt before replacement.
+- **Native-app integration:** the wizard can bind Claude Desktop to a local workspace
+  with a filesystem MCP server and a config backup, and provides a snippet for other
+  MCP clients. Restart an already-running client to pick up a changed binding.
+- **macOS Downloads bridge:** copies downloads attributed to known native LLM apps
+  into `inbox/_desktop/`, leaving originals in Downloads. Toggle it in
+  **Settings → Behavior**. Native apps open as separate applications.
+
+### Your other computers
+
+- **Shared Tote devices:** switch the device at the top of the sidebar to open that
+  computer's spaces, files and running terminals. Each device's panes remain in the
+  window, preserving web pages and drafts when you switch back.
+- **Reconnect:** a sleeping or disconnected device keeps its panes under a banner;
+  Tote reconnects when it returns. The host must stay running to preserve sessions.
+- **SSH workspaces:** open a project directory on another machine using
+  **New remote space**. Files, edits, terminal processes and downloaded files live
+  there. SSH authentication appears in a connect pane when needed.
+- **Keep awake:** the Devices settings can prevent idle sleep on the viewed host
+  while Tote runs. This does not override closing a laptop lid or quitting Tote.
 
 ## Screenshots
 
-| Agents docked at the bottom (Claude Code + OpenCode) | A *research* space: `inbox/<provider>/` collects downloads, Kimi tab open |
+The desktop preview above shows the current sidebar and pane layout. Settings
+keeps spaces, providers, CLI agents, apps and devices in one place:
+
+![Current Tote Settings with sample workspaces and navigation for providers, agents, apps and devices](docs/screenshots/desktop-settings.png)
+
+| Android workspace, group and terminal navigation | Android terminal output wrapped to phone width |
 |---|---|
-| ![Two CLI agents docked at the bottom](docs/screenshots/agents-bottom.png) | ![A research space: inbox per provider, Kimi tab](docs/screenshots/research-space.png) |
+| <img src="docs/screenshots/android-navigation.png" width="280" alt="Android side panel listing workspaces, groups and terminals"> | <img src="docs/screenshots/android-terminal.png" width="280" alt="Live terminal output wrapped to the phone width above the message and microphone controls"> |
 
-First-run setup wizard — system checks, one-click CLI installs, connections, spaces:
+<details>
+<summary>Earlier desktop captures: agent layouts, research and setup wizard</summary>
 
-![First-run setup wizard](docs/screenshots/wizard.png)
+These show the earlier desktop chrome and illustrate the web-to-agent workflow.
 
-## Quick start
+![Earlier Tote desktop with ChatGPT and Claude Code beside the project file tree](docs/screenshots/hero.png)
 
-Requires **Node.js 20+** and (for terminals) a C++ toolchain:
+| Agents below the web view | Research with provider inboxes |
+|---|---|
+| ![Earlier desktop with Claude Code and OpenCode terminal tabs](docs/screenshots/agents-bottom.png) | ![Earlier research workspace with Kimi and provider download folders](docs/screenshots/research-space.png) |
 
-- **Linux:** `sudo apt install build-essential python3`
-- **macOS:** Xcode Command Line Tools (`xcode-select --install`)
-- **Windows:** Visual Studio Build Tools
+![Setup wizard with system checks, agent installs, connections and spaces](docs/screenshots/wizard.png)
 
-```bash
-./scripts/install.sh        # checks prerequisites, installs deps, launches
-# or manually:
-npm install && npm start
-```
+</details>
 
-**First launch opens the setup wizard**, which does the wiring for you:
+## Tailscale setup
 
-1. **System** — verifies Node, npm, git, the terminal layer, home-folder access.
-2. **CLI agents** — one-click installs with live terminal output:
-   `claude` (@anthropic-ai/claude-code), `kimi` (@moonshot-ai/kimi-code),
-   `codex` (@openai/codex), `gemini` (@google/gemini-cli), `opencode` (opencode-ai).
-   Installs self-heal the two common npm traps: blocked install scripts
-   (npm ≥ 12) are re-run with `--allow-scripts`, and a root-owned global
-   prefix (distro npm) is pointed at `~/.local` when that's safe.
-   (DeepSeek Harness has no interactive CLI — use its local Web UI tab instead.)
-3. **Connections** — binds Claude Desktop to the active workspace via MCP
-   (with config backup) and gives you a copy-paste MCP snippet for
-   Cursor / Cherry Studio / Kimi Code `/mcp-config`.
-4. **Spaces** — review Global + add project workspaces.
+Tote offers two ways to work across machines:
 
-Reopen anytime: **settings → run setup wizard**.
-
-Upgrading from an install named **OmniHub**? Quit it first, then start Tote — your
-config, logins and Claude Desktop binding are migrated automatically on first launch.
-
-Troubleshooting: if terminals fail with `posix_spawnp failed`, run `npm install` again
-(the postinstall step restores the exec bit on node-pty's `spawn-helper`). Agent terminals
-run through your login shell, so a CLI that works in your own terminal works here too —
-including ones installed via fnm/nvm/asdf, which a desktop app otherwise can't see. Right-click a
-web tab for **reload** / **close**.
-
-### Install as a macOS app
-
-```bash
-npm run install:mac      # runs the tests, builds, installs to /Applications
-```
-
-Safe to run from a terminal docked inside Tote itself: the build is staged
-separately so the running bundle is never deleted underneath it, and since Tote
-holds a single-instance lock, the script leaves a watcher that reopens the
-updated app as soon as you quit the old one.
-
-### Build real installers
-
-```bash
-npm run dist        # current platform → dist/
-npm run dist:linux  # AppImage + .deb + .pacman
-npm run dist:pacman # .pacman only (Arch/Manjaro: sudo pacman -U dist/tote-*.pacman)
-npm run dist:mac    # .dmg (must build on macOS)
-npm run dist:win    # NSIS setup .exe (desktop + start-menu shortcuts)
-```
-
-The NSIS installer is non-one-click, so users can choose the install directory.
-
-First run creates the **Global** space at `~/tote/workspace`. Add project spaces
-from the sidebar’s workspace menu (name + any folder on disk — point it at an
-existing project if you like). **Drag a workspace row** in the sidebar to reorder it —
-the order is remembered. Right-click a workspace row to open its folder, copy the
-path, rename it, point it at a different folder, or remove it — the same controls live under
-**settings → Workspaces**. Tote never deletes or moves files: removing a space only
-unregisters it, and changing its folder just re-points it.
-
-## How each frontend honors "the correct workspace"
-
-| Frontend | Mechanism | Reliability |
+| Choose | Use it for | What the other computer needs |
 |---|---|---|
-| Web LLM tabs | Per-session download interception → `<active>/inbox/<provider>/` | solid |
-| CLI agents | New PTY spawns with `cwd = <active>`; tab tagged with its space | solid |
-| Claude Desktop | MCP filesystem server bound to `<active>` written into `claude_desktop_config.json` (with .bak backup) before launch | solid (restart app if already open) |
-| Other native apps | Downloads-folder bridge: files the app downloads are copied into `<active>/inbox/_desktop/`, originals left in place | macOS only (toggle in Settings) |
-| Remote spaces | One multiplexed ssh connection per space: terminals are `ssh -tt` in a real PTY, the files pane reads over the same socket, downloads stage locally and are streamed up over that same connection | needs ssh access to the host (Tailscale SSH works as-is) |
+| **Shared device** | Continue running Tote terminals and browse its existing spaces from desktop or Android | Tote running with **share this device** enabled, plus Tailscale |
+| **SSH workspace** | Work in a remote project folder and start agents there from desktop Tote | An SSH server, shell and desired CLI tools; Tote is not required there |
 
-## What's inside
+### 1. Connect your devices to Tailscale
 
-- **Web tabs** — open any of Kimi, Claude, ChatGPT, Gemini, MiniMax, Z.ai, Qwen, DeepSeek,
-  or the DeepSeek Harness local Web UI (auto-starts `npx -y @deepseek-ai/dsh web`) from the
-  **+** menu — as many tabs of the same LLM as you like. Each provider is an isolated
-  persistent partition: log in once, forever. **Tabs belong to the workspace**: switch
-  spaces and you get that space's tabs (and terminals) back exactly as you left them.
-- **Terminals** — Claude Code, Kimi CLI, Codex, Gemini CLI, OpenCode, plain shell. Real PTYs (node-pty), so full-screen TUIs render correctly, and **Shift+Enter
-  adds a line** instead of sending the message. **Shift+↑/↓** scrolls back through a long
-  answer (Shift+Home/End jump to the ends) — a bare arrow stays the agent's own history key. **Drag an image onto an agent pane**
-  and it arrives as a path the agent can read, the way a native terminal does it. Green/red dots show what's on your PATH.
-- **Copy and paste** — right-click selected text or an input in web tabs and documents
-  for editing actions. Terminals have a right-click Copy/Paste menu and use
-  **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows, **Cmd+C / Cmd+V** on macOS.
-  Plain Ctrl+C still interrupts the terminal command. Clipboard text stays on the
-  machine running your window, including when viewing another device.
-- **Remote spaces** — **New remote space** in the sidebar opens a project that lives on **another machine**
-  over ssh, which is to say Tailscale works with no extra setup: give it a host
-  (`devbox`, or `user@devbox`) and a path, and you get the same space you always had —
-  files pane, file panes, groups, layout — except the tree, the edits and the agents all
-  run over there. Terminals are real PTYs with ssh inside, so Claude Code on the remote
-  behaves exactly as it does locally, Shift+Enter and all. One connection is shared by
-  everything and kept alive, so you authenticate rarely; when Tailscale's periodic check
-  *does* expire, the files pane says so and hands you a connect pane and the login link —
-  no modal, and nothing else you have open is interrupted.
-- **Temp spaces** — the sidebar’s temp-space action makes a throwaway space with no folder picker:
-  name it (or take the generated one), work, then **discard** it from the chip's
-  context menu and its files go with it. Changed your mind? **keep…** moves the
-  folder wherever you want and the space becomes permanent, tabs and layout intact.
-  Anything untouched for a week is swept at the next launch.
-- **Layout** — everything is a **pane** in a tiling layout: opening one splits the focused
-  pane, drag a divider to resize or a pane's title bar to rearrange, **Cmd/Ctrl+Alt+arrows**
-  to move around and **+F** to zoom. The files tree is a dock — it keeps the left edge at
-  whatever width you left it. Layouts are remembered **per workspace**.
-- **Your other machines** — run Tote on each of your machines, tick **Settings → Share this machine**
-  on the ones you want to reach, and the chip at the top left lists them (over Tailscale). Pick one
-  and this window *becomes* that machine's Tote: its spaces, its files, its agents still running —
-  type into them from here. The device indicator turns amber while you're on another machine. Switching back
-  and forth is instant and loses nothing: each machine's panes stay alive in the window, web tabs
-  keep their pages and unsent drafts. If a machine sleeps, its panes stay up under a banner and
-  reconnect by themselves when it wakes. A download from a web tab goes to the machine you were
-  looking at, PDFs from it open here, and **Keep awake** in Settings applies to it. Only your own
-  Tailscale devices are let in; nothing listens anywhere but the Tailscale address.
-- **More than one window** — **Cmd/Ctrl+Shift+N** opens another window on the same Tote. Each
-  window is in its own workspace, but they share the terminals: open the same space in both and
-  the agent shows in both, with its scrollback, live. Terminals belong to the app rather than to
-  a window, so on macOS closing a window doesn't stop its agents — the next window picks them up.
-- **Groups** — each space holds several layouts, like desktops on your OS: switch with the
-  groups under the active workspace in the sidebar or **Cmd/Ctrl+Alt+1…9**. Tabs and agents in the other
-  groups keep running in the background. Move a pane to another group by dragging its title bar onto a
-  chip (or `+` for a new one), right-clicking the title bar, or **Cmd/Ctrl+Alt+Shift+1…9**.
-- **Workspace pane** — tree, right-click new/rename/trash/
-  open-externally/reveal-in-Finder/copy-path, and **Send to active tab (experimental)**
-  which injects a file into the current chat's upload control.
-- **File panes** — click a file and it opens as a pane, beside the agent that is writing it.
-  Text and code are editable (**Cmd/Ctrl+S** to save), markdown and HTML render with a
-  `src`/`view` toggle (**+E**), images and PDFs are viewable, and anything else still opens
-  in the system app. An HTML page renders as the real page — its own CSS, scripts and
-  images load from the folder it sits in. A click reuses the file pane you already have; **Cmd/Ctrl-click** opens a second one
-  for side-by-side. When an agent rewrites a file under you, a clean pane just updates —
-  a pane with unsaved edits asks first.
-- **Settings** — manage workspaces (add / rename / change folder / remove), add/remove
-  providers, CLI profiles, native apps; toggle the Downloads bridge and **keep awake** (holds off idle sleep while Tote runs, so agents keep working; a closed laptop lid still sleeps unless it is in clamshell mode). Everything is plain JSON in `<userData>/config/` (**open config folder**).
+Install [Tailscale for your platforms](https://tailscale.com/docs/install), sign in,
+and connect it on each computer and your Android phone. For Tote device sharing,
+use devices owned by the **same Tailscale account**. Membership in the same tailnet
+alone is insufficient: Tote rejects another owner's devices and shared-in nodes.
 
-## Architecture
-
-```
-config/            defaults: providers, cli-profiles, workspaces, apps, settings
-scripts/           copy-vendor (xterm assets), install.sh bootstrap
-build/icon.png     app icon used by electron-builder
-src/main/
-  main.js          window, sessions, downloads routing, bridge, apps launcher, IPC
-  installer.js     system checks, Claude MCP binding, MCP snippet, CLI status
-  config.js        userData config store (JSON)
-  workspace.js     spaces registry, safe paths, tree, ingest(), chokidar watchers,
-                   and backend dispatch (local folder vs remote host)
-  sshfix.js        pure: shell quoting, every remote command, ssh/Tailscale detectors
-  remote.js        one ssh connection per remote space + the remote file operations
-  ptyManager.js    node-pty sessions for CLI agents (local, or ssh for a remote space)
-src/preload/       contextBridge API (renderer has no node access)
-src/renderer/
-  app.js           vanilla JS UI: spaces, groups, panes, tree, editor, xterm, wizard, settings
-  layout.js        pure tiling engine (tree edits + geometry), tested by `npm test`
-  markdown.js      pure markdown parser for doc panes, tested by `npm test`
-  npmfix.js        pure npm-output detectors for self-healing wizard installs
-```
-
-Design rules:
-
-1. **The active workspace is the only routing context.** Every download handler and
-   terminal spawn resolves it at event time, so switching spaces re-routes instantly.
-2. **Providers, profiles, workspaces and apps are data, not code.** Add yours in Settings.
-3. **Native apps can't be embedded** — they're launched and bridged, never swallowed.
-   App-exclusive perks (discounts, voice, Sora, Claude Projects) stay reachable that way.
-4. **Vendor clouds stay siloed.** Chat history inside kimi.ai stays there; Tote
-   unifies the file layer, not the account layer.
-
-## Roadmap
-
-- Global hotkey + tray (summon from anywhere)
-- Per-workspace download rules (e.g. `.zip` → `assets/`)
-- House agent via DeepSeek Harness plugin with workspace tools
-- Context bus: send selection/conversation between panes
-
-## Android client
-
-The client-only Android app lives in [`mobile/`](mobile/README.md). It connects to your desktop Tote through Tailscale and supports workspaces, groups, live terminals, file previews, and voice-to-draft input.
+On a desktop, these commands help confirm that Tailscale is connected:
 
 ```sh
+tailscale status
+tailscale ip -4
+```
+
+The address is a Tailscale IPv4 address in `100.64.0.0/10`. Tote uses the installed
+Tailscale CLI for discovery and identity checks; it also detects the macOS app's
+bundled CLI. Tailscale is only needed for device sharing and Tailscale-based remote
+access; local workspaces work without it.
+
+### 2. Share a desktop Tote host
+
+1. Open Tote on the computer with your projects and agents.
+2. Open **Settings → Devices** and enable **share this device**.
+3. Confirm that the device settings show its shared address. Enable **keep this
+   machine awake** if you want it reachable while idle.
+4. Leave Tote running. On another desktop running Tote, use the device selector at
+   the top of the sidebar to choose the shared computer. The viewing computer only
+   needs sharing enabled if you also want to connect back to it.
+
+Device sharing uses Tote's own connection over Tailscale and does **not** require
+Tailscale SSH. It listens only on the host's Tailscale address, normally TCP
+`47821`, and checks callers with `tailscale whois`. Tailscale provides the encrypted
+network connection; there is no Tote cloud account, API key or pairing code.
+
+Web-provider logins remain local to the viewing desktop. The selected host supplies
+its files and terminals; actions requiring local desktop apps or its disk directly
+may be unavailable while viewing another device.
+
+### 3. Connect Android
+
+1. Install the [Android APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk)
+   and connect the Tailscale Android app with the same owner account.
+2. With sharing enabled on the computer, open Tote on the phone and wait a few
+   seconds for discovery, then choose the computer.
+3. Open the **☰** side panel and select a workspace, group and terminal.
+
+Automatic discovery travels through Tailscale, including to a phone on mobile data
+from a wired desktop. It needs no matching Wi-Fi, LAN scan, QR code or router port
+forwarding. Hosts send hints to their own online Android peers; the phone verifies
+each candidate with the host before remembering it.
+
+### Network rules and troubleshooting
+
+For a tailnet with custom access rules or host firewalls, allow these connections
+between your own devices:
+
+| Connection | Destination port | Purpose |
+|---|---|---|
+| Viewing desktop or phone → shared Tote host | TCP `47821` by default | Device discovery probes, files and live terminals |
+| Shared Tote host → Android phone | UDP `47822` | Automatic discovery hints |
+| Desktop → SSH host, when using remote spaces | TCP `22` by default | SSH files and terminals |
+
+`devicePort` in Tote's runtime `settings.json` changes the device server port;
+keep desktop discovery clients configured to the same port. No public listener or
+router forwarding is needed. Custom Tailscale policies still control reachability;
+see [Tailscale client preferences](https://tailscale.com/docs/features/client/manage-preferences)
+for incoming-connection settings.
+
+- **No shared computer listed:** confirm Tailscale is connected on both devices,
+  ownership matches, Tote is running, and sharing is enabled. Check the Tailscale
+  status/error shown in **Settings → Devices**.
+- **Android cannot discover it:** use a desktop build with Android discovery,
+  reopen the phone's computer picker, and check UDP `47822`. Tailscale's
+  **block incoming connections** setting on the phone can prevent hints arriving.
+  **Connect by address instead** accepts the host's Tailscale IPv4 and device port
+  as a fallback; a remembered host can reconnect without fresh hints.
+- **The host appears but cannot connect:** verify the TCP device port is allowed
+  and the host has not gone to sleep. A reachable Tailscale peer still needs Tote
+  running with sharing enabled.
+- **Sharing reports no Tailscale CLI:** confirm `tailscale status` works on the host,
+  then restart Tote after fixing installation or PATH.
+
+### Optional: open an SSH workspace
+
+First establish SSH access from the computer running desktop Tote. You can use an
+existing OpenSSH server over Tailscale, or enable Tailscale SSH on a supported host.
+For example, on a Linux host:
+
+```sh
+sudo tailscale set --ssh
+```
+
+Tailscale SSH also requires network access and an SSH rule in your tailnet policy.
+Its server supports Linux and the macOS open-source CLI daemon; the macOS GUI app
+and Windows cannot serve Tailscale SSH. Follow the
+[official Tailscale SSH setup](https://tailscale.com/docs/features/tailscale-ssh).
+
+Then, from the viewing computer, test your destination (replace these examples):
+
+```sh
+ssh alice@devbox
+```
+
+Choose **New remote space** in Tote's sidebar, enter `alice@devbox` (or an SSH config
+alias), and the remote folder, such as `/home/alice/projects/demo`. Install the CLI
+agents you want on that remote host. Tote shares one SSH connection between its
+file operations and real terminal sessions, and stages web downloads before
+uploading them into the remote inbox.
+
+When SSH or Tailscale SSH needs authentication, use the files-pane banner and connect
+pane to complete it. This SSH flow is separate from opening a shared Tote device.
+
+## Android companion
+
+The Android app connects to a desktop host; your files and agent processes stay on
+that computer. Start with [the connection steps above](#3-connect-android).
+
+| Capability | Behavior |
+|---|---|
+| Navigation | Side drawer for computers, workspaces, groups and terminals |
+| Live terminals | Screen/scrollback replay, live output, input, reconnect and foreground resume |
+| Phone reading | Wraps parsed terminal output to the phone width; **Wrap text** switches to the original grid |
+| Terminal size | Preserves host dimensions on attach; **Resize terminal** explicitly changes the shared PTY for all viewers |
+| Input | Multiline composer, separate Send, Esc, Tab, arrows, Enter and Ctrl+C |
+| Voice | Microphone → record → Stop → editable transcription; sending is a separate action |
+| Drafts | Separate in-memory draft per session; reconnect never retries input; Android process termination clears drafts |
+| New terminals | Start a host CLI profile; sessions appear under **Other terminals** until arranged on desktop |
+| Files | Read-only tree with text/source and image previews; HTML is shown as source |
+
+Phone navigation does not rearrange or save the desktop layout. Speech uses Android's
+configured recognition service and current language, and may require a network
+connection. Tote does not retain audio files.
+
+The preview does not yet include mobile web-provider tabs, PDF/binary previews,
+file editing or transfers, desktop app launch, creating/rearranging groups,
+agent-status notifications, or background audio recording. There is no iOS client
+in this repository.
+
+See the [Android README](mobile/README.md) for native development, testing,
+simulation tools and physical-device verification limits.
+
+## Keyboard shortcuts
+
+Use **Cmd** on macOS and **Ctrl** on Linux/Windows where shown as Cmd/Ctrl.
+
+| Action | Shortcut |
+|---|---|
+| Focus an existing terminal or open the terminal picker | Ctrl+backtick |
+| New window | Cmd/Ctrl+Shift+N |
+| Open web picker | Cmd/Ctrl+Enter |
+| Focus pane 1–9 | Cmd/Ctrl+1…9 |
+| Focus neighboring pane | Cmd/Ctrl+Alt+arrow |
+| Move pane toward a neighbor | Cmd/Ctrl+Alt+Shift+arrow |
+| Zoom/unzoom focused pane | Cmd/Ctrl+Alt+F, or double-click its title bar |
+| Close focused pane | Cmd/Ctrl+Alt+W |
+| Switch group | Cmd/Ctrl+Alt+1…9 |
+| Move pane to group | Cmd/Ctrl+Alt+Shift+1…9 |
+| Save document | Cmd/Ctrl+S |
+| Toggle document source/preview | Cmd/Ctrl+Alt+E |
+| Newline in terminal prompt | Shift+Enter |
+| Scroll terminal history / jump to ends | Shift+Up/Down / Shift+Home/End |
+| Terminal copy/paste | Cmd+C/V on macOS; Ctrl+Shift+C/V on Linux/Windows |
+
+On Linux/Windows, a focused terminal retains Ctrl+Enter and Ctrl+1…9 for its program.
+Scrollback shortcuts pass through to applications using the alternate terminal
+screen. Ctrl+C remains the terminal interrupt.
+
+## Build from source
+
+### Desktop
+
+Use **Node.js 20+**, npm and Git. A C++ toolchain may be needed for node-pty:
+
+| Platform | Build prerequisites |
+|---|---|
+| Debian / Ubuntu | `sudo apt install build-essential python3` |
+| Fedora | `sudo dnf install gcc-c++ make python3` |
+| macOS | Xcode Command Line Tools: `xcode-select --install` |
+| Windows | Visual Studio Build Tools with C++ support and Python |
+
+```sh
+git clone https://github.com/yusufkaraaslan/tote.git
+cd tote
+npm install
+npm start
+```
+
+On Linux/macOS, `./scripts/install.sh` checks prerequisites, installs dependencies
+and launches Tote. First launch opens the setup wizard: system checks, CLI installs,
+Claude Desktop/MCP connections and workspaces. Reopen it under
+**Settings → About → run setup wizard**. CLI installs can recover from blocked npm
+install scripts and safely repair a root-owned global npm prefix when applicable.
+
+```sh
+npm run dist        # installers for the current platform → dist/
+npm run dist:linux  # AppImage, .deb and .pacman
+npm run dist:pacman # Arch/Manjaro package
+npm run dist:mac    # .dmg; build on macOS
+npm run dist:win    # NSIS .exe with install-directory selection
+npm run install:mac # test, build and install into /Applications on macOS
+```
+
+The macOS install script stages its update separately and can wait for a running
+Tote to quit before reopening the updated app. Older OmniHub configuration, logins
+and Claude Desktop binding are migrated at first launch; quit OmniHub first.
+
+If a terminal fails with `posix_spawnp failed`, rerun `npm install`: postinstall
+restores the executable bit on node-pty's spawn helper and copies xterm assets.
+
+### Android APK
+
+Use **Node.js 22+**, **JDK 21** and **Android SDK platform 36** with the Android build
+tools. Set `JAVA_HOME` and `ANDROID_HOME`, or configure `sdk.dir` in the untracked
+`mobile/android/local.properties`.
+
+From the repository root:
+
+```sh
+npm ci
 npm ci --prefix mobile
 npm run mobile:apk
 ```
 
-Requires JDK 21 and Android SDK 36. The debug APK is written to `mobile/android/app/build/outputs/apk/debug/app-debug.apk`. See the mobile README for connection setup, tests, and current limitations.
+Output: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
+To install on a connected phone with USB debugging enabled:
+
+```sh
+adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Use `npm --prefix mobile run android` to sync assets and open Android Studio.
+Release signing and Play Store packaging are not configured.
+
+### Checks
+
+```sh
+npm test                 # desktop checks plus mobile protocol, model and reading tests
+npm run test:sidebar-ui   # isolated desktop Electron UI with a fake host
+npm run test:mobile-ui    # isolated mobile UI with fake network and speech
+```
+
+For native Android checks, run `./gradlew testDebugUnitTest lintDebug` from
+`mobile/android`. UI checks need a graphical session. Physical-device checks are
+still needed for Android Tailscale networking, speech, keyboard behavior and
+background/foreground recovery.
+
+## Architecture
+
+```text
+config/          JSON defaults for providers, agents, apps, spaces and settings
+src/host/        Electron-free host: workspace routing, sessions, protocol, sharing
+                 server, Tailscale identity and Android discovery
+src/main/        Electron lifecycle, device clients, downloads, app launch, setup,
+                 workspace filesystem backends, SSH connections and PTYs
+src/preload/     Context-isolated window.tote bridge
+src/renderer/    Vanilla JS desktop UI, tiling engine, documents and xterm
+mobile/          Capacitor Android viewer, native networking/discovery and speech
+scripts/         Setup, packaging helpers and regression checks
+```
+
+A **host** owns spaces, files, saved layouts, watchers and PTYs. Each desktop window
+or Android connection is a **viewer** with its own active workspace. Host calls
+resolve that viewer's space at call time; they do not depend on a single global
+active folder. Desktop windows call the host through IPC; remote viewers use the
+same host protocol over WebSocket inside Tailscale.
+
+A headless terminal mirror supplies replay to new viewers, so a session belongs
+to the host rather than a window. Closing a window can leave its sessions available
+while the app remains running (including on macOS); quitting the host stops them.
+Workspace paths go through containment checks, and the desktop renderer has no
+Node.js access. The Android viewer never hosts files or terminals.
+
+Further implementation notes: [AGENTS.md](AGENTS.md),
+[device architecture](docs/superpowers/specs/2026-10-12-devices-design.md) and
+[Android development](mobile/README.md).
+
+## Roadmap
+
+- Global hotkey and tray access.
+- Per-workspace download routing rules.
+- House agent via DeepSeek Harness with workspace tools.
+- Send selections and conversation context between panes.
 
 ## License
 
-MIT
+[MIT](LICENSE)

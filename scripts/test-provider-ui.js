@@ -45,7 +45,7 @@ async function ready(win) {
   await until(() => run(win, "typeof state !== 'undefined' && state.sliceLoaded"), 'viewer ready');
 }
 async function guest(win) {
-  const id = await until(() => run(win, "[...state.tabs.values()].find(t=>t.wv)?.wv.getWebContentsId()"), 'provider guest');
+  const id = await until(() => run(win, "[...state.tabs.values()].find(t=>t.wsId===state.workspaces.active && t.wv)?.wv.getWebContentsId()"), 'active workspace provider guest');
   const wc = webContents.fromId(id);
   await until(() => wc.executeJavaScript("!!document.querySelector('#draft')"), 'provider loaded');
   return wc;
@@ -74,7 +74,9 @@ server.listen(0, '127.0.0.1', async () => {
     await run(a, 'tote.newWindow()');
     const b = await until(() => BrowserWindow.getAllWindows().find(w => w !== a), 'second window');
     await ready(b); await run(b, "switchWorkspace('second')"); await run(b, "openTab('fixture')");
+    assert.equal(await run(b, 'state.workspaces.active'), 'second');
     const second = await guest(b);
+    const secondId = second.id;
     assert.match(await second.executeJavaScript('document.cookie'), /fixtureLogin=retained/);
     // Both windows share a provider session but download into different spaces.
     first.downloadURL(url + '/download/one'); second.downloadURL(url + '/download/two');
@@ -84,6 +86,8 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(fs.readFileSync(one, 'utf8'), 'download from one');
     assert.equal(fs.readFileSync(two, 'utf8'), 'download from two');
     await run(a, "switchWorkspace('second')"); await run(a, "switchWorkspace('global')");
+    assert.equal((await guest(a)).id, first.id, 'switching spaces restores the original provider instance');
+    assert.equal((await guest(b)).id, secondId, 'another window keeps its own active-space provider');
     assert.equal(await first.executeJavaScript("document.querySelector('#draft').value"), 'unsent provider draft');
     assert.deepEqual(errors, []);
     console.log('Provider UI passed: real sandboxed preload, partition cookies, OAuth popup/opener, two-window download routing and preserved provider draft.');

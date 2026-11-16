@@ -9,6 +9,10 @@ if ! command -v node >/dev/null 2>&1; then
   echo "Node.js not found. Install Node 22.12+ from https://nodejs.org and re-run."
   exit 1
 fi
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)'; then
+  echo "Node.js $(node -v) is too old. Install Node 22.12+ from https://nodejs.org and re-run."
+  exit 1
+fi
 echo "node $(node -v)  ✓"
 
 if ! command -v npm >/dev/null 2>&1; then

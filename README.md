@@ -417,7 +417,7 @@ still needed for Android Tailscale networking, speech, keyboard behavior and
 background/foreground recovery.
 
 [GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
-runs the full logic suite on Linux, macOS and Windows with Node 22, the four
+runs the full logic suite on Linux, macOS and Windows with Node 22, the five
 renderer checks under a Linux virtual display, and Android native tests, lint and
 a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
 kept as workflow artifacts for seven days. These checks use isolated fixtures;

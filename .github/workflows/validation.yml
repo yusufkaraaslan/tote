@@ -98,6 +98,8 @@ jobs:
       - name: Build APK and run native checks
         working-directory: mobile/android
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Rehearse production signing with disposable keys
+        run: npm run test:android-signing
       - name: Upload native reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

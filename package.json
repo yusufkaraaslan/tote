@@ -12,7 +12,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
-    "test": "npm run release:check && node --test scripts/test-config.js scripts/test-views.js scripts/test-transport.js scripts/test-diagnostics.js scripts/test-updates.js scripts/test-dependency-health.js scripts/test-background-host.js scripts/test-release-preflight.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
+    "test": "npm run release:check && node --test scripts/test-config.js scripts/test-views.js scripts/test-transport.js scripts/test-diagnostics.js scripts/test-updates.js scripts/test-dependency-health.js scripts/test-background-host.js scripts/test-release-preflight.js scripts/test-android-release-policy.js && node scripts/test-layout.js && node scripts/test-scratch.js && node scripts/test-doc.js && node scripts/test-npmfix.js && node scripts/test-remote.js && node scripts/test-watch.js && node scripts/test-devices.js && node scripts/test-clipboard.js && node scripts/test-sidebar.js && node --test mobile/tests/*.test.mjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
@@ -26,6 +26,7 @@
     "test:mobile-ui": "npm --prefix mobile run test:ui",
     "test:terminal-ui": "electron scripts/test-terminal-ui.js",
     "test:layout-sync-ui": "electron scripts/test-layout-sync-ui.js",
+    "test:android-signing": "node scripts/test-android-release-signing.js",
     "release:preflight": "node scripts/release-preflight.js",
     "release:check": "node scripts/release-version.js",
     "release:version": "node scripts/release-version.js --write",

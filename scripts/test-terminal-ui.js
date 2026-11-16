@@ -21,6 +21,14 @@ const windows = new Map(), errors = [], resizes = [];
 const sessions = new Sessions({launch:()=>1,write(){},resize:(_,cols,rows)=>resizes.push([cols,rows]),kill(){}},
   (id,event,p) => windows.get(id)?.webContents.send(event,p));
 sessions.spawn({sid:'shared',meta:{wsId:'work',title:'Shared terminal'},spec:{cols:100,rows:24}});
+function finish(code) {
+  sessions.forget('shared');
+  for (const win of windows.values()) if (!win.isDestroyed()) win.destroy();
+  try { fs.rmSync(scratch, { recursive: true, force: true }); }
+  catch (error) { console.warn('Could not remove temporary UI fixture:', error.code); }
+  app.exit(code);
+}
+setTimeout(() => { console.error('Terminal UI harness exceeded 60 seconds'); finish(1); }, 60000).unref();
 ipcMain.handle('fixture', (e,name,args) => {
   const id=String(e.sender.id);
   switch(name) {
@@ -97,7 +105,6 @@ app.whenReady().then(async()=>{
     }
     assert.deepEqual(errors,[]);
     console.log('Shared terminal UI passed: different window sizes, passive attach, control transfer, passive resize, background layout, live cursor-addressed output and owner resize.');
-    app.quit();
-  } catch(e) { console.error(e,errors);app.exit(1); }
+    finish(0);
+  } catch(e) { console.error(e,errors);finish(1); }
 });
-app.on('will-quit',()=>{sessions.forget('shared');fs.rmSync(scratch,{recursive:true,force:true});});

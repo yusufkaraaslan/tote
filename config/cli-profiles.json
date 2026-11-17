@@ -17,7 +17,7 @@
     "id": "codex",
     "name": "Codex CLI",
     "command": "codex",
-    "args": [],
+    "args": ["--no-alt-screen"],
     "install": "npm i -g @openai/codex"
   },
   {

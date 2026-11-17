@@ -107,6 +107,58 @@ app.whenReady().then(async()=>{
     const narrow=sessions.get('shared').cols;
     await run(a,'applyTiles(); focusActivePaneContent();');
     await settled();assert.equal(sessions.get('shared').cols,narrow,'background layout/focus restoration must not steal control');
+    const viewportChecks = await run(a, `(async()=>{
+      const style=document.createElement('style');style.textContent='.pane-body::-webkit-scrollbar,.xterm-viewport::-webkit-scrollbar{width:14px;height:14px}';document.head.append(style);
+      const c=createTermPane('Geometry fixture',{sid:'geometry',place:false});
+      Object.assign(c.pane.el.style,{left:'0px',top:'0px',width:'701.5px',height:'502.5px'});
+      await new Promise(r=>setTimeout(r,50));
+      const cases=[];
+      for(let h=500;h<503;h+=.25) {
+        c.pane.el.style.height=h+'px';c.term.resize(60,20);
+        const samples=[];
+        for(let i=0;i<8;i++) {
+          sizeTermElement(c.entry);
+          const body=c.pane.body,el=c.term.element;
+          samples.push({bodyWidth:body.clientWidth,bodyHeight:body.clientHeight,width:el.style.width,height:el.style.height,hbar:body.offsetHeight-body.clientHeight,vbar:body.offsetWidth-body.clientWidth});
+        }
+        if(new Set(samples.map(s=>JSON.stringify(s))).size>1 || samples.some(s=>s.hbar || s.vbar))cases.push({h,samples});
+      }
+      await c.entry.stream.write({data:Array.from({length:1600},(_,i)=>'HISTORY_'+i+'\\r\\n').join(''),cols:60,rows:20});
+      await new Promise(r=>setTimeout(r,50));
+      sizeTermElement(c.entry);
+      const retained=c.term.buffer.active.getLine(0).translateToString(true);
+      const viewport=c.term.element.querySelector('.xterm-viewport');
+      const target=viewport.scrollTop/2;
+      viewport.scrollTop=target;
+      sizeTermElement(c.entry); // An output measurement races the native scroll event.
+      await new Promise(r=>setTimeout(r,50));
+      const scrolled=viewport.scrollTop;
+      const position=c.term.buffer.active.viewportY;
+      await c.entry.stream.write({data:'LIVE_UPDATE'});
+      await new Promise(r=>setTimeout(r,50));
+      const afterOutput=c.term.buffer.active.viewportY;
+      c.pane.el.classList.add('hidden');
+      await c.entry.stream.write({data:'\\r\\nHIDDEN_UPDATE'});
+      await new Promise(r=>setTimeout(r,50));
+      c.pane.el.classList.remove('hidden');
+      sizeTermElement(c.entry);repairViewport(c.term);
+      await new Promise(r=>setTimeout(r,50));
+      const afterShow=c.term.buffer.active.viewportY;
+      await c.entry.stream.write({data:'',cols:180,rows:60});
+      sizeTermElement(c.entry);
+      const overflow={width:c.pane.body.scrollWidth>c.pane.body.clientWidth,
+        height:c.pane.body.scrollHeight>c.pane.body.clientHeight,cols:c.term.cols,rows:c.term.rows};
+      await new Promise(r=>setTimeout(r,50));
+      c.entry.stream.dispose();c.term.dispose();state.terms.delete(c.sid);destroyPaneEl('term:'+c.sid);style.remove();
+      return {cases,retained,target,scrolled,position,afterOutput,afterShow,overflow};
+    })()`);
+    assert.deepEqual(viewportChecks.cases,[],'fractional pane sizes must not alternate scrollbars');
+    assert.equal(viewportChecks.retained,'HISTORY_0','desktop retains the host scrollback beyond 1000 lines');
+    assert(viewportChecks.target>0 && viewportChecks.position>0,'fixture has scrollable history');
+    assert(Math.abs(viewportChecks.scrolled-viewportChecks.target)<2,'output measurement must not undo a native scroll');
+    assert.equal(viewportChecks.afterOutput,viewportChecks.position,'redraw preserves older-message position');
+    assert.equal(viewportChecks.afterShow,viewportChecks.position,'hidden output and reveal preserve older-message position');
+    assert.deepEqual(viewportChecks.overflow,{width:true,height:true,cols:180,rows:60},'passive viewers scroll an oversized host grid without reflow');
     sessions.onData('shared','\x1b[?1049h\x1b[2J\x1b[H'+ 'x'.repeat(narrow+10)+'\x1b[3;5H\x1b[31mRED');
     await settled();await check();
     const content=w=>run(w,"Array.from({length:state.terms.get('shared').term.rows},(_,i)=>state.terms.get('shared').term.buffer.active.getLine(i).translateToString(true))");
@@ -122,7 +174,7 @@ app.whenReady().then(async()=>{
       assert(text.indexOf('FINAL_SECOND') < text.indexOf('process exited with code 0'),'exit marker follows queued output');
     }
     assert.deepEqual(errors,[]);
-    console.log('Shared terminal UI passed: different window sizes, passive attach, control transfer, passive resize, background layout, live cursor-addressed output and owner resize.');
+    console.log('Shared terminal UI passed: shared sizing, fractional pane stability, scrollback retention, native scrolling during redraw, hidden-pane recovery and oversized passive grids.');
     finish(0);
   } catch(e) { console.error(e,errors);finish(1); }
 });

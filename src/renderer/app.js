@@ -1971,11 +1971,21 @@ function sizeTermElement(t) {
   const viewport = t.term.element.querySelector('.xterm-viewport');
   const scrollbar = viewport ? viewport.offsetWidth - viewport.clientWidth : 0;
   const px = (name) => parseFloat(style[name]) || 0;
+  const grid = screen.getBoundingClientRect();
   t.pane.body.style.overflow = 'auto';
+  // Let CSS fill the pane. Rounded client sizes can exceed a fractional pane
+  // by half a pixel, adding scrollbars; the next measurement then removes them.
   Object.assign(t.term.element.style, { right: 'auto', bottom: 'auto',
-    width: Math.max(t.pane.body.clientWidth, screen.offsetWidth + px('paddingLeft') + px('paddingRight') + scrollbar) + 'px',
-    height: Math.max(t.pane.body.clientHeight, screen.offsetHeight + px('paddingTop') + px('paddingBottom')) + 'px' });
-  repairViewport(t.term);
+    minWidth: '100%', minHeight: '100%',
+    width: (grid.width + px('paddingLeft') + px('paddingRight') + scrollbar) + 'px',
+    height: (grid.height + px('paddingTop') + px('paddingBottom')) + 'px' });
+  const bounds = t.term.element.getBoundingClientRect();
+  if (bounds.width !== t.viewportWidth || bounds.height !== t.viewportHeight) {
+    t.viewportWidth = bounds.width; t.viewportHeight = bounds.height;
+    // A forced repair also restores xterm's last parsed scroll position. Do
+    // this only on geometry changes, not on output racing a native scroll.
+    repairViewport(t.term);
+  }
 }
 
 function pushTermSize(t, { claim = false } = {}) {
@@ -2135,6 +2145,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
   const term = new Terminal({
     fontFamily: '"SF Mono", Menlo, Consolas, monospace',
     fontSize: 13,
+    scrollback: 5000, // Match the host mirror and Android viewer.
     cursorBlink: true,
     theme: XTERM_THEME,
   });

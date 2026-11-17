@@ -16,7 +16,7 @@ const { Terminal } = require('@xterm/headless');
 const { SerializeAddon } = require('@xterm/addon-serialize');
 
 const SID = /^[A-Za-z0-9_-]{1,64}$/;
-const SCROLLBACK = 5000;     // matches the viewer's xterm default
+const SCROLLBACK = 5000;     // matches desktop and Android viewer options
 
 class Sessions {
   // deliver(viewerId, event, payload) -- the host routes it to that viewer.

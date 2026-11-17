@@ -90,6 +90,11 @@ what is included in the downloadable version.
   with shell-managed environments such as nvm, fnm or asdf.
 - **Shift+Enter** inserts a newline in an agent prompt. Shift+arrows scroll terminal
   history; Alt+Up/Down reach agents that use them for prompt navigation.
+- Desktop and mobile terminals retain up to **5,000 scrollback lines**. The default
+  Codex profile uses `--no-alt-screen` so older messages remain in terminal history.
+  Existing profiles are preserved: add `"--no-alt-screen"` to your Codex profile's
+  `args` in `cli-profiles.json`, then start or resume Codex in a new terminal.
+  This cannot recover lines already discarded by an existing terminal session.
 - Drop a file onto a terminal to insert its shell-escaped path for you to review and
   send. Terminal context menus support Copy/Paste; plain Ctrl+C still interrupts.
 - Add providers, CLI profiles and native apps in Settings. Defaults live in

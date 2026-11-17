@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-11-17
 
 - Releases: align desktop and Android at 0.5.0 with validated metadata, preview packaging and real packaged-PTY checks, production signing configuration, checksums, and draft-only tagged releases.
-- Updates: explicit desktop/Android release checks, protocol/version guidance, and manual-update deferral for active host terminals and unsaved phone drafts.
+- Updates: verified, explicit Linux AppImage and Android download/install flows with checksum/signing checks, draft protection and interrupted-download recovery; package-managed installs retain manual guidance.
+- Background host: keep real PTY sessions alive across desktop quit/crash/replacement; upgrade the host explicitly after finishing agents.
+- Terminals: fix fractional-size scrollbar flicker and scroll resets during redraw, retain 5,000 history lines, launch new Codex profiles in scrollback-preserving mode, and prevent inherited NO_COLOR from suppressing agent colors.
 
 - Diagnostics: desktop Settings and Android show connection/host versions, Tailscale and sharing status, terminal grid/viewport/sizing control, and recent categorized errors. Review and save a bounded JSON report without terminal contents, private paths, device identifiers, tokens or cookies; disconnected hosts use explicitly cached snapshots.
 

@@ -4,7 +4,7 @@ A client-only Android app for Tote's existing device host. The phone never share
 
 ## Install and connect
 
-1. Download the [v0.4.0 APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk), or build the debug APK below and transfer `android/app/build/outputs/apk/debug/app-debug.apk` to your phone and open it. Android may ask you to allow installation from the app opening the APK.
+1. Download the [v0.5.0 Android 13+ APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-android.apk), or build the debug APK below and transfer `android/app/build/outputs/apk/debug/app-debug.apk` to your phone and open it. Android may ask you to allow installation from the app opening the APK.
 2. Install and connect Tailscale on the phone using the **same owner account** as the computer.
 3. In desktop Tote, enable **Share device** under device settings. Keep Tote running and the computer awake.
 4. Open Tote on the phone and choose your computer. Desktop Tote sends discovery announcements directly to its owner's online Android devices through Tailscale. **No same-network requirement, address entry, QR pairing, API key, or second login.** A wired desktop and a phone on mobile data work through the same path. Both apps need this updated discovery implementation. A first discovery can take a few seconds; verified computers are remembered. Address entry remains an optional troubleshooting fallback under **Connect by address instead**.
@@ -57,9 +57,9 @@ Not yet included: mobile provider web sessions, PDF/binary previews, file editin
 
 ## Updates
 
-Use **Updates** on the Computers screen or in workspace tools, then **Check for updates**. This explicitly contacts GitHub over native HTTPS; normal device sockets remain restricted to Tailscale. Tote shows published stable releases only and opens the release page after you save or clear phone drafts. The link opens the exact version checked. **Review unsent drafts** lets you copy and explicitly discard drafts, including those from removed computers or sessions. It does not install an APK itself. Desktop/Android share the version in `release.json`; protocol-compatible older hosts remain usable with feature fallbacks and a version notice.
+Use **Updates** on the Computers screen or in workspace tools, then **Check for updates**. This explicitly contacts GitHub over native HTTPS; normal device sockets remain restricted to Tailscale. Tote shows published stable releases only, verifies downloads and hands installation to Android after you save or clear phone drafts. Older clients use the release-page path. **Review unsent drafts** lets you copy and explicitly discard drafts, including those from removed computers or sessions. Android asks for confirmation before installing; see [In-app updates](#in-app-updates). Desktop/Android share the version in `release.json`; protocol-compatible older hosts remain usable with feature fallbacks and a version notice.
 
-Preview APKs use debug signing. Production APKs use the pinned dedicated identity and approved proof of rotation from 0.4.0 on Android 13+. An unrelated key cannot upgrade an installed app. The API 33/35 emulator migrations preserve app data; physical phone verification remains pending. See [identity and key recovery](signing/README.md) and [release setup](../docs/releases.md).
+Preview APKs use debug signing. Production APKs use the pinned dedicated identity and approved proof of rotation from 0.4.0 on Android 13+. An unrelated key cannot upgrade an installed app. The API 33/35 emulator migrations preserve app data. The maintainer reported the physical Android app working on 2026-11-17; detailed device-specific checks remain recorded separately in [release readiness](../docs/release-readiness.md). See [identity and key recovery](signing/README.md) and [release setup](../docs/releases.md).
 
 ## Diagnostics
 

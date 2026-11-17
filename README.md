@@ -20,20 +20,20 @@ Tote organizes their windows and files while each provider keeps its own convers
 
 ## Download
 
-[**v0.4.0 release and checksums**](https://github.com/yusufkaraaslan/tote/releases/tag/v0.4.0) ·
-[Release notes](docs/releases/v0.4.0.md) · [Changelog](CHANGELOG.md)
+[**v0.5.0 release and checksums**](https://github.com/yusufkaraaslan/tote/releases/tag/v0.5.0) ·
+[Release notes](docs/releases/v0.5.0.md) · [Changelog](CHANGELOG.md)
 
 | Platform | Download |
 |---|---|
-| Linux x64 — portable | [AppImage](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/Tote-0.4.0.AppImage) |
-| Debian / Ubuntu x64 | [.deb package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote_0.4.0_amd64.deb) |
-| Arch Linux x64 | [.pacman package](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-0.4.0.pacman) |
-| Android | [APK preview](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk) |
+| Linux x64 — portable | [AppImage](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-linux-x86_64.AppImage) |
+| Debian / Ubuntu x64 | [.deb package](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-linux-amd64.deb) |
+| Arch Linux x64 | [.pacman package](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-linux-x64.pacman) |
+| Android | [Android 13+ APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-android.apk) |
 | macOS / Windows | [Build from source](#build-from-source) |
 
 Mark the AppImage executable before opening it. On Android, allow installation from
-the app opening the APK when prompted. The APK is a debug-signed preview, not a Play
-Store release. v0.4.0 supplies Linux and Android binaries; macOS and Windows have
+the app opening the APK when prompted. The APK uses Tote's production signing
+identity and is distributed directly, outside the Play Store. v0.5.0 supplies Linux and Android binaries; macOS and Windows have
 source build targets. This README describes the repository; release notes identify
 what is included in the downloadable version.
 
@@ -229,7 +229,7 @@ may be unavailable while viewing another device.
 
 ### 3. Connect Android
 
-1. Install the [Android APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.4.0/tote-android-0.4.0.apk)
+1. Install the [Android APK](https://github.com/yusufkaraaslan/tote/releases/download/v0.5.0/Tote-0.5.0-android.apk)
    and connect the Tailscale Android app with the same owner account.
 2. With sharing enabled on the computer, open Tote on the phone and wait a few
    seconds for discovery, then choose the computer.
@@ -509,7 +509,7 @@ See [Android diagnostics and physical-device checks](mobile/README.md#diagnostic
 
 Desktop **Settings → About → Check for updates** and Android **Updates** check published stable GitHub releases on demand. Linux AppImage users can **Download update → Install and reopen**; Android users can download a verified production APK and confirm installation in Android. Downloads show progress, can be canceled, and are checked again before installation. Desktop blocks installation while documents or layouts are unsaved in any window/device; Android blocks it while phone drafts remain. Background hosts and agents keep running. Upgrade the host separately after finishing its sessions. Linux `.deb`/pacman installations use their package manager; macOS/Windows retain manual installation. The first release containing this updater still needs a manual installation; later compatible releases use the in-app flow. See [update installation and recovery](docs/self-updates.md).
 
-Source now targets **0.5.0** on both desktop and Android; the download links above remain the last published release until a new build is published. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). [0.5.0 candidate notes](docs/releases/v0.5.0.md) describe the changes and verification still needed before publication.
+Desktop and Android share version **0.5.0**. Version checks, preview packaging, signed-release configuration, checksums, and the draft-release workflow are documented in [Releases and updates](docs/releases.md). See the [0.5.0 release notes](docs/releases/v0.5.0.md) for changes, upgrade instructions and verification limits.
 
 Dependency proposals, advisory monitoring, Electron support checks and the upgrade validation checklist are documented in [Dependency maintenance](docs/dependencies.md). Run `npm run dependencies:report` to inspect current lockfile advisories and runtime support; existing findings remain visible until fixed.
 

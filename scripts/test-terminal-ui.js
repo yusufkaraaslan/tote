@@ -159,10 +159,16 @@ app.whenReady().then(async()=>{
     assert.equal(viewportChecks.afterOutput,viewportChecks.position,'redraw preserves older-message position');
     assert.equal(viewportChecks.afterShow,viewportChecks.position,'hidden output and reveal preserve older-message position');
     assert.deepEqual(viewportChecks.overflow,{width:true,height:true,cols:180,rows:60},'passive viewers scroll an oversized host grid without reflow');
-    sessions.onData('shared','\x1b[?1049h\x1b[2J\x1b[H'+ 'x'.repeat(narrow+10)+'\x1b[3;5H\x1b[31mRED');
+    sessions.onData('shared','\x1b[?1049h\x1b[2J\x1b[H'+ 'x'.repeat(narrow+10)+'\x1b[3;5H\x1b[31mRED\x1b[4;5H\x1b[38;2;12;180;90mRGB\x1b[0m');
     await settled();await check();
     const content=w=>run(w,"Array.from({length:state.terms.get('shared').term.rows},(_,i)=>state.terms.get('shared').term.buffer.active.getLine(i).translateToString(true))");
     assert.deepEqual(await content(a),await content(b));
+    const colors=w=>run(w,"(()=>{const buf=state.terms.get('shared').term.buffer.active;return [buf.getLine(2).getCell(4).getFgColor(),buf.getLine(3).getCell(4).getFgColor()];})()");
+    for (const w of windows.values()) assert.deepEqual(await colors(w),[1,0x0cb45a],'live ANSI and truecolor survive shared output');
+    sessions.detach('shared',String(a.webContents.id));
+    sessions.attach('shared',String(a.webContents.id));
+    await settled();await check();
+    assert.deepEqual(await colors(a),[1,0x0cb45a],'mirror replay preserves ANSI and truecolor');
     b.setSize(900,800);await settled();await check();assert(sessions.get('shared').cols>narrow);
     sessions.onData('shared','\x1b[?1049l\r\nFINAL_FIRST');
     sessions.onData('shared','\r\nFINAL_SECOND');

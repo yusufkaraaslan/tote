@@ -72,12 +72,17 @@ class PtyManager {
     if (!pty) {
       throw new Error('node-pty failed to load: ' + ptyLoadError);
     }
+    // An agent/automation launcher can disable colors for its own captured
+    // output. Tote's PTYs are new interactive terminals, so do not inherit that
+    // suppression. A user's login-shell config can still set NO_COLOR itself.
+    const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    delete env.NO_COLOR;
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
       cwd,
-      env: process.env,
+      env,
     });
     const id = this.nextId++;
     this.sessions.set(id, proc);

@@ -95,6 +95,10 @@ what is included in the downloadable version.
   Existing profiles are preserved: add `"--no-alt-screen"` to your Codex profile's
   `args` in `cli-profiles.json`, then start or resume Codex in a new terminal.
   This cannot recover lines already discarded by an existing terminal session.
+- PTYs advertise truecolor and clear a launcher's inherited `NO_COLOR` setting.
+  Shell startup files can still disable colors explicitly. Existing agents keep
+  their original environment; updating the background host takes effect for new
+  terminals after the old host is stopped when its sessions are finished.
 - Drop a file onto a terminal to insert its shell-escaped path for you to review and
   send. Terminal context menus support Copy/Paste; plain Ctrl+C still interrupts.
 - Add providers, CLI profiles and native apps in Settings. Defaults live in

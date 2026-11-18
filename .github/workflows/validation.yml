@@ -33,6 +33,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Repeat macOS real watcher verification
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for attempt in {1..10}; do
+            echo "Watcher verification $attempt"
+            node scripts/test-watch.js || exit 1
+          done
       - run: npm test
 
   renderer:

@@ -269,7 +269,10 @@ describe('watch', () => {
         new Promise((r) => h.wm.watchers.get(id).watcher.on('ready', r))));
       const created = path.join(h.root, 'two', 'new.txt');
       let observed = false;
+      const events = [], errors = [];
+      h.wm.watchers.get('b').watcher.on('error', error => errors.push(error.code || error.message));
       h.wm.watchers.get('b').watcher.on('all', (event, file) => {
+        events.push({ event, file: path.relative(h.root, file) });
         if (event === 'add' && path.resolve(file) === created) { observed = true; seen.length = 0; }
       });
       fs.writeFileSync(created, 'x');
@@ -278,7 +281,7 @@ describe('watch', () => {
       // from either watcher. Exact callback routing is tested above.
       for (let i = 0; i < 100 && !(observed && seen.includes('b')); i++)
         await new Promise((r) => setTimeout(r, 50));
-      assert.ok(observed, 'the new file was not observed');
+      assert.ok(observed, 'the new file was not observed: ' + JSON.stringify({events, errors, watched: h.wm.watchers.get('b').watcher.getWatched()}));
       assert.ok(seen.includes('b'), 'space b did not refresh');
       assert.ok(seen.every(id => id === 'a' || id === 'b'));
     } finally { await h.wm.watchSpaces([], () => {}); h.cleanup(); }

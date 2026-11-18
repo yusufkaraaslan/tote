@@ -152,6 +152,47 @@ describe('watchPlan', () => {
 describe('watch', () => {
   const bound = (w) => Object.values(w.getWatched()).reduce((a, b) => a + b.length, 0);
 
+  test('real watcher prunes Unity caches but retains ordinary source directories', async () => {
+    const h = harness([
+      'game/Assets/game.cs', 'game/ProjectSettings/version.txt',
+      'game/Library/cache/deep.dat', 'game/Temp/cache.tmp',
+      'docs/Library/keep.txt', 'node_modules/dep/index.js',
+    ]);
+    let entry;
+    try {
+      entry = h.wm.watchLocal(h.wm.active(), 100, () => {});
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('watcher readiness timed out')), 5000);
+        entry.watcher.once('ready', () => { clearTimeout(timer); resolve(); });
+        entry.watcher.once('error', error => { clearTimeout(timer); reject(error); });
+      });
+      const watched = Object.keys(entry.watcher.getWatched()).map(p => path.relative(h.root, p).split(path.sep).join('/'));
+      assert.ok(watched.includes('docs/Library'), 'ordinary Library source must be watched');
+      assert.ok(watched.includes('game/Assets'), 'Unity source must be watched');
+      assert.ok(!watched.some(p => /^(game\/(Library|Temp)|node_modules)(\/|$)/.test(p)), 'generated caches must not bind watchers');
+    } finally { if (entry) await entry.close(); h.cleanup(); }
+  });
+
+  test('real watcher honors capped depth on a wide tree', async () => {
+    const files = [];
+    for (let i = 0; i < 20; i++) for (let j = 0; j < 10; j++) files.push(`d${i}/e${j}/deep/file.txt`);
+    const h = harness(files);
+    let entry;
+    try {
+      assert.equal(h.wm.watchPlan(h.root, 5, 30).depth, 1);
+      entry = h.wm.watchLocal(h.wm.active(), 30, () => {});
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('watcher readiness timed out')), 5000);
+        entry.watcher.once('ready', () => { clearTimeout(timer); resolve(); });
+        entry.watcher.once('error', error => { clearTimeout(timer); reject(error); });
+      });
+      // Boundary directories are tracked with empty child lists, without handles.
+      const directories = Object.entries(entry.watcher.getWatched()).filter(([, children]) => children.length).map(([dir]) => dir);
+      assert.ok(directories.length <= 22, `depth cap bound ${directories.length} directories`);
+      assert.ok(!directories.some(p => path.relative(h.root, p).split(path.sep).includes('deep')));
+    } finally { if (entry) await entry.close(); h.cleanup(); }
+  });
+
   test('binds the space even when its own folder is named like a cache', async () => {
     // chokidar hands the root itself to `ignored`, so without the p !== root
     // exemption a space living in a folder called `dist` or `out` watches

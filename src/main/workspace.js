@@ -59,14 +59,11 @@ function skipper() {
 
 // Ceiling on how many paths the tree watcher may bind.
 //
-// chokidar 4 dropped its fsevents dependency, so on every platform it falls
-// back to fs.watch and opens ONE DESCRIPTOR PER WATCHED PATH. A workspace with
-// a big generated cache (a Godot `.godot`, a Unity `Library/`, a Rust
-// `target/`) therefore drags the main process up to its RLIMIT_NOFILE, and the
-// first thing that fails afterwards is pty allocation: node-pty hands back a
-// child with no controlling tty, so Claude Code and every other TUI agent exits
-// immediately with code 1 and prints nothing. Terminals, not the file tree, are
-// what breaks -- which makes it a genuinely confusing failure to chase.
+// Chokidar 6 shares per-directory handles and uses native recursive watching
+// when depth is unlimited. Tote keeps finite depth and a conservative budget:
+// generated directory trees can still exhaust host resources and break PTYs.
+// The former per-path watcher exhausted descriptors on a Unity project; fewer
+// handles are not a reason to remove pruning, depth caps or awaited close.
 //
 // IGNORE alone cannot be trusted to hold the line (the next project type brings
 // a cache dir nobody listed), so the depth is chosen to fit this budget.

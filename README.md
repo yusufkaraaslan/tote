@@ -360,7 +360,7 @@ screen. Ctrl+C remains the terminal interrupt.
 
 ### Desktop
 
-Use **Node.js 22.12+**, npm and Git. Desktop builds use Electron 45 and require macOS 13+ or a supported 64-bit Windows/Linux system. A C++ toolchain may be needed for node-pty:
+Use **Node.js 22.22+**, npm and Git. Desktop builds use Electron 45 and require macOS 13+ or a supported 64-bit Windows/Linux system. A C++ toolchain may be needed for node-pty:
 
 | Platform | Build prerequisites |
 |---|---|

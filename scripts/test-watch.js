@@ -152,6 +152,47 @@ describe('watchPlan', () => {
 describe('watch', () => {
   const bound = (w) => Object.values(w.getWatched()).reduce((a, b) => a + b.length, 0);
 
+  test('real watcher prunes Unity caches but retains ordinary source directories', async () => {
+    const h = harness([
+      'game/Assets/game.cs', 'game/ProjectSettings/version.txt',
+      'game/Library/cache/deep.dat', 'game/Temp/cache.tmp',
+      'docs/Library/keep.txt', 'node_modules/dep/index.js',
+    ]);
+    let entry;
+    try {
+      entry = h.wm.watchLocal(h.wm.active(), 100, () => {});
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('watcher readiness timed out')), 5000);
+        entry.watcher.once('ready', () => { clearTimeout(timer); resolve(); });
+        entry.watcher.once('error', error => { clearTimeout(timer); reject(error); });
+      });
+      const watched = Object.keys(entry.watcher.getWatched()).map(p => path.relative(h.root, p).split(path.sep).join('/'));
+      assert.ok(watched.includes('docs/Library'), 'ordinary Library source must be watched');
+      assert.ok(watched.includes('game/Assets'), 'Unity source must be watched');
+      assert.ok(!watched.some(p => /^(game\/(Library|Temp)|node_modules)(\/|$)/.test(p)), 'generated caches must not bind watchers');
+    } finally { if (entry) await entry.close(); h.cleanup(); }
+  });
+
+  test('real watcher honors capped depth on a wide tree', async () => {
+    const files = [];
+    for (let i = 0; i < 20; i++) for (let j = 0; j < 10; j++) files.push(`d${i}/e${j}/deep/file.txt`);
+    const h = harness(files);
+    let entry;
+    try {
+      assert.equal(h.wm.watchPlan(h.root, 5, 30).depth, 1);
+      entry = h.wm.watchLocal(h.wm.active(), 30, () => {});
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('watcher readiness timed out')), 5000);
+        entry.watcher.once('ready', () => { clearTimeout(timer); resolve(); });
+        entry.watcher.once('error', error => { clearTimeout(timer); reject(error); });
+      });
+      // Boundary directories are tracked with empty child lists, without handles.
+      const directories = Object.entries(entry.watcher.getWatched()).filter(([, children]) => children.length).map(([dir]) => dir);
+      assert.ok(directories.length <= 22, `depth cap bound ${directories.length} directories`);
+      assert.ok(!directories.some(p => path.relative(h.root, p).split(path.sep).includes('deep')));
+    } finally { if (entry) await entry.close(); h.cleanup(); }
+  });
+
   test('binds the space even when its own folder is named like a cache', async () => {
     // chokidar hands the root itself to `ignored`, so without the p !== root
     // exemption a space living in a folder called `dist` or `out` watches
@@ -226,9 +267,35 @@ describe('watch', () => {
       assert.deepStrictEqual([...h.wm.watchers.keys()].sort(), ['a', 'b']);
       await Promise.all(['a', 'b'].map((id) =>
         new Promise((r) => h.wm.watchers.get(id).watcher.on('ready', r))));
+      // Node exposes no native macOS fs.watch readiness signal (#52601).
+      // Chokidar's ready only completes its initial scan. Establish actual
+      // event delivery using existing fixture files before the one-shot add
+      // below; never retry the operation whose behavior this test asserts.
+      await Promise.all([['a', 'one/x.txt'], ['b', 'two/y.txt']].map(([id, file]) => {
+        const watcher = h.wm.watchers.get(id).watcher, target = path.join(h.root, file);
+        return new Promise((resolve, reject) => {
+          let attempts = 0;
+          const finish = error => {
+            clearInterval(pulse); clearTimeout(timeout);
+            watcher.off('all', event); watcher.off('error', failed);
+            error ? reject(error) : resolve();
+          };
+          const event = (kind, file) => { if (kind === 'change' && path.resolve(file) === target) finish(); };
+          const failed = error => finish(error);
+          const pulse = setInterval(() => {
+            try { fs.writeFileSync(target, 'ready-' + ++attempts); } catch (error) { finish(error); }
+          }, 50);
+          const timeout = setTimeout(() => finish(new Error('native watcher did not become active for ' + id)), 5000);
+          watcher.on('all', event); watcher.on('error', failed);
+        });
+      }));
+      seen.length = 0;
       const created = path.join(h.root, 'two', 'new.txt');
       let observed = false;
+      const events = [], errors = [];
+      h.wm.watchers.get('b').watcher.on('error', error => errors.push(error.code || error.message));
       h.wm.watchers.get('b').watcher.on('all', (event, file) => {
+        events.push({ event, file: path.relative(h.root, file) });
         if (event === 'add' && path.resolve(file) === created) { observed = true; seen.length = 0; }
       });
       fs.writeFileSync(created, 'x');
@@ -237,7 +304,7 @@ describe('watch', () => {
       // from either watcher. Exact callback routing is tested above.
       for (let i = 0; i < 100 && !(observed && seen.includes('b')); i++)
         await new Promise((r) => setTimeout(r, 50));
-      assert.ok(observed, 'the new file was not observed');
+      assert.ok(observed, 'the new file was not observed: ' + JSON.stringify({events, errors, watched: h.wm.watchers.get('b').watcher.getWatched()}));
       assert.ok(seen.includes('b'), 'space b did not refresh');
       assert.ok(seen.every(id => id === 'a' || id === 'b'));
     } finally { await h.wm.watchSpaces([], () => {}); h.cleanup(); }

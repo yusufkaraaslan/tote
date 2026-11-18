@@ -87,7 +87,7 @@
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/headless": "^5.5.0",
     "@xterm/xterm": "^5.5.0",
-    "chokidar": "^4.0.1",
+    "chokidar": "^6.0.0",
     "node-pty": "^1.0.0",
     "ws": "^8.23.0"
   },
@@ -99,7 +99,7 @@
     "node-pty@1.1.0": true
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.0"
   },
   "desktopName": "tote.desktop"
 }

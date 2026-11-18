@@ -754,9 +754,26 @@ function ensureWebview(tab, provider, container) {
     input.setAttribute('aria-label', 'Local service startup URL');
     const connect = document.createElement('button');
     connect.type = 'submit'; connect.textContent = 'Connect URL';
+    const paste = document.createElement('button');
+    paste.className = 'local-provider-paste';
+    paste.type = 'button'; paste.textContent = 'Paste URL';
+    paste.onclick = async () => {
+      const previous = input.value;
+      try {
+        const text = await tote.readClipboardText();
+        if (!controls.isConnected || !controls.getClientRects().length || input.value !== previous) return;
+        input.value = text.trim();
+        status.textContent = input.value ? 'Startup URL pasted. Select Connect URL to sign in.' : 'The clipboard is empty. Copy the startup URL from the service first.';
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      } catch {
+        if (controls.isConnected) status.textContent = 'Could not read the clipboard. Paste into the field with your keyboard instead.';
+      }
+    };
     const retry = document.createElement('button');
+    retry.className = 'local-provider-retry';
     retry.type = 'button'; retry.textContent = 'Retry startup';
-    controls.append(status, input, connect, retry);
+    controls.append(status, input, paste, connect, retry);
     body.appendChild(controls);
     let generation = 0;
     controls.onsubmit = e => {
@@ -2525,7 +2542,12 @@ function paneShell(key, titleText, dotColor) {
   p = { el, head, body, title, dot, ctrls, idx, keyHint, key };
   panes.set(key, p);
 
-  el.addEventListener('mousedown', () => { if (el.dataset.leaf) focusPane(el.dataset.leaf); }, true);
+  el.addEventListener('mousedown', e => {
+    if (!el.dataset.leaf) return;
+    // The local service form is viewer UI beside a guest webview. Let the
+    // browser focus/select its controls without first activating the guest.
+    focusPane(el.dataset.leaf, { focusContent: !e.target.closest('.local-provider-controls') });
+  }, true);
   x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
   head.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;          // right button opens paneMenu instead
@@ -2660,14 +2682,14 @@ function renderDividers(S, host) {
 
 /* ----- interaction ----- */
 
-function focusPane(leafId) {
+function focusPane(leafId, { focusContent = true } = {}) {
   const S = tiles();
   if (!leafId) return;
   const lf = T.findLeaf(S.tree, leafId);
-  if (S.focus === leafId) { focusPaneContent(lf); return; }   // already ours: just make the keyboard agree
+  if (S.focus === leafId) { if (focusContent) focusPaneContent(lf); return; }
   S.focus = leafId;
   for (const p of panes.values()) p.el.classList.toggle('focused', p.el.dataset.leaf === leafId);
-  focusPaneContent(lf);
+  if (focusContent) focusPaneContent(lf);
   if (lf && lf.kind === 'doc') noteDocFocus(leafId);
   saveViews();
 }
@@ -3060,6 +3082,10 @@ function focusPaneContent(lf, { claim = true } = {}) {
   } else if (lf.kind === 'web') {
     const en = state.tabs.get(lf.ref);
     if (!en || !en.wv) return;
+    // Copying a startup URL elsewhere and returning to Tote must preserve
+    // the form's focus/caret rather than redirecting paste into the guest.
+    const controls = document.activeElement?.closest('.local-provider-controls');
+    if (controls && controls.parentElement === en.wv.parentElement) return;
     // When the host element already IS the active element, focus() is a DOM
     // no-op and the guest stays unfocused; blurring first makes it real.
     if (document.activeElement === en.wv) en.wv.blur();

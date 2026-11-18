@@ -16,7 +16,7 @@
     "@capacitor/android": "8.6.2",
     "@capacitor/app": "^8.0.0",
     "@capacitor/core": "8.6.2",
-    "@xterm/xterm": "5.5.0"
+    "@xterm/xterm": "6.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.2",

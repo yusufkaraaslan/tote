@@ -77,13 +77,20 @@ test('a real PTY survives its starting process exiting and reconnect preserves s
   try {
     const script = `const {LocalHost}=require(${JSON.stringify(path.join(ROOT, 'src/main/localHost'))});
       (async()=>{const h=new LocalHost(${JSON.stringify(dir)}); await h.start();
-      await h.addViewer({id:'first',send(){}}); await h.call('pty:spawn','first',[{sid:'survivor',profileId:'probe',cols:91,rows:27}]);
-      await h.call('pty:write','first',[{id:'survivor',data:${JSON.stringify(process.platform === 'win32' ? `$env:TOTE_MARKER='${marker}'\r` : `TOTE_MARKER='${marker}'\r`)}}]);
+      let received='';
+      await h.addViewer({id:'first',send(event,payload){if(event==='pty:data'){received+=payload.data;h.ack('first',payload.delivery);}}});
+      await h.call('pty:spawn','first',[{sid:'survivor',profileId:'probe',cols:91,rows:27}]);
+      await h.call('pty:write','first',[{id:'survivor',data:${JSON.stringify(process.platform === 'win32' ? `$env:TOTE_MARKER='${marker}';[Console]::WriteLine('BEFORE-'+$env:TOTE_MARKER)\r` : `TOTE_MARKER='${marker}'; printf '\\nBEFORE-%s\\n' "$TOTE_MARKER"\r`)}}]);
+      const deadline=Date.now()+15000;
+      while(!received.includes(${JSON.stringify('BEFORE-' + marker)})&&Date.now()<deadline)await new Promise(r=>setTimeout(r,25));
+      if(!received.includes(${JSON.stringify('BEFORE-' + marker)}))throw Error('Shell did not establish fixture state');
       process.stdout.write('started\\n'); setInterval(()=>{},1000);})().catch(e=>{console.error(e);process.exit(1);});`;
     child = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '', errors = '';
     child.stdout.on('data', b => { output += b; }); child.stderr.on('data', b => { errors += b; });
-    await until(() => { if (child.exitCode !== null) throw Error(errors); return output.includes('started'); }, 'starting process');
+    // Accepted input is not proof that the shell has executed it. Establish the
+    // state first (including cold PowerShell startup) before killing its owner.
+    await until(() => { if (child.exitCode !== null) throw Error(errors); return output.includes('started'); }, 'starting process', 20000);
     const status = await host.admin('local:status');
     child.kill('SIGKILL'); await new Promise(resolve => child.once('close', resolve)); child = null;
     assert.equal((await host.start()).pid, status.pid, 'reopen attaches to the same host');

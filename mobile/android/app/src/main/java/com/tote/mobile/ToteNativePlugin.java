@@ -21,9 +21,7 @@ import okhttp3.*;
 public class ToteNativePlugin extends Plugin {
     private final ConcurrentHashMap<String, WebSocket> sockets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SocketBudget> budgets = new ConcurrentHashMap<>();
-    private final OkHttpClient http = new OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS)
-        .pingInterval(15, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build();
+    private final OkHttpClient http = NativeHttp.client();
 
     @PluginMethod public void connect(PluginCall call) {
         String id = call.getString("id"), address = call.getString("address", "");

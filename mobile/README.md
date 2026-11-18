@@ -14,7 +14,7 @@ The host still enforces its existing same-owner `tailscale whois` authorization.
 
 ## Build
 
-Requirements: Node 22+, JDK 21, Android SDK platform 36, and the normal Android build tools. Android Studio can manage these. Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to your SDK (or set `sdk.dir` in untracked `android/local.properties`).
+Requirements: Node 22+, JDK 21, Android SDK platform 37.0, and the normal Android build tools. Android Studio can manage these. Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to your SDK (or set `sdk.dir` in untracked `android/local.properties`).
 
 From the repository root:
 

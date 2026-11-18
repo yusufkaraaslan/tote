@@ -1,4 +1,4 @@
-// Native signing rehearsal with disposable keys. Run where JDK 21/SDK 35 are available.
+// Native signing rehearsal with disposable keys. Run where JDK 21/SDK 37.0 and build tools 36.0.0 are available.
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { generateKey, rotate, fingerprint } = require('./android-signing-tools');

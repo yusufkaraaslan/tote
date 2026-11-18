@@ -37,7 +37,7 @@ function verifyManifest(output, expected, release) {
 function runner(env) {
   const sdk = env.ANDROID_HOME || env.ANDROID_SDK_ROOT;
   if (!sdk) throw Error('Android SDK is required');
-  const tools = path.join(sdk, 'build-tools', '35.0.0');
+  const tools = path.join(sdk, 'build-tools', '36.0.0');
   const toolEnv = env.JAVA_HOME ? { ...env, PATH: path.join(env.JAVA_HOME, 'bin') + path.delimiter + (env.PATH || '') } : env;
   return (name, args) => {
     const file = name === 'keytool' ? (env.JAVA_HOME ? path.join(env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'keytool.exe' : 'keytool') : 'keytool')

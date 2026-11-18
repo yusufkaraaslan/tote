@@ -1,7 +1,7 @@
 def releaseMetadata = new groovy.json.JsonSlurper().parse(file('../../release.json'))
 ext {
     minSdkVersion = releaseMetadata.androidMinSdkVersion
-    compileSdkVersion = 36
+    compileSdkVersion = 37
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'

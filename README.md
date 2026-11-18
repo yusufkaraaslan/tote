@@ -400,7 +400,7 @@ restores the executable bit on node-pty's spawn helper and copies xterm assets.
 
 ### Android APK
 
-Use **Node.js 22+**, **JDK 21** and **Android SDK platform 36** with the Android build
+Use **Node.js 22+**, **JDK 21** and **Android SDK platform 37.0** with the Android build
 tools. Set `JAVA_HOME` and `ANDROID_HOME`, or configure `sdk.dir` in the untracked
 `mobile/android/local.properties`.
 
@@ -442,7 +442,7 @@ background/foreground recovery.
 [GitHub Actions](https://github.com/yusufkaraaslan/tote/actions/workflows/validation.yml)
 runs the full logic suite on Linux, macOS and Windows with Node 22, the six
 renderer checks under a Linux virtual display, and Android native tests, lint and
-a debug APK build with JDK 21 and SDK 36. Android reports and the preview APK are
+a debug APK build with JDK 21 and SDK 37.0. Android reports and the preview APK are
 kept as workflow artifacts for seven days. These checks use isolated fixtures;
 they do not verify live Tailscale accounts, real agent sessions, native desktop
 installers, or the physical-device behaviors above.

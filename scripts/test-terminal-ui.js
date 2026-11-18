@@ -108,7 +108,7 @@ app.whenReady().then(async()=>{
     await run(a,'applyTiles(); focusActivePaneContent();');
     await settled();assert.equal(sessions.get('shared').cols,narrow,'background layout/focus restoration must not steal control');
     const viewportChecks = await run(a, `(async()=>{
-      const style=document.createElement('style');style.textContent='.pane-body::-webkit-scrollbar,.xterm-viewport::-webkit-scrollbar{width:14px;height:14px}';document.head.append(style);
+      const style=document.createElement('style');style.textContent='.pane-body::-webkit-scrollbar{width:14px;height:14px}';document.head.append(style);
       const c=createTermPane('Geometry fixture',{sid:'geometry',place:false});
       Object.assign(c.pane.el.style,{left:'0px',top:'0px',width:'701.5px',height:'502.5px'});
       await new Promise(r=>setTimeout(r,50));
@@ -127,12 +127,18 @@ app.whenReady().then(async()=>{
       await new Promise(r=>setTimeout(r,50));
       sizeTermElement(c.entry);
       const retained=c.term.buffer.active.getLine(0).translateToString(true);
-      const viewport=c.term.element.querySelector('.xterm-viewport');
-      const target=viewport.scrollTop/2;
-      viewport.scrollTop=target;
-      sizeTermElement(c.entry); // An output measurement races the native scroll event.
+      const viewport=c.term.element.querySelector('.xterm-scrollable-element');
+      const bottom=c.term.buffer.active.viewportY;
+      const wheel=new WheelEvent('wheel',{deltaY:-400,deltaMode:0,bubbles:true,cancelable:true});
+      // Chromium synthetic wheel events otherwise expose wheelDeltaY=0,
+      // which xterm's normalizer prefers over deltaY. Match a real wheel.
+      Object.defineProperty(wheel,'wheelDeltaY',{value:1200});
+      viewport.dispatchEvent(wheel);
+      await new Promise(r=>setTimeout(r,100));
+      const target=c.term.buffer.active.viewportY;
+      sizeTermElement(c.entry); // An output measurement must not undo wheel scrolling.
       await new Promise(r=>setTimeout(r,50));
-      const scrolled=viewport.scrollTop;
+      const scrolled=c.term.buffer.active.viewportY;
       const position=c.term.buffer.active.viewportY;
       await c.entry.stream.write({data:'LIVE_UPDATE'});
       await new Promise(r=>setTimeout(r,50));
@@ -150,12 +156,12 @@ app.whenReady().then(async()=>{
         height:c.pane.body.scrollHeight>c.pane.body.clientHeight,cols:c.term.cols,rows:c.term.rows};
       await new Promise(r=>setTimeout(r,50));
       c.entry.stream.dispose();c.term.dispose();state.terms.delete(c.sid);destroyPaneEl('term:'+c.sid);style.remove();
-      return {cases,retained,target,scrolled,position,afterOutput,afterShow,overflow};
+      return {cases,retained,bottom,target,scrolled,position,afterOutput,afterShow,overflow};
     })()`);
     assert.deepEqual(viewportChecks.cases,[],'fractional pane sizes must not alternate scrollbars');
     assert.equal(viewportChecks.retained,'HISTORY_0','desktop retains the host scrollback beyond 1000 lines');
-    assert(viewportChecks.target>0 && viewportChecks.position>0,'fixture has scrollable history');
-    assert(Math.abs(viewportChecks.scrolled-viewportChecks.target)<2,'output measurement must not undo a native scroll');
+    assert(viewportChecks.target>0 && viewportChecks.position>0 && viewportChecks.target<viewportChecks.bottom,'fixture has scrollable history: '+JSON.stringify(viewportChecks));
+    assert.equal(viewportChecks.scrolled,viewportChecks.target,'output measurement must not undo wheel scrolling');
     assert.equal(viewportChecks.afterOutput,viewportChecks.position,'redraw preserves older-message position');
     assert.equal(viewportChecks.afterShow,viewportChecks.position,'hidden output and reveal preserve older-message position');
     assert.deepEqual(viewportChecks.overflow,{width:true,height:true,cols:180,rows:60},'passive viewers scroll an oversized host grid without reflow');
@@ -169,7 +175,7 @@ app.whenReady().then(async()=>{
     sessions.attach('shared',String(a.webContents.id));
     await settled();await check();
     assert.deepEqual(await colors(a),[1,0x0cb45a],'mirror replay preserves ANSI and truecolor');
-    b.setSize(900,800);await settled();await check();assert(sessions.get('shared').cols>narrow);
+    b.setSize(900,800);await settled();await check();assert(sessions.get('shared').cols>narrow,JSON.stringify({narrow,cols:sessions.get('shared').cols,owner:sessions.get('shared').sizeOwner,viewers:await Promise.all([...windows.values()].map(w=>run(w,"(()=>{const t=state.terms.get('shared');return {width:innerWidth,control:t.controlsSize,fit:t.fit.proposeDimensions()};})()")))}));
     sessions.onData('shared','\x1b[?1049l\r\nFINAL_FIRST');
     sessions.onData('shared','\r\nFINAL_SECOND');
     sessions.onExit('shared',0);
@@ -180,7 +186,7 @@ app.whenReady().then(async()=>{
       assert(text.indexOf('FINAL_SECOND') < text.indexOf('process exited with code 0'),'exit marker follows queued output');
     }
     assert.deepEqual(errors,[]);
-    console.log('Shared terminal UI passed: shared sizing, fractional pane stability, scrollback retention, native scrolling during redraw, hidden-pane recovery and oversized passive grids.');
+    console.log('Shared terminal UI passed: shared sizing, fractional pane stability, scrollback retention, wheel scrolling during redraw, hidden-pane recovery and oversized passive grids.');
     finish(0);
   } catch(e) { console.error(e,errors);finish(1); }
 });

@@ -2025,8 +2025,8 @@ function sizeTermElement(t) {
   // A passive viewer may be smaller than the host grid: let it scroll rather
   // than wrapping the program's cursor-addressed output at a different column.
   const style = getComputedStyle(t.term.element);
-  const viewport = t.term.element.querySelector('.xterm-viewport');
-  const scrollbar = viewport ? viewport.offsetWidth - viewport.clientWidth : 0;
+  // xterm 6 draws its own scrollbar; the legacy viewport has no native scroll.
+  const scrollbar = t.term.element.querySelector('.xterm-scrollable-element > .scrollbar.vertical')?.getBoundingClientRect().width || 0;
   const px = (name) => parseFloat(style[name]) || 0;
   const grid = screen.getBoundingClientRect();
   t.pane.body.style.overflow = 'auto';
@@ -2058,28 +2058,11 @@ function pushTermSize(t, { claim = false } = {}) {
   try { tote.ptyResize(t.sid, size.cols, size.rows, claim); } catch {}
 }
 
-/* A terminal whose pane is hidden -- another group, another space -- keeps
- * receiving output, and that is where xterm's viewport silently breaks. It
- * sizes its scroll area as `round(rowHeight * bufferLength) + (viewportHeight
- * - canvasHeight)`, and a `display: none` pane measures **zero** height, so
- * every write while hidden re-records a scroll area one whole viewport too
- * short. The bad value is cached, and coming back into view changes neither
- * the buffer length nor the cell height -- the two things `syncScrollArea`
- * watches -- so nothing recomputes it. `fit()` does not either: the dimensions
- * did not change, so there is no resize to react to.
- *
- * What the user sees is two bugs that are really one. Dragging to the bottom
- * lands short of it (a 500-line buffer measured this way stops ~21 lines up),
- * and once the viewport is short of the bottom xterm stops following new
- * output -- so text streams into a view frozen on old content until a
- * keystroke, which scrolls to the bottom on user input and fixes it by luck.
- *
- * Forcing the re-measure on show is the whole repair; it moves no scroll
- * position, so a pane deliberately left scrolled up stays where it was.
- * `_core` is private, hence the guard -- if a future xterm renames it the
- * terminal is no worse off than it is today. */
+// xterm 6 measures scrolling from the render grid, including while hidden.
+// Repaint on reveal/geometry changes through the public API, without touching
+// its private viewport or resetting the user's position in scrollback.
 function repairViewport(term) {
-  try { term._core.viewport.syncScrollArea(true); } catch {}
+  term.refresh(0, term.rows - 1);
 }
 
 // Kill the session behind a term pane -- dead or alive, the host forgets it.

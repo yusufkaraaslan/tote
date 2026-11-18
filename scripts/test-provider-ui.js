@@ -20,6 +20,10 @@ app.on('browser-window-created', (_event, win) => {
   });
 });
 const server = http.createServer((req, res) => {
+  if (req.url === '/login?token=fixture-secret') {
+    res.writeHead(302, { 'Set-Cookie': 'localLogin=yes; HttpOnly; Path=/', Location: '/authenticated' });
+    return res.end();
+  }
   if (req.url.startsWith('/download/')) {
     const name = req.url.slice('/download/'.length);
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': `attachment; filename="${name}.txt"` });
@@ -60,7 +64,10 @@ async function guest(win) {
 server.listen(0, '127.0.0.1', async () => {
   try {
     const url = `http://127.0.0.1:${server.address().port}`;
-    write('providers', [{ id: 'fixture', name: 'Fixture', url, color: '#123456' }]);
+    write('providers', [
+      { id: 'fixture', name: 'Fixture', url, color: '#123456' },
+      { id: 'local-fixture', name: 'Local fixture', url, local: { startCommand: 'must-not-run' } },
+    ]);
     require('../src/main/main');
     await app.whenReady();
     const a = await until(() => BrowserWindow.getAllWindows()[0], 'first window');
@@ -107,8 +114,34 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal((await guest(a)).id, first.id, 'switching spaces restores the original provider instance');
     assert.equal((await guest(b)).id, secondId, 'another window keeps its own active-space provider');
     assert.equal(await first.executeJavaScript("document.querySelector('#draft').value"), 'unsent provider draft');
+    await run(a, "openTab('local-fixture')");
+    const localId = await until(() => run(a, "(() => { try { return [...state.tabs.values()].find(t=>t.providerId==='local-fixture')?.wv.getWebContentsId(); } catch { return null; } })()"), 'local provider guest');
+    const local = webContents.fromId(localId);
+    await until(() => local.getURL() === url + '/', 'existing local service loaded');
+    assert.equal(await run(a, "document.querySelector('.local-provider-controls button[type=button]').disabled"), false);
+    assert.equal(await run(a, `(() => {
+      const controls = document.querySelector('.local-provider-controls');
+      const guest = controls.parentElement.querySelector('webview');
+      return guest.getBoundingClientRect().top >= controls.getBoundingClientRect().bottom && guest.getBoundingClientRect().height > 0;
+    })()`), true, 'local service controls do not overlap its webview');
+    await run(a, `(() => {
+      const form = document.querySelector('.local-provider-controls');
+      form.querySelector('input').value = 'https://example.com/?token=not-local';
+      form.requestSubmit();
+    })()`);
+    assert.match(await run(a, "document.querySelector('.local-provider-status').textContent"), /localhost URL/);
+    assert.equal(local.getURL(), url + '/');
+    await run(a, `(() => {
+      const form = document.querySelector('.local-provider-controls');
+      form.querySelector('input').value = ${JSON.stringify(url + '/login?token=fixture-secret')};
+      form.requestSubmit();
+    })()`);
+    await until(() => local.getURL() === url + '/authenticated', 'startup URL exchanged for a session cookie');
+    assert.equal((await local.session.cookies.get({ url, name: 'localLogin' }))[0].value, 'yes');
+    assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
+    assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
     assert.deepEqual(errors, []);
-    console.log('Provider UI passed: real sandboxed preload, partition cookies, OAuth popup/opener, nested-popup and two-window download routing and preserved provider draft.');
+    console.log('Provider UI passed: sandboxed preload, partition cookies, OAuth, download routing, preserved drafts, local service startup and transient login URLs.');
     finish(0);
   } catch (error) { console.error(error, errors); finish(1); }
 });

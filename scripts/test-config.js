@@ -18,6 +18,27 @@ function fixture(t) {
   return { root, open, store, file, read, events };
 }
 
+test('DSH launch migration upgrades only the original defaults and preserves a backup', t => {
+  const { store } = fixture(t);
+  const original = [{ id: 'dsh-local', name: 'My DSH', url: 'http://127.0.0.1:3080',
+    local: { startCommand: 'npx -y @deepseek-ai/dsh web', note: 'my note' } }];
+  store.saveProviders(original);
+  const upgraded = store.getProviders();
+  assert.match(upgraded[0].local.startCommand, /--port 3080 --no-open/);
+  assert.equal(upgraded[0].local.waitForUrl, true);
+  assert.equal(upgraded[0].local.startupUrlPrefix, 'dsh web:');
+  assert.equal(upgraded[0].local.note, 'my note');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(store.getDir(), 'providers.json.bak'))), original);
+  assert.deepEqual(store.getProviders(), upgraded);
+  for (const custom of [
+    { ...original[0], url: 'http://localhost:8080' },
+    { ...original[0], local: { startCommand: 'my-dsh web' } },
+  ]) {
+    store.saveProviders([custom]);
+    assert.deepEqual(store.getProviders(), [custom]);
+  }
+});
+
 test('first run seeds valid defaults and backups; saves retain the preceding version', t => {
   const f = fixture(t);
   for (const name of fs.readdirSync(f.store.getDir()).filter(n => n.endsWith('.json'))) {

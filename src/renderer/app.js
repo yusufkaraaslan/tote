@@ -710,7 +710,7 @@ function ensureWebview(tab, provider, container) {
   const wv = document.createElement('webview');
   wv.className = 'provider-view';
   wv.setAttribute('partition', `persist:tote-${provider.id}`);
-  wv.setAttribute('src', provider.url);
+  if (!provider.local) wv.setAttribute('src', provider.url);
   wv.setAttribute('allowpopups', '');
   wv.addEventListener('did-start-loading', () => setTabLoading(tab.id, true));
   wv.addEventListener('did-stop-loading', () => setTabLoading(tab.id, false));
@@ -739,6 +739,63 @@ function ensureWebview(tab, provider, container) {
   (container || $('#tiles')).appendChild(wv);
   entry = { wv, providerId: provider.id, wsId: state.workspaces.active };
   state.tabs.set(tab.id, entry);
+  if (provider.local) {
+    const body = wv.parentElement;
+    body.classList.add('local-provider');
+    body.querySelector('.local-provider-controls')?.remove();
+    const controls = document.createElement('form');
+    controls.className = 'local-provider-controls';
+    const status = document.createElement('span');
+    status.className = 'local-provider-status';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.placeholder = 'Paste local startup URL (including login token)';
+    input.setAttribute('aria-label', 'Local service startup URL');
+    const connect = document.createElement('button');
+    connect.type = 'submit'; connect.textContent = 'Connect URL';
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.textContent = 'Retry startup';
+    controls.append(status, input, connect, retry);
+    body.appendChild(controls);
+    let generation = 0;
+    controls.onsubmit = e => {
+      e.preventDefault();
+      let url;
+      try {
+        url = new URL(input.value.trim());
+        if (!['http:', 'https:'].includes(url.protocol) ||
+            !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password) throw Error();
+      } catch {
+        status.textContent = 'Enter an HTTP(S) localhost URL from the service on this computer.';
+        return;
+      }
+      ++generation; // A pending auto-start must not replace the user's URL.
+      input.value = '';
+      wv.setAttribute('src', url.href);
+      status.textContent = 'Connected on this computer. Startup URL is not saved in settings.';
+      retry.disabled = false;
+    };
+    const start = async () => {
+      const attempt = ++generation;
+      retry.disabled = true;
+      status.textContent = 'Connecting to the local service on this computer…';
+      try {
+        const result = await tote.ensureLocal(provider.id);
+        // Capture this element, not the active device's tab map: a startup
+        // may finish after a workspace/device switch or after the pane closes.
+        if (!wv.isConnected || attempt !== generation) return;
+        wv.setAttribute('src', result.url || provider.url);
+        status.textContent = 'If sign-in is required, paste the startup URL printed by the service.';
+      } catch (error) {
+        if (wv.isConnected && attempt === generation) status.textContent = error.message;
+      } finally {
+        if (attempt === generation) retry.disabled = false;
+      }
+    };
+    retry.onclick = start;
+    start();
+  }
   return wv;
 }
 

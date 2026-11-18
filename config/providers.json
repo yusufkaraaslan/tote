@@ -53,7 +53,9 @@
     "url": "http://127.0.0.1:3080",
     "color": "#0ea5e9",
     "local": {
-      "startCommand": "npx -y @deepseek-ai/dsh web",
+      "startCommand": "npx -y @deepseek-ai/dsh web --host 127.0.0.1 --port 3080 --no-open",
+      "waitForUrl": true,
+      "startupUrlPrefix": "dsh web:",
       "note": "DeepSeek Harness local Web UI. Tote auto-starts it on first click."
     }
   }

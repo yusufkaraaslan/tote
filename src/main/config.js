@@ -124,7 +124,19 @@ class ConfigStore {
     replaceJson(file, text, this.io);
   }
 
-  getProviders() { return this.read('providers.json'); }
+  getProviders() {
+    const list = this.read('providers.json');
+    // Upgrade only the shipped DSH launch settings. Preserve custom ports and
+    // commands; use ConfigStore so the previous configuration remains recoverable.
+    const dsh = list.find(p => p.id === 'dsh-local');
+    if (dsh?.url === 'http://127.0.0.1:3080' && dsh.local?.startCommand === 'npx -y @deepseek-ai/dsh web') {
+      const defaults = JSON.parse(this.io.readFileSync(path.join(DEFAULTS_DIR, 'providers.json'), 'utf8'));
+      const local = defaults.find(p => p.id === 'dsh-local').local;
+      dsh.local = { ...dsh.local, startCommand: local.startCommand, waitForUrl: local.waitForUrl, startupUrlPrefix: local.startupUrlPrefix };
+      this.saveProviders(list);
+    }
+    return list;
+  }
   saveProviders(list) { this.write('providers.json', list); }
 
   getCliProfiles() { return this.read('cli-profiles.json'); }

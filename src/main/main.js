@@ -15,7 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
-const http = require('http');
+const localServices = require('./localServices').createLocalServices();
 const { spawn } = require('child_process');
 const { ConfigStore } = require('./config');
 const { PtyManager } = require('./ptyManager');
@@ -235,31 +235,6 @@ function setupAllProviderSessions() {
 }
 
 // --- local services (e.g. DeepSeek Harness Web UI) ------------------------------
-
-function ping(urlStr) {
-  return new Promise((resolve) => {
-    const req = http.get(urlStr, { timeout: 1500 }, (res) => {
-      res.resume();
-      resolve(res.statusCode < 500);
-    });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function ensureLocalService(provider) {
-  if (await ping(provider.url)) return { started: true, alreadyRunning: true };
-  const child = spawn(provider.local.startCommand, { shell: true, detached: true, stdio: 'ignore' });
-  child.unref();
-  const deadline = Date.now() + 90000;
-  while (Date.now() < deadline) {
-    await sleep(1200);
-    if (await ping(provider.url)) return { started: true, alreadyRunning: false };
-  }
-  throw new Error(`${provider.name} did not come up at ${provider.url} within 90s`);
-}
 
 // --- native app launcher ----------------------------------------------------------
 
@@ -823,10 +798,11 @@ ipcMain.handle('pty:run', async (e, { command, args }) => {
 // --- IPC: providers / tabs -------------------------------------------------------------------
 
 ipcMain.handle('provider:ensureLocal', async (e, providerId) => {
+  localOnly(e, 'Starting a local web service');
   const provider = configStore.getProviders().find((p) => p.id === providerId);
   if (!provider) throw new Error('Unknown provider: ' + providerId);
   if (!provider.local) return { started: true, alreadyRunning: true };
-  return ensureLocalService(provider);
+  return localServices.ensure(provider);
 });
 
 // Experimental: attach a workspace file into a web tab by injecting a File

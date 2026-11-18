@@ -183,6 +183,10 @@ body.device-down .pane { opacity: 0.55; }
 .pane-x { padding: 0 3px; cursor: pointer; color: var(--fg-faint); }
 .pane-x:hover { color: var(--red); }
 .pane-body { flex: 1; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.local-provider { display: flex; flex-direction: column; }
+.local-provider-controls { order: -1; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.local-provider-status { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.local-provider-controls input { flex: 1; min-width: 120px; }
 
 .divider { position: absolute; z-index: 15; }
 .divider.row { cursor: col-resize; }
@@ -485,6 +489,7 @@ webview.provider-view {
   position: absolute; inset: 0; width: 100%; height: 100%;
   display: flex; background: #fff;
 }
+.local-provider > webview.provider-view { position: relative; inset: auto; flex: 1; min-height: 0; height: 0; }
 
 #welcome { position: absolute; inset: 0;
   position: absolute;

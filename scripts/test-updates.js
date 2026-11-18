@@ -36,6 +36,33 @@ test('HTTP metadata is bounded; redirects, invalid JSON and rate limits fail saf
  await assert.rejects(fetchLatest(request(200,'not JSON')),/Invalid/);
  await assert.rejects(fetchLatest(request(200,'x'.repeat(262145))),/size limit/);
 });
+test('explicit checks find a newly published version immediately and share a refresh',async()=>{
+ let calls=0, resolve;
+ const check=checker(()=>{calls++;return new Promise(r=>resolve=r);},()=>100);
+ const first=check('0.5.0');resolve(stable('v0.5.0'));
+ assert.equal((await first).available,false);
+ const fresh=check('0.5.0',{fresh:true});
+ const concurrent=check('0.5.0',{fresh:true});
+ const followup=check('0.5.0');
+ assert.equal(calls,2);
+ resolve(stable('v0.5.1'));
+ for(const result of await Promise.all([fresh,concurrent,followup])){
+  assert.equal(result.latest,'0.5.1');assert.equal(result.available,true);
+ }
+ assert.equal((await check('0.5.0')).latest,'0.5.1');assert.equal(calls,2);
+});
+test('a failed explicit refresh reports failure instead of an old no-update result',async()=>{
+ let calls=0;
+ const check=checker(async()=>{
+  calls++;
+  if(calls===1)return stable('v0.5.0');
+  if(calls===2)throw Error('offline');
+  return stable('v0.5.1');
+ },()=>100);
+ assert.equal((await check('0.5.0')).available,false);
+ await assert.rejects(check('0.5.0',{fresh:true}),/offline/);
+ assert.equal((await check('0.5.0',{fresh:true})).available,true);
+});
 test('release validation rejects drift and missing signing without printing secrets',()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tote-release-test-'));
  try {

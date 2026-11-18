@@ -128,7 +128,7 @@ class SelfUpdater {
     try {
       fs.mkdirSync(this.dir, { recursive:true, mode:0o700 });
       for (const name of ['partial','manifest.json','manifest.tmp','artifact']) fs.rmSync(path.join(this.dir,name), { force:true });
-      const r = await this.check(this.current);
+      const r = await this.check(this.current, { fresh: true });
       if (!r.available) throw Error('No newer stable release is available.');
       const raw = await this.fetch(U.assetURL(r.latest,'release-manifest.json'), { limit:65536, signal });
       const m = JSON.parse(raw.text);

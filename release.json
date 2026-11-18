@@ -1,6 +1,6 @@
 {
-  "version": "0.5.1",
-  "androidVersionCode": 13,
+  "version": "0.5.2",
+  "androidVersionCode": 14,
   "protocol": 1,
   "releasePlatforms": [
     "linux",

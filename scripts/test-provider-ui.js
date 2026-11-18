@@ -3,6 +3,15 @@
 const { app, BrowserWindow, webContents, session } = require('electron');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const http = require('node:http'), assert = require('node:assert/strict');
+const updateLogic = require('../src/main/updates');
+const currentVersion = require('../release.json').version;
+let advertisedVersion = currentVersion, updateFetches = 0;
+const realChecker = updateLogic.checker;
+// Real caching and IPC, with local release metadata instead of GitHub requests.
+updateLogic.checker = () => realChecker(async () => {
+  updateFetches++;
+  return { tag_name: 'v' + advertisedVersion, draft: false, prerelease: false };
+});
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tote-provider-ui-'));
 app.setPath('userData', path.join(scratch, 'profile'));
 app.setPath('sessionData', path.join(scratch, 'profile'));
@@ -140,8 +149,16 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal((await local.session.cookies.get({ url, name: 'localLogin' }))[0].value, 'yes');
     assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
     assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
+    await run(a, "document.querySelector('#btn-settings').click();document.querySelector('#set-nav [data-sec=about]').click();document.querySelector('#set-update-check').click()");
+    await until(() => run(a, "document.querySelector('#set-update-status').textContent.includes('No newer stable release') && !document.querySelector('#set-update-check').disabled"), 'initial update check');
+    assert.equal(updateFetches, 1);
+    const parts = currentVersion.split('.').map(Number); parts[2]++;
+    advertisedVersion = parts.join('.');
+    await run(a, "document.querySelector('#set-update-check').click()");
+    await until(() => run(a, "document.querySelector('#set-update-status').textContent.includes('is available')"), 'manual check bypasses the earlier no-update result');
+    assert.equal(updateFetches, 2, 'two deliberate checks fetch twice even inside the cache lifetime');
     assert.deepEqual(errors, []);
-    console.log('Provider UI passed: sandboxed preload, partition cookies, OAuth, download routing, preserved drafts, local service startup and transient login URLs.');
+    console.log('Provider UI passed: sandboxed preload, partition cookies, OAuth, download routing, preserved drafts, local service startup, transient login URLs and fresh manual update checks.');
     finish(0);
   } catch (error) { console.error(error, errors); finish(1); }
 });

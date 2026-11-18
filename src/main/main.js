@@ -890,7 +890,7 @@ ipcMain.handle('diagnostics:export', async (e, report) => {
   return true;
 });
 
-ipcMain.handle('updates:check', async () => ({ ...await checkUpdate(app.getVersion()),
+ipcMain.handle('updates:check', async () => ({ ...await checkUpdate(app.getVersion(), { fresh: true }),
   ...selfUpdater.status(),
   activeTerminals: (await host.admin('local:status').catch(() => null))?.terminals ?? null,
 }));

@@ -32,6 +32,16 @@ test('downloads allow only fixed publisher HTTPS redirects and stop at the decla
   const controller = new AbortController(); controller.abort();
   await assert.rejects(download(U.assetURL('0.6.0','file'),{limit:100,signal:controller.signal,get:async()=>Readable.from([payload])}),/abort/i);
 });
+test('download refreshes an earlier cached no-update result', async () => {
+  const f = fixture();
+  try {
+    let latest = '0.5.0';
+    f.updater.check = require('../src/main/updates').checker(async () => ({tag_name:'v'+latest,draft:false,prerelease:false}), () => 100);
+    assert.equal((await f.updater.check('0.5.0')).available, false);
+    latest = '0.6.0';
+    assert.equal((await f.updater.start()).phase, 'ready');
+  } finally { f.close(); }
+});
 test('verified download survives restart; install atomically replaces and retains an executable recovery copy', {skip:process.platform!=='linux'}, async () => {
   const f = fixture();
   try {

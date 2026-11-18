@@ -20,8 +20,10 @@ function fetchLatest(request = https.get) {
 }
 function checker(fetch = fetchLatest, now = Date.now) {
   let pending, cached, checked=0;
-  return async current => {
-    if(!cached || now()-checked>15*60*1000) {
+  return async (current, { fresh = false } = {}) => {
+    // A button labelled Check must reach the server again. Follow-up callers
+    // can reuse cached metadata, but must join a refresh already in progress.
+    if(fresh || pending || !cached || now()-checked>15*60*1000) {
       if(!pending) pending=fetch().then(data=>{ U.latest(data,current); cached=data; checked=now(); return data; }).finally(()=>pending=null);
       await pending;
     }

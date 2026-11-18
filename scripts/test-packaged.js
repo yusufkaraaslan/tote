@@ -13,6 +13,9 @@ if(!process.env.TOTE_PACKAGED_ASAR) {
  assert.equal(require(path.join(asar,'package.json')).version,expected);
  assert.equal(require(path.join(asar,'release.json')).version,expected);
  assert(fs.existsSync(path.join(asar,'src/renderer/vendor/xterm.js')));
+ // Advisory-bearing build tools must never become runtime dependencies.
+ for(const name of ['picomatch','minimatch','tinyglobby','node-gyp','app-builder-lib'])
+  assert(!fs.existsSync(path.join(asar,'node_modules',name)),`Build-only dependency shipped: ${name}`);
  const pty=require(path.join(asar,'node_modules/node-pty'));
  const shell=process.platform==='win32'?process.env.COMSPEC||'cmd.exe':'/bin/sh';
  const args=process.platform==='win32'?['/d','/s','/c','echo TOTE_PACKAGED_PTY_OK']:['-c','printf TOTE_PACKAGED_PTY_OK'];

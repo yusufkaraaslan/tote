@@ -267,6 +267,29 @@ describe('watch', () => {
       assert.deepStrictEqual([...h.wm.watchers.keys()].sort(), ['a', 'b']);
       await Promise.all(['a', 'b'].map((id) =>
         new Promise((r) => h.wm.watchers.get(id).watcher.on('ready', r))));
+      // Node exposes no native macOS fs.watch readiness signal (#52601).
+      // Chokidar's ready only completes its initial scan. Establish actual
+      // event delivery using existing fixture files before the one-shot add
+      // below; never retry the operation whose behavior this test asserts.
+      await Promise.all([['a', 'one/x.txt'], ['b', 'two/y.txt']].map(([id, file]) => {
+        const watcher = h.wm.watchers.get(id).watcher, target = path.join(h.root, file);
+        return new Promise((resolve, reject) => {
+          let attempts = 0;
+          const finish = error => {
+            clearInterval(pulse); clearTimeout(timeout);
+            watcher.off('all', event); watcher.off('error', failed);
+            error ? reject(error) : resolve();
+          };
+          const event = (kind, file) => { if (kind === 'change' && path.resolve(file) === target) finish(); };
+          const failed = error => finish(error);
+          const pulse = setInterval(() => {
+            try { fs.writeFileSync(target, 'ready-' + ++attempts); } catch (error) { finish(error); }
+          }, 50);
+          const timeout = setTimeout(() => finish(new Error('native watcher did not become active for ' + id)), 5000);
+          watcher.on('all', event); watcher.on('error', failed);
+        });
+      }));
+      seen.length = 0;
       const created = path.join(h.root, 'two', 'new.txt');
       let observed = false;
       const events = [], errors = [];

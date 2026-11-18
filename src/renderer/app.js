@@ -4037,7 +4037,10 @@ async function reconcileViews(key) {
   renderGroupBar();
   renderedViews.set(key, JSON.parse(JSON.stringify(state.views)));
 }
-tote.onWindowFocus(() => focusActivePaneContent({ claim: true }));
+// Let the activating click establish its target before repairing pane focus.
+// Webview focus crosses processes: starting it during activation can otherwise
+// arrive after a click on the local service input and steal its focus back.
+tote.onWindowFocus(() => requestAnimationFrame(() => focusActivePaneContent({ claim: true })));
 // A pane key pressed inside a web page, caught by main before the page saw it:
 // replay it through the same keydown listener as any other keystroke.
 tote.onWindowKey((k) => dispatchEvent(new KeyboardEvent('keydown', k)));

@@ -79,6 +79,10 @@ async function backgroundSmoke(asar) {
   console.log('Packaged desktop replacement, copied host runtime, preserved shell state and stop protection passed');
  } finally {
   if(host){await host.admin('local:stop',[{force:true}]).catch(()=>{});host.close();}
-  await new Promise(r=>setTimeout(r,700));fs.rmSync(dir,{recursive:true,force:true});
+  // Windows can retain copied-runtime or PTY directory handles briefly after
+  // the stop acknowledgement. Retry transient filesystem locks with a bound;
+  // a persistent lock still fails packaging instead of being silently ignored.
+  await new Promise(r=>setTimeout(r,700));
+  await disk.promises.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
  }
 }

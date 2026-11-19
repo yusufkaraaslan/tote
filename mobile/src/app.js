@@ -27,6 +27,8 @@ let spaces = [];
 let wsId = null, views = {}, sessions = [], groups = [], group = null, pane = null;
 let selection = load('tote.selection', {}), drafts = new Map();
 const sending = new Set(); // Terminal drafts stay in memory, never on the host.
+const closing = new Set();
+const closedTerminals = new Set(load('tote.closedTerminals', []));
 let spaceEpoch = 0;
 let connectionEpoch = 0, paneEpoch = 0, refreshEpoch = 0, reconnectTimer, retry = 0, paused = false, busy = false, attached = null;
 let lastOutputTop = 0, readingTimer;
@@ -85,11 +87,15 @@ function banner(message) { $('connection-banner').textContent = message; $('conn
 function rememberDraft() { if (selectedDevice && pane) drafts.set(inputKey(), $('draft').value); }
 function fitDraft() { const d = $('draft'); d.style.height = '44px'; d.style.height = Math.min(140, Math.max(44, d.scrollHeight + 2)) + 'px'; }
 function controls() {
-  const writable = ready && !busy && pane?.kind === 'term' && pane.session?.alive && attached === pane.ref;
+  const writable = ready && !busy && !closing.has(inputKey()) && pane?.kind === 'term' && pane.session?.alive && attached === pane.ref;
   $('send').disabled = !writable || sending.has(inputKey()) || !$('draft').value.trim();
   document.querySelectorAll('[data-key]').forEach(b => b.disabled = !writable);
   renderNavigation();
   $('new-terminal').disabled = busy || !ready; $('fit').disabled = !writable;
+  for (const id of ['close-terminal', 'close-terminal-menu']) {
+    $(id).hidden = pane?.kind !== 'term';
+    $(id).disabled = busy || !ready || closing.has(inputKey()) || sending.has(inputKey());
+  }
   $('mic').disabled = pane?.kind !== 'term'; $('draft').disabled = pane?.kind !== 'term';
   fitDraft();
 }
@@ -198,6 +204,7 @@ async function changeSpace(id, force = false) {
 async function renderGroups(force = false) {
   if (!force && pane?.id === '_files') return;
   groups = workspaceGroups(views[wsId], sessions, wsId);
+  for (const g of groups) g.panes = g.panes.filter(p => p.kind !== 'term' || !closedTerminals.has(draftKey(selectedDevice.id, wsId, p.ref)));
   for (const g of groups) for (const p of g.panes) if (p.kind === 'web') p.title = providerFor(p.providerId)?.name || 'Web tab';
   const saved = selection[selectionKey()] || {};
   const chosen = chooseSelection(groups, group?.id || saved.group || views[wsId]?.activeGroup, pane?.id || saved.pane, force);
@@ -339,9 +346,37 @@ function hostEvent(event, p) {
   }
 }
 async function writeInput(data) {
-  if (!ready || busy || !pane?.session?.alive || attached !== pane.ref) throw new Error('Terminal is not ready. Your draft is kept on the phone.');
+  if (!ready || busy || closing.has(inputKey()) || !pane?.session?.alive || attached !== pane.ref) throw new Error('Terminal is not ready. Your draft is kept on the phone.');
   await client.call('pty:write', [{ id: attached, data }]);
 }
+async function closeTerminal() {
+  if (!ready || busy || pane?.kind !== 'term' || closing.has(inputKey()) || sending.has(inputKey())) return;
+  const c = client, epoch = connectionEpoch, space = wsId, id = pane.ref, key = inputKey();
+  const hasSession = !!pane.session;
+  const consequence = pane.session?.alive
+    ? 'This stops the terminal and its running agent on the computer for every viewer.'
+    : 'This removes the ended terminal from this phone.';
+  if (!confirm(`Close “${pane.title}”?\n\n${consequence}\nAny unsent draft stays on this phone.`)) return;
+  if (c !== client || epoch !== connectionEpoch || !ready || busy) return;
+  rememberDraft(); closing.add(key); controls();
+  try {
+    // Capture the session and connection before awaiting; never retry a kill
+    // after reconnecting or redirect it to a newly selected pane/device.
+    if (hasSession) await c.call('pty:kill', [{ id }]);
+    closedTerminals.add(key);
+    save('tote.closedTerminals', [...closedTerminals]);
+    if (c === client && epoch === connectionEpoch && wsId === space) {
+      sessions = sessions.filter(s => s.id !== id);
+      await renderGroups(pane?.kind === 'term' && pane.ref === id);
+    }
+  } catch (e) {
+    notify('Could not confirm the terminal closed. Check its status before retrying. ' + e.message);
+  } finally {
+    closing.delete(key); controls();
+  }
+}
+$('close-terminal').onclick = closeTerminal;
+$('close-terminal-menu').onclick = closeTerminal;
 $('draft').oninput = () => { rememberDraft(); controls(); };
 $('composer').onsubmit = async e => {
   e.preventDefault(); const text = $('draft').value, key = inputKey(); if (!text.trim() || $('send').disabled) return;

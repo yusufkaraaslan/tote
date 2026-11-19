@@ -312,6 +312,7 @@ async function createWindow() {
     minHeight: 660,
     backgroundColor: '#0b0e14',
     title: 'Tote',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,

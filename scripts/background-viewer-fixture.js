@@ -18,6 +18,10 @@ require('../src/main/main');
   const win = await until(() => BrowserWindow.getAllWindows()[0]);
   const run = code => win.webContents.executeJavaScript(code, true);
   await until(() => run("typeof state !== 'undefined' && state.sliceLoaded"));
+  if (process.platform !== 'darwin') {
+    assert.equal(win.isMenuBarAutoHide(), true);
+    assert.equal(win.isMenuBarVisible(), false);
+  }
   if (phase === 'create') {
     await run("spawnTerm(state.profiles.find(p => p.id === 'probe'))");
     await until(() => run('[...state.terms.values()].some(t => t.alive)'));

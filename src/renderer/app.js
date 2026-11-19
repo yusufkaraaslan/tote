@@ -772,10 +772,36 @@ function ensureWebview(tab, provider, container) {
     };
     const retry = document.createElement('button');
     retry.className = 'local-provider-retry';
-    retry.type = 'button'; retry.textContent = 'Retry startup';
+    retry.type = 'button'; retry.textContent = 'Retry connection';
     controls.append(status, input, paste, connect, retry);
     body.appendChild(controls);
-    let generation = 0;
+    let generation = 0, connected = false;
+    const connectionProblem = message => {
+      connected = false;
+      controls.classList.remove('hidden');
+      status.textContent = message;
+    };
+    // A submitted URL is only an attempt. Use the guest's actual HTTP result,
+    // including the clean URL after login redirects, to decide whether it worked.
+    wv.addEventListener('did-navigate', e => {
+      if (e.httpResponseCode >= 200 && e.httpResponseCode < 300) {
+        const heldFocus = controls.contains(document.activeElement);
+        connected = true;
+        input.value = '';
+        status.textContent = 'Connected';
+        controls.classList.add('hidden');
+        if (heldFocus && wv.getClientRects().length) wv.focus();
+      } else if (e.httpResponseCode === 401 || e.httpResponseCode === 403) {
+        connectionProblem('Sign-in required. Paste the full startup link, including ?token=…, then select Connect URL.');
+      } else if (e.httpResponseCode >= 400) {
+        connectionProblem(`The local service returned HTTP ${e.httpResponseCode}. Check the service, then retry the connection.`);
+      }
+    });
+    wv.addEventListener('did-fail-load', e => {
+      if (e.errorCode !== -3 && e.isMainFrame) {
+        connectionProblem('Could not load the local service. Check that it is running, then retry the connection.');
+      }
+    });
     controls.onsubmit = e => {
       e.preventDefault();
       let url;
@@ -784,16 +810,20 @@ function ensureWebview(tab, provider, container) {
         if (!['http:', 'https:'].includes(url.protocol) ||
             !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password) throw Error();
       } catch {
-        status.textContent = 'Enter an HTTP(S) localhost URL from the service on this computer.';
+        status.textContent = 'Use a localhost URL starting with http:// or https://.';
         return;
       }
       ++generation; // A pending auto-start must not replace the user's URL.
       input.value = '';
+      connected = false;
+      status.textContent = 'Connecting…';
       wv.setAttribute('src', url.href);
-      status.textContent = 'Connected on this computer. Startup URL is not saved in settings.';
       retry.disabled = false;
     };
     const start = async () => {
+      // An already loaded app may contain an unsent draft. Do not reload it
+      // merely because a retry click was queued while the login completed.
+      if (connected) return;
       const attempt = ++generation;
       retry.disabled = true;
       status.textContent = 'Connecting to the local service on this computer…';
@@ -803,9 +833,8 @@ function ensureWebview(tab, provider, container) {
         // may finish after a workspace/device switch or after the pane closes.
         if (!wv.isConnected || attempt !== generation) return;
         wv.setAttribute('src', result.url || provider.url);
-        status.textContent = 'If sign-in is required, paste the startup URL printed by the service.';
       } catch (error) {
-        if (wv.isConnected && attempt === generation) status.textContent = error.message;
+        if (wv.isConnected && attempt === generation) connectionProblem(error.message);
       } finally {
         if (attempt === generation) retry.disabled = false;
       }

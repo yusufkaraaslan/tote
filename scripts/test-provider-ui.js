@@ -29,9 +29,18 @@ app.on('browser-window-created', (_event, win) => {
   });
 });
 const server = http.createServer((req, res) => {
+  if (req.url === '/unavailable') {
+    res.writeHead(503, { 'Content-Type': 'text/html' });
+    return res.end('<!doctype html><title>Unavailable</title>Service unavailable');
+  }
   if (req.url === '/login?token=fixture-secret') {
     res.writeHead(302, { 'Set-Cookie': 'localLogin=yes; HttpOnly; Path=/', Location: '/authenticated' });
     return res.end();
+  }
+  if (req.url.startsWith('/login?') ||
+      (['/local', '/authenticated'].includes(req.url) && !/(?:^|;\s*)localLogin=yes(?:;|$)/.test(req.headers.cookie || ''))) {
+    res.writeHead(401, { 'Content-Type': 'text/html' });
+    return res.end('<!doctype html><title>Sign-in required</title>Unauthorized');
   }
   if (req.url.startsWith('/download/')) {
     const name = req.url.slice('/download/'.length);
@@ -75,7 +84,7 @@ server.listen(0, '127.0.0.1', async () => {
     const url = `http://127.0.0.1:${server.address().port}`;
     write('providers', [
       { id: 'fixture', name: 'Fixture', url, color: '#123456' },
-      { id: 'local-fixture', name: 'Local fixture', url, local: { startCommand: 'must-not-run' } },
+      { id: 'local-fixture', name: 'Local fixture', url: url + '/local', local: { startCommand: 'must-not-run' } },
     ]);
     require('../src/main/main');
     await app.whenReady();
@@ -126,12 +135,13 @@ server.listen(0, '127.0.0.1', async () => {
     await run(a, "openTab('local-fixture')");
     const localId = await until(() => run(a, "(() => { try { return [...state.tabs.values()].find(t=>t.providerId==='local-fixture')?.wv.getWebContentsId(); } catch { return null; } })()"), 'local provider guest');
     const local = webContents.fromId(localId);
-    await until(() => local.getURL() === url + '/', 'existing local service loaded');
+    await until(() => local.getURL() === url + '/local', 'existing local service loaded');
     await until(() => run(a, "!document.querySelector('.local-provider-retry').disabled"), 'local startup completed');
+    await until(() => run(a, "document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), '401 response asks for the login link');
     assert.equal(await run(a, `(() => {
       const controls = document.querySelector('.local-provider-controls');
       const guest = controls.parentElement.querySelector('webview');
-      return guest.getBoundingClientRect().top >= controls.getBoundingClientRect().bottom && guest.getBoundingClientRect().height > 0;
+      return guest.getBoundingClientRect().top + 0.5 >= controls.getBoundingClientRect().bottom && guest.getBoundingClientRect().height > 0;
     })()`), true, 'local service controls do not overlap its webview');
     a.focus();
     const inputPoint = await run(a, `(() => {
@@ -167,7 +177,7 @@ server.listen(0, '127.0.0.1', async () => {
       await run(a, "document.querySelector('.local-provider-controls input').value = '';document.querySelector('.local-provider-paste').click()");
       await until(() => run(a, `document.querySelector('.local-provider-controls input').value === ${JSON.stringify(startupUrl)}`), 'Paste URL fills the field through clipboard IPC');
       assert.equal(await run(a, "document.activeElement === document.querySelector('.local-provider-controls input')"), true);
-      assert.equal(local.getURL(), url + '/', 'pasting does not submit or navigate automatically');
+      assert.equal(local.getURL(), url + '/local', 'pasting does not submit or navigate automatically');
     } finally { clipboard.readText = originalRead; }
     await run(a, `(() => {
       const form = document.querySelector('.local-provider-controls');
@@ -175,7 +185,7 @@ server.listen(0, '127.0.0.1', async () => {
       form.requestSubmit();
     })()`);
     assert.match(await run(a, "document.querySelector('.local-provider-status').textContent"), /localhost URL/);
-    assert.equal(local.getURL(), url + '/');
+    assert.equal(local.getURL(), url + '/local');
     // Restore the valid URL using the paste button, then submit it with Enter.
     clipboard.readText = () => startupUrl;
     try {
@@ -189,6 +199,24 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal((await local.session.cookies.get({ url, name: 'localLogin' }))[0].value, 'yes');
     assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
     assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
+    await until(() => run(a, "document.querySelector('.local-provider-controls').classList.contains('hidden')"), 'successful login hides the connection form');
+    await until(() => !local.isLoading(), 'authenticated page loaded');
+    await local.executeJavaScript("document.querySelector('#draft').value='unsent local draft'");
+    await run(a, "document.querySelector('.local-provider-retry').click()");
+    await pause(150);
+    assert.equal(await local.executeJavaScript("document.querySelector('#draft').value"), 'unsent local draft', 'a late Retry does not reload a connected app');
+    assert.equal(await run(a, "document.querySelector('.local-provider-status').textContent"), 'Connected');
+    // A fresh pane shares the signed cookie, without pasting or saving a token.
+    await run(b, "openTab('local-fixture')");
+    await until(() => run(b, "document.querySelector('.local-provider-controls')?.classList.contains('hidden')"), 'new pane reconnects with the existing login cookie');
+    // A real expired/cleared login must restore the connection controls.
+    await local.session.clearStorageData({ storages: ['cookies'] });
+    local.reload();
+    await until(() => run(a, "!document.querySelector('.local-provider-controls').classList.contains('hidden') && document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'expired login shows the form again');
+    await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/login?token=expired')};document.querySelector('.local-provider-controls').requestSubmit()`);
+    await until(() => run(a, "document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'invalid login does not claim to be connected');
+    await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/unavailable')};document.querySelector('.local-provider-controls').requestSubmit()`);
+    await until(() => run(a, "document.querySelector('.local-provider-status').textContent.includes('HTTP 503')"), 'service errors remain visible');
     await run(a, "document.querySelector('#btn-settings').click();document.querySelector('#set-nav [data-sec=about]').click();document.querySelector('#set-update-check').click()");
     await until(() => run(a, "document.querySelector('#set-update-status').textContent.includes('No newer stable release') && !document.querySelector('#set-update-check').disabled"), 'initial update check');
     assert.equal(updateFetches, 1);

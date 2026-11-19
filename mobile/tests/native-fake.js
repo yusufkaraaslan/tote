@@ -7,6 +7,17 @@ const views={work:{activeGroup:'build',groups:[{id:'build',name:'Build',tree:{ty
 views.second={activeGroup:'build',groups:[{id:'build',name:'Build',tree:{type:'leaf',kind:'term',id:'l1',ref:'previous-server-session'}}]};
 window.emitOutput=(id,data,grid={})=>state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'pty:data',p:{id,data,...grid}})});
 window.dropConnection=()=>state.activeSocket?.onclose();
+window.placePhoneSession=()=>{
+ const s=sessions.at(-1),g=views[state.ws].groups[0];
+ const leaf={type:'leaf',kind:'term',id:'desktop-'+s.id,ref:s.id};
+ g.tree=g.tree?{type:'split',a:g.tree,b:leaf}:leaf;
+ state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'views:changed',p:views})});
+};
+window.addWebPane=()=>{
+ views[state.ws].tabs=[{id:'web-tab',providerId:'claude'}];
+ views[state.ws].groups.push({id:'web-group',name:'Web',tree:{type:'leaf',id:'web-leaf',kind:'web',ref:'web-tab'}});
+ state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'views:changed',p:views})});
+};
 export async function initNative(){}
 export function socketFactory(url){
   state.lastUrl=url;
@@ -47,3 +58,5 @@ export const Updater={
  cancel:async()=>{state.updateState={phase:'idle'};},
  install:async()=>{state.updateInstalls=(state.updateInstalls||0)+1;if(state.holdInstall)return new Promise(resolve=>{state.completeInstall=resolve;});return {permissionStep:true,allowed:true};},
 };
+
+export const Browser={open:async({url})=>{state.openedWeb=url;if(state.webFail)throw Error('Browser unavailable');}};

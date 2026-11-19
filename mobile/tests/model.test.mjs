@@ -30,6 +30,16 @@ test('legacy and empty layouts are usable, drafts are scoped by host and session
   assert.notEqual(draftKey('a','b','s'),draftKey('a','b','t'));
 });
 
+test('selection follows a phone session into a desktop group and web panes retain providers', () => {
+  const groups = workspaceGroups({ tabs: [{ id: 'tab', providerId: 'claude' }], groups: [{ id: 'desktop', tree: {
+    type: 'split', a: { type: 'leaf', id: 'placed', kind: 'term', ref: 'phone' },
+    b: { type: 'leaf', id: 'web', kind: 'web', ref: 'tab' },
+  } }] }, [{ id: 'phone', wsId: 'w', alive: true }], 'w');
+  const chosen = chooseSelection(groups, '_sessions', 'phone', true);
+  assert.equal(chosen.group.id, 'desktop'); assert.equal(chosen.pane.ref, 'phone');
+  assert.equal(groups[0].panes[1].providerId, 'claude');
+});
+
 test('workspace entry finds running terminals behind stale or empty desktop groups', () => {
   const view={groups:[{id:'old',tree:{type:'leaf',id:'stale',kind:'term',ref:'gone'}},{id:'empty',tree:null}]};
   const groups=workspaceGroups(view,[{id:'running',wsId:'w',alive:true}],'w');

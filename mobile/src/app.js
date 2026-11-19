@@ -5,7 +5,9 @@ import { renderTerminalReading, TERMINAL_THEME } from './reading.js';
 import { createNavigation } from './navigation.js';
 import { ComputerSearch } from './discovery.js';
 import { DeviceClient } from './client.js';
-import { Native, Updater, Speech, Discovery, initNative, socketFactory } from './native.js';
+import { Native, Updater, Speech, Discovery, Browser, initNative, socketFactory } from './native.js';
+import { webUrl } from './web.js';
+import providers from '../../config/providers.json';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
 import Updates from '../../src/shared/updates.js';
@@ -13,6 +15,8 @@ import lockUpdateEditing from '../../src/shared/updateLock.js';
 import Diagnostics from '../../src/shared/diagnostics.js';
 import TermStream from '../../src/renderer/termstream.js';
 
+const webProviders = providers.filter(p => !p.local);
+const providerFor = id => providers.find(p => p.id === id);
 const diagnosticLog = Diagnostics.createLog(), diagnosticCache = new Map(), hostVersions = new Map();
 const $ = id => document.getElementById(id);
 $('build-version').textContent = 'Android ' + version;
@@ -194,6 +198,7 @@ async function changeSpace(id, force = false) {
 async function renderGroups(force = false) {
   if (!force && pane?.id === '_files') return;
   groups = workspaceGroups(views[wsId], sessions, wsId);
+  for (const g of groups) for (const p of g.panes) if (p.kind === 'web') p.title = providerFor(p.providerId)?.name || 'Web tab';
   const saved = selection[selectionKey()] || {};
   const chosen = chooseSelection(groups, group?.id || saved.group || views[wsId]?.activeGroup, pane?.id || saved.pane, force);
   group = chosen.group;
@@ -231,7 +236,17 @@ async function showPane(next) {
   if (!pane || pane.unavailable) { showEmpty(pane ? 'This terminal is no longer available. Start a new terminal from ⋮.' : 'No panes in this group. Open Files or start a terminal from ⋮.'); return; }
   if (pane.kind === 'files') { await showFiles(); return; }
   if (pane.kind === 'doc') { await readFile(pane.path); return; }
-  if (pane.kind !== 'term') { showEmpty('Web-provider tabs run on the desktop. Android currently supports terminals and file previews.'); return; }
+  if (pane.kind === 'web') {
+    const provider = providerFor(pane.providerId);
+    showEmpty(provider?.local ? 'This web app runs on your computer. Open a URL reachable from your phone.'
+      : 'Open this provider with your phone’s browser login. Your computer’s web session stays on the computer.');
+    const button = document.createElement('button');
+    button.textContent = provider && !provider.local ? 'Open ' + provider.name : 'Enter web address';
+    button.onclick = () => provider && !provider.local ? openWeb(provider.url) : showWebDialog();
+    $('empty').append(document.createElement('br'), button);
+    return;
+  }
+  if (pane.kind !== 'term') { showEmpty('This pane is not supported on Android.'); return; }
   $('terminal-scroll').hidden = false;
   if (!term) {
     term = new Terminal({ cols: pane.session.cols || 80, rows: pane.session.rows || 24, fontSize: 13, fontFamily: 'monospace', scrollback: 5000, theme: TERMINAL_THEME, convertEol: false });
@@ -376,6 +391,35 @@ async function readFile(path) {
 }
 $('files').onclick = () => showPane({ id:'_files', kind:'files', title:'Files' }).catch(e => notify(e.message));
 $('file-back').onclick = () => showFiles().catch(e => notify(e.message));
+async function openWeb(value) {
+  try {
+    const url = webUrl(value);
+    await Browser.open({ url, toolbarColor: '#17191f' });
+    $('web-dialog').close();
+    $('web-url').value = ''; // Startup links can contain authentication tokens.
+  } catch (error) {
+    if ($('web-dialog').open) $('web-error').textContent = error.message;
+    else notify(error.message);
+  }
+}
+function showWebDialog() {
+  $('web-error').textContent = '';
+  $('web-dialog').showModal();
+}
+for (const provider of webProviders) {
+  const button = document.createElement('button');
+  button.textContent = provider.name;
+  button.onclick = () => openWeb(provider.url);
+  $('web-providers').append(button);
+}
+$('open-web').onclick = showWebDialog;
+$('workspace-tools').addEventListener('click', e => {
+  if (!e.target.closest('button')) return;
+  $('workspace-tools').hidden = true;
+  $('more').setAttribute('aria-expanded', 'false');
+});
+$('cancel-web').onclick = () => { $('web-dialog').close(); $('web-url').value = ''; };
+$('web-form').onsubmit = e => { e.preventDefault(); openWeb($('web-url').value); };
 $('new-terminal').onclick = async () => {
   try { const profiles = await client.call('config:getCliProfiles'); options('profiles', profiles); $('start-new').disabled = !profiles.length; $('new-dialog').showModal(); } catch (e) { notify(e.message); }
 };
@@ -552,6 +596,6 @@ async function init() {
   discoveryInitialized = true; findComputers();
   await Speech.addListener('state', event => { if (!$('recording').open) return; $('recording-title').textContent = event.listening ? 'Recording…' : 'Transcribing…'; $('stop-voice').disabled = !event.listening; if (event.text) $('partial').textContent = event.text; });
   await App.addListener('appStateChange', ({ isActive }) => { paused = !isActive; if (paused) { stopSearch(); cancelVoice(); rememberDraft(); stopConnection(); } else if (selectedDevice) connect(); else findComputers(); });
-  await App.addListener('backButton', () => { if ($('updates-dialog').open) $('updates-dialog').close(); else if ($('diagnostics-dialog').open) $('diagnostics-dialog').close(); else if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
+  await App.addListener('backButton', () => { if ($('updates-dialog').open) $('updates-dialog').close(); else if ($('diagnostics-dialog').open) $('diagnostics-dialog').close(); else if (navigation.isOpen()) navigation.close(); else if ($('recording').open) cancelVoice(); else if ($('web-dialog').open) { $('web-dialog').close(); $('web-url').value = ''; } else if ($('new-dialog').open) $('new-dialog').close(); else if (!$('file-view').hidden) { const terminal = group?.panes.find(p => p.kind === 'term' && !p.unavailable); if (terminal) showPane(terminal).catch(e => notify(e.message)); else home(); } else if (selectedDevice) home(); else App.exitApp(); });
 }
 init().catch(e => notify('Android initialization failed: ' + e.message));

@@ -109,7 +109,7 @@ contextBridge.exposeInMainWorld('tote', {
   ptyAvailable: () => ipcRenderer.invoke('pty:available'),
   ptySpawn: (sid, profileId, cols, rows) =>
     ipcRenderer.invoke('pty:spawn', { sid, profileId, cols, rows }),
-  ptyList: () => ipcRenderer.invoke('pty:list'),
+  ptyList: (key) => key === undefined ? ipcRenderer.invoke('pty:list') : ipcRenderer.invoke('pty:list', key),
   ptyAttach: (id) => ipcRenderer.invoke('pty:attach', id),
   ptyDetach: (id) => ipcRenderer.send('pty:detach', { id }),
   ackDeviceOutput: (key, id) => ipcRenderer.send('devices:outputAck', key, id),

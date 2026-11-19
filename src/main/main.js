@@ -431,13 +431,13 @@ function route(e, name, args) {
     return Promise.resolve();
   }
   let d = deviceOf(e.sender);
-  // Layout requests outlive the selected device (debounce, reconnect, reply).
+  // Layout requests and session discovery outlive the selected device.
   // Bind them to the captured device, restricted to this window's connections.
-  if (name === 'views:snapshot' || name === 'views:patch') {
+  if (name === 'views:snapshot' || name === 'views:patch' || (name === 'pty:list' && args.length)) {
     const key = args.pop();
-    if (typeof key !== 'string') return Promise.reject(new Error('Layout request needs a device'));
+    if (typeof key !== 'string') return Promise.reject(new Error('Request needs a device'));
     d = key ? viewing.get(e.sender.id)?.devices.get(key) : null;
-    if (key && !d) return Promise.reject(new Error('Layout device is no longer open'));
+    if (key && !d) return Promise.reject(new Error('Requested device is no longer open'));
   }
   if (!d) return host.call(name, viewerIdOf(e.sender), args);
   if (!d.up) return Promise.reject(new Error(d.name + ' is offline'));

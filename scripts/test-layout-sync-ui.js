@@ -23,6 +23,7 @@ const stores = new Map(['', 'remote'].map(key => {
   let data = initial();
   return [key, new Views({ getViews: () => data, saveViews: v => { data = v; } }, id => id === 'a')];
 }));
+const hostSessions = new Map([['', []], ['remote', []]]), terminalCalls = [];
 const windows = [], selected = new Map(), errors = [], writes = [];
 function finish(code) {
   // These are disposable fixture windows. Avoid Chromium's graceful shutdown
@@ -47,7 +48,9 @@ ipcMain.handle('fixture', async (e, name, args) => {
       return result;
     }
     case 'getSettings': return { setupDone: true };
-    case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'ptyList': case 'devicesOpen': return [];
+    case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'devicesOpen': return [];
+    case 'ptyList': return hostSessions.get(args[0] ?? current);
+    case 'ptySpawn': case 'ptyAttach': case 'ptyResize': terminalCalls.push({name,args,current}); return null;
     case 'ptyAvailable': return { ok: true };
     case 'devicesList': return { devices: [], share: {} };
     case 'deviceSettings': return { keepAwake: false };
@@ -119,6 +122,21 @@ app.whenReady().then(async () => {
     await until(a, "state.deviceKey==='remote' && state.views.a.groups[0].name==='Remote pending'");
     assert.equal(stores.get('remote').snapshot().views.a.groups[0].name, 'Remote pending');
     assert.equal(stores.get('').snapshot().views.a.groups[0].name, 'Local pending');
+    // The phone created this host session without a desktop layout. Both real
+    // renderers discover it; neither creates another PTY or claims its size.
+    await run(a, 'switchDevice(null)');
+    await until(a, "state.deviceKey==='' && !layoutSync().status().busy");
+    await until(b, "!layoutSync().status().busy");
+    hostSessions.get('').push({id:'phone-session',kind:'agent',wsId:'a',title:'Phone shell',alive:true,cols:100,rows:40,sizeSync:true});
+    await Promise.all([run(a,'discoverSessions()'),run(b,'discoverSessions()')]);
+    await Promise.all([run(a,'discoverSessions()'),run(b,'discoverSessions()')]);
+    for (const w of windows) await until(w, "state.terms.has('phone-session') && !layoutSync().status().busy");
+    const leaves = require('../src/renderer/layout').leaves(stores.get('').snapshot().views.a.groups[0].tree);
+    assert.equal(leaves.filter(l=>l.ref==='phone-session').length,1);
+    assert.equal(terminalCalls.filter(c=>c.name==='ptySpawn').length,0,'adoption must reuse the host PTY');
+    assert.equal(terminalCalls.filter(c=>c.name==='ptyAttach' && c.args[0]==='phone-session').length,2);
+    assert.equal(terminalCalls.filter(c=>c.name==='ptyResize' && c.args[3]!==false).length,0,'passive desktop attachment must not claim sizing');
+    for (const w of windows) assert.deepEqual(await run(w, "({cols:state.terms.get('phone-session').term.cols,rows:state.terms.get('phone-session').term.rows})"), {cols:100,rows:40});
     assert.deepEqual(errors, []);
     console.log('Layout sync UI passed: live pane identity, dirty buffers, conflict choice, saves captured before device switches, and rapid switching.');
     finish(0);

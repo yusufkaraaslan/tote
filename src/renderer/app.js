@@ -628,6 +628,23 @@ function wsViews(wsId = state.workspaces.active) {
 const layoutSyncs = new Map();
 const layoutRenders = new Map();
 const renderedViews = new Map();
+const sessionDiscoveries = new Map();
+function discoverSessions(key = state.deviceKey) {
+  if (!sessionDiscoveries.has(key)) sessionDiscoveries.set(key, SessionDiscovery.create({
+    read: () => tote.getViewsSnapshot(key),
+    list: () => tote.ptyList(key),
+    write: patch => tote.patchViews(patch, key),
+    refresh: () => layoutSync(key).refresh(),
+    workspaceIds: () => sliceFor(key)?.workspaces.list.map(w => w.id) || [],
+    available: () => {
+      const S = sliceFor(key), status = layoutSyncs.get(key)?.status();
+      return S?.sliceLoaded && !S.deviceDown && status?.supported &&
+        !status.pending && !status.busy && !status.error && !document.body.inert;
+    },
+  }));
+  return sessionDiscoveries.get(key).poll();
+}
+setInterval(() => discoverSessions().catch(() => {}), 2500);
 function protectsDrafts(key, wsId, next) {
   const S = sliceFor(key);
   if (!S) return false;
@@ -2378,7 +2395,7 @@ function adoptSession(meta) {
 async function refreshSessions() {
   const key = state.deviceKey;
   try {
-    const sessions = new Map((await tote.ptyList()).map((m) => [m.id, m]));
+    const sessions = new Map((await tote.ptyList(key)).map((m) => [m.id, m]));
     const S = sliceFor(key);
     if (S) S.sessions = sessions;
   } catch {}

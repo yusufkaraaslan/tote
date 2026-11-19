@@ -10,7 +10,7 @@ A client-only Android app for Tote's existing device host. The phone never share
 4. Open Tote on the phone and choose your computer. Desktop Tote sends discovery announcements directly to its owner's online Android devices through Tailscale. **No same-network requirement, address entry, QR pairing, API key, or second login.** A wired desktop and a phone on mobile data work through the same path. Both apps need this updated discovery implementation. A first discovery can take a few seconds; verified computers are remembered. Address entry remains an optional troubleshooting fallback under **Connect by address instead**.
 5. Open the ☰ side panel to pick a workspace, then a group and terminal. Selecting a terminal closes the panel; tapping the header opens it again. Text wraps to the phone width by default. The toolbar’s **Wrap text** toggle restores the original terminal grid when you need its exact layout; neither mode resizes the desktop terminal. Use the microphone beside the input to record; Stop transcribes into an editable draft and opens the keyboard. Send is always a separate action.
 
-The host still enforces its existing same-owner `tailscale whois` authorization. No public server or relay is introduced. Plain WebSocket traffic is carried inside Tailscale's encrypted network; native code only accepts literal addresses in `100.64.0.0/10`, never arbitrary URLs or redirects. The WebView keeps its normal mixed-content policy and a restrictive CSP. Do not publish the desktop port on the internet.
+The host still enforces its existing same-owner `tailscale whois` authorization. No public server or relay is introduced. Plain WebSocket traffic is carried inside Tailscale's encrypted network; the native host connection only accepts literal addresses in `100.64.0.0/10`, never arbitrary URLs or redirects. The WebView keeps its normal mixed-content policy and a restrictive CSP. Do not publish the desktop port on the internet.
 
 ## Build
 
@@ -49,11 +49,13 @@ Current source builds require Android 13+ (API 33). This is a debug build for te
 - Desktop terminal dimensions preserved by default; the phone wraps parsed terminal text to its screen width. Disable **Wrap text** to use the original terminal grid with scrolling. **Resize terminal** explicitly resizes the shared PTY and affects other viewers.
 - Updated hosts send terminal dimensions with replay and live output. Android applies them in parser order and follows desktop size changes without sending a resize back. Colors and styles are preserved in the wrapped reading view. Older hosts retain polling-based dimension updates; update the host and desktop viewers for synchronized sizing.
 - Esc, Tab, arrows, Enter and Ctrl+C; multiline composer; separate Send.
-- New terminals use host CLI profiles and appear under **Other terminals** until arranged into a group on desktop. Mobile never writes `views.json`.
+- New terminals use host CLI profiles. Desktop Tote 0.5.7+ discovers them within a few seconds and places the same session in the workspace’s active desktop group, preserving its size and output. They remain under **Other terminals** while no updated desktop viewer is open. Mobile follows the session when it is placed and never writes `views.json`. Compatible older background hosts can keep running.
 - Read-only file tree, text/source and image previews. Workspace paths are resolved by the host's existing safe file API. HTML is shown as source; host content never executes in the Android WebView.
 - Native Android `SpeechRecognizer`: runtime microphone permission, recording popup, Stop, Cancel, service errors, and editable transcription. Uses the phone's current language and configured recognition service, which may require a network connection. A service can finish automatically on silence; this inserts its final transcript without submitting. No audio files are retained by Tote.
 
-Not yet included: mobile provider web sessions, PDF/binary previews, file editing/upload/download, desktop app launch, creating/rearranging groups, agent-status notifications, or background audio recording.
+Use **⋮ → Open web** for a provider or an HTTP(S) URL. Existing provider panes offer an Open button. Pages open in an Android browser tab using the phone’s browser login; closing it returns to Tote. Desktop cookies and current chat URLs are not transferred. DSH’s computer-local `127.0.0.1` URL cannot work on a phone: the service needs a separately configured URL reachable over Tailscale. Tote does not automatically expose local services. Custom links are not saved.
+
+Not yet included: shared desktop web sessions, PDF/binary previews, file editing/upload/download, desktop app launch, creating/rearranging groups, agent-status notifications, or background audio recording.
 
 ## Updates
 

@@ -34,7 +34,8 @@ export function workspaceGroups(view = {}, sessions = [], wsId) {
         const doc = view.docs?.find(d => d.id === l.ref);
         return { id: l.id, kind: 'doc', path: doc?.path, title: doc?.path?.split('/').pop() || 'Document', unavailable: !doc };
       }
-      return { id: l.id, kind: l.kind, title: l.kind === 'files' ? 'Files' : 'Web tab (desktop)' };
+      const tab = view.tabs?.find(t => t.id === l.ref);
+      return { id: l.id, kind: l.kind, providerId: tab?.providerId, title: l.kind === 'files' ? 'Files' : 'Web tab' };
     }),
   }));
   const other = live.filter(s => !used.has(s.id));
@@ -43,8 +44,12 @@ export function workspaceGroups(view = {}, sessions = [], wsId) {
 }
 export function chooseSelection(groups, preferredGroup, preferredPane, preferLive = false) {
   let group = groups.find(g => g.id === preferredGroup) || groups[0];
+  // Desktop placement changes the leaf/group, but the host session stays the
+  // same. Follow a terminal out of Other terminals without losing its draft.
+  const moved = groups.find(g => g.panes.some(p => p.id === preferredPane || p.kind === 'term' && p.ref === preferredPane));
+  if (moved) group = moved;
   const running = p => p.kind === 'term' && !p.unavailable && p.session?.alive !== false;
-  const remembered = group?.panes.find(p => p.id === preferredPane && !p.unavailable && (p.kind !== 'term' || running(p)));
+  const remembered = group?.panes.find(p => (p.id === preferredPane || p.kind === 'term' && p.ref === preferredPane) && !p.unavailable && (p.kind !== 'term' || running(p)));
   // On entry, use a running terminal if the saved selection is gone. Persisted
   // desktop groups can contain only old session ids after a host restart.
   // Keep an explicitly remembered document/files pane, and keep every group

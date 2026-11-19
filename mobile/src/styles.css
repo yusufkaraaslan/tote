@@ -34,3 +34,8 @@
 #updates-dialog { max-height: 85dvh; overflow: auto; }
 #updates-drafts section { margin: 14px 0; }
 #updates-drafts textarea { width: 100%; min-height: 90px; resize: vertical; }
+
+#web-dialog { max-height: 85dvh; overflow: auto; }
+#web-providers { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 20px; }
+#web-providers button { min-width: 0; overflow-wrap: anywhere; }
+#web-error { font-size: 12px; color: #dbbd87; }

@@ -199,7 +199,7 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal((await local.session.cookies.get({ url, name: 'localLogin' }))[0].value, 'yes');
     assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
     assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
-    await until(() => run(a, "document.querySelector('.local-provider-controls').classList.contains('hidden')"), 'successful login hides the connection form');
+    await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length === 0"), 'successful login hides the connection form');
     await until(() => !local.isLoading(), 'authenticated page loaded');
     await local.executeJavaScript("document.querySelector('#draft').value='unsent local draft'");
     await run(a, "document.querySelector('.local-provider-retry').click()");
@@ -208,11 +208,11 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(await run(a, "document.querySelector('.local-provider-status').textContent"), 'Connected');
     // A fresh pane shares the signed cookie, without pasting or saving a token.
     await run(b, "openTab('local-fixture')");
-    await until(() => run(b, "document.querySelector('.local-provider-controls')?.classList.contains('hidden')"), 'new pane reconnects with the existing login cookie');
+    await until(() => run(b, "document.querySelector('.local-provider-controls')?.getClientRects().length === 0"), 'new pane reconnects with the existing login cookie');
     // A real expired/cleared login must restore the connection controls.
     await local.session.clearStorageData({ storages: ['cookies'] });
     local.reload();
-    await until(() => run(a, "!document.querySelector('.local-provider-controls').classList.contains('hidden') && document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'expired login shows the form again');
+    await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length > 0 && document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'expired login shows the form again');
     await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/login?token=expired')};document.querySelector('.local-provider-controls').requestSubmit()`);
     await until(() => run(a, "document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'invalid login does not claim to be connected');
     await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/unavailable')};document.querySelector('.local-provider-controls').requestSubmit()`);

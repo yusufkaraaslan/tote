@@ -34,6 +34,17 @@ export function socketFactory(url){
       case 'pty:list':r=sessions;break;
       case 'pty:attach':r=sessions.find(s=>s.id===m.a[0]);emit({t:'ev',e:'pty:data',p:{id:r.id,replay:true,cols:r.cols,rows:r.rows,controlsSize:false,data:'Restored '+r.title+'\r\n'+Array.from({length:r.rows-3},(_,i)=>'line '+i+'\r\n').join('')+'$ \x1b[6n\x1b[c'}});break;
       case 'pty:write':emit({t:'ev',e:'pty:data',p:{id:m.a[0].id,data:'\r\nREPLY '+m.a[0].data}});break;
+      case 'pty:kill': {
+        if (state.killFail) { emit({t:'ret',id:m.id,ok:false,error:'Close failed'}); return; }
+        const finish = () => {
+          const index = sessions.findIndex(s => s.id === m.a[0].id);
+          if (index >= 0) sessions.splice(index,1);
+          emit({t:'ev',e:'pty:exit',p:{id:m.a[0].id,exitCode:null}});
+          emit({t:'ret',id:m.id,ok:true,r:null});
+        };
+        if (state.holdKill) state.completeKill = finish; else finish();
+        return;
+      }
       case 'workspace:tree':r=[{type:'file',name:'notes.md',path:'notes.md'}];break;
       case 'workspace:readDoc':r={kind:'text',text:'# Notes\n<script>untrusted</script>'};break;
       case 'config:getCliProfiles':r=[{id:'shell',name:'Shell'}];break;

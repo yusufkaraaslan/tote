@@ -169,9 +169,53 @@ app.whenReady().then(async()=>{
   await until("document.querySelector('#workspace').dataset.group==='build' && document.querySelector('#workspace').dataset.pane.startsWith('desktop-')");
   assert.equal(await run("document.querySelector('#draft').value"),'Follow my session');
   assert.equal(await run("testCalls.filter(c=>c.m==='views:save'||c.m==='views:patch').length"),0,'phone never writes desktop layouts');
+  // Closing a shared terminal is explicit, targets the captured session, and
+  // never writes a desktop layout or retries after a connection change.
+  await run("window.oldConfirm=window.confirm;window.confirm=message=>{testState.closeMessage=message;return false};document.querySelector('#close-terminal').click()");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').length"),0,'cancel never stops a terminal');
+  assert.match(await run('testState.closeMessage'),/every viewer/);
+  assert.equal(await run("document.querySelector('#draft').value"),'Follow my session');
+  await run("window.confirm=()=>true;testState.killFail=true;document.querySelector('#close-terminal-menu').click()");
+  await until("document.querySelector('#notice').textContent.includes('Could not confirm') && !document.querySelector('#close-terminal').disabled");
+  assert.equal(await run("document.querySelector('#draft').value"),'Follow my session','failure keeps draft and selection');
+  const closingId = await run("testCalls.filter(c=>c.m==='pty:spawn').at(-1).a[0].sid");
+  await run("testState.killFail=false;testState.holdKill=true;document.querySelector('#close-terminal').click();document.querySelector('#close-terminal').click()");
+  await until("!!testState.completeKill");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').length"),2,'double tap sends only one pending close');
+  assert.equal(await run("document.querySelector('#send').disabled"),true);
+  await select('spaces','second');
+  await until("terminalText().includes('Restored Second workspace')");
+  await run("testState.completeKill();testState.holdKill=false");
+  await new Promise(r=>setTimeout(r,100));
+  assert.equal(await run("document.querySelector('#workspace').dataset.space"),'second','late close does not switch workspace');
+  assert(await run("terminalText().includes('Restored Second workspace')"));
+  assert.deepEqual(await run("testCalls.filter(c=>c.m==='pty:kill').map(c=>c.a[0].id)"),[closingId,closingId]);
+  // The persisted desktop leaf remains untouched, but the phone can dismiss it.
+  await select('groups','build');
+  await until("document.querySelector('#workspace').dataset.pane==='l1' && !document.querySelector('#empty').hidden");
+  await run("document.querySelector('#close-terminal').click()");
+  await until("document.querySelector('#workspace').dataset.pane==='s3'");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').length"),2,'unavailable panes close locally');
+  await select('spaces','work');
+  await until("document.querySelector('#workspace').dataset.pane==='l1'");
+  assert.equal(await run(`!!document.querySelector('[data-pane="desktop-${closingId}"]')`),false);
+  await run("dropConnection()");
+  assert.equal(await run("document.querySelector('#close-terminal').disabled"),true,'cannot close while offline');
+  await until("document.querySelector('#connection-banner').hidden && !document.querySelector('#close-terminal').disabled");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').length"),2,'reconnect never retries close');
+  assert.equal(await run(`!!document.querySelector('[data-pane="desktop-${closingId}"]')`),false,'closed terminal stays dismissed after refresh');
+  await run("document.querySelector('#open-updates').click()");
+  await until("[...document.querySelectorAll('#updates-drafts textarea')].some(t=>t.value==='Follow my session')");
+  await run("document.querySelector('#updates-close').click()");
+  await select('groups','review');
+  await run("document.querySelector('#close-terminal').click()");
+  await until("document.querySelector('#workspace').dataset.pane==='l1'");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').at(-1).a[0].id"),'s2','current terminal closes and selection moves to a live terminal');
+  await run("window.confirm=oldConfirm;void 0");
   await run('addWebPane()'); await until("!!document.querySelector('[data-group=web-group]')");
   await select('groups','web-group'); await until("!!document.querySelector('#empty button')");
   assert.equal(await run("document.querySelector('#pane-label').textContent"),'Claude');
+  assert.equal(await run("document.querySelector('#close-terminal').hidden"),true,'web panes have no terminal close action');
   await run("document.querySelector('#empty button').click()");
   await until("testState.openedWeb==='https://claude.ai/'");
   await select('groups','build');
@@ -186,6 +230,6 @@ app.whenReady().then(async()=>{
   await run("window.confirm=()=>true;[...document.querySelectorAll('#updates-drafts textarea')].find(t=>t.value==='orphaned draft').closest('section').querySelector('button').click();window.confirm=oldConfirm;void 0");
   assert.equal(await run("[...document.querySelectorAll('#updates-drafts textarea')].some(t=>t.value==='orphaned draft')"),false,'explicit discard releases an orphaned draft');
   await run("document.querySelector('#updates-close').click()");
-  assert.deepEqual(errors,[]);console.log('Mobile UI passed: drawer navigation, phone-only wrapping, terminal view toggle, live output, fresh workspace sessions, empty spaces, stale event filtering, scroll following, groups, per-session drafts, voice stop/cancel, reconnect, files, compact layout.');app.exit(0);
+  assert.deepEqual(errors,[]);console.log('Mobile UI passed: drawer navigation, phone-only wrapping, terminal view toggle, live output, fresh workspace sessions, empty spaces, stale event filtering, scroll following, groups, per-session drafts, voice stop/cancel, reconnect, confirmed terminal close, close failures and races, preserved drafts, files, compact layout.');app.exit(0);
  }catch(e){console.error(e);app.exit(1);}
 });

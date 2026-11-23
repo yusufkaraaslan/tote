@@ -3142,12 +3142,18 @@ function paneMenu(e, leafId) {
   menu.innerHTML = '';
   const lf = T.findLeaf(tiles().tree, leafId);
   const t = lf?.kind === 'term' && state.terms.get(lf.ref);
+  const accessAction = (label, mode) => {
+    const button = document.createElement('button');
+    button.className = 'ctx-item';
+    button.textContent = label;
+    button.onclick = () => { hideContextMenu(); return setTermAccess(t, mode); };
+    menu.appendChild(button);
+  };
   if (t?.readOnly && !t.accessControl) {
-    menu.appendChild(ctxItem('Enable input on this viewer', () => setTermAccess(t, 'control')));
+    accessAction('Enable input on this viewer', 'control');
   } else if (t?.accessControl) {
-    if (t.controller !== 'this-viewer' || t.readOnly)
-      menu.appendChild(ctxItem('Take control', () => setTermAccess(t, 'control')));
-    if (!t.readOnly || !t.observationConfirmed) menu.appendChild(ctxItem('View read-only', () => setTermAccess(t, 'observe')));
+    if (t.controller !== 'this-viewer' || t.readOnly) accessAction('Take control', 'control');
+    if (!t.readOnly || !t.observationConfirmed) accessAction('View read-only', 'observe');
   }
   const zoomed = tiles().zoom === leafId;
   menu.appendChild(ctxItem(zoomed ? 'unzoom pane' : 'zoom pane', () => { focusPane(leafId); toggleZoom(); }));
@@ -3158,9 +3164,11 @@ function paneMenu(e, leafId) {
   }
   menu.appendChild(ctxItem('move to new group', () => moveToGroup(leafId, newGroup().id)));
   menu.appendChild(ctxItem('close pane', () => closePane(leafId), true));
-  menu.style.left = e.clientX + 'px';
-  menu.style.top = e.clientY + 'px';
   menu.classList.remove('hidden');
+  const anchor = e.currentTarget === t?.accessButton ? t.accessButton.getBoundingClientRect() : null;
+  menu.style.left = Math.max(0, Math.min(anchor?.left ?? e.clientX, innerWidth - menu.offsetWidth)) + 'px';
+  menu.style.top = Math.max(0, Math.min(anchor?.bottom ?? e.clientY, innerHeight - menu.offsetHeight)) + 'px';
+  if (anchor && !e.detail) menu.querySelector('button')?.focus();
 }
 
 async function renameGroup(g) {

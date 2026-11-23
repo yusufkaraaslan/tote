@@ -45,6 +45,7 @@ Current source builds require Android 13+ (API 33). This is a debug build for te
 
 - Automatic Tailscale-computer discovery, remembered computers, per-viewer workspaces, persisted desktop groups, terminal/pane selection. Connecting to an updated host also discovers its same-owner Tailscale peers; each candidate must pass a Tote probe before it is saved.
 - Real xterm output and PTY input, screen replay, automatic reconnect, and foreground resume. Leaving the app detaches the viewer; host sessions keep running while Tote remains running.
+- Close a terminal with **×** beside its title or **⋮ → Close terminal**. Confirming stops that shared session on the computer for all viewers. Ended panes are dismissed on the phone without editing desktop layouts; unsent drafts remain available in Updates → Review unsent drafts.
 - Per-session in-memory drafts. Reconnect never resends an unacknowledged input. Android process termination clears unsent drafts.
 - Desktop terminal dimensions preserved by default; the phone wraps parsed terminal text to its screen width. Disable **Wrap text** to use the original terminal grid with scrolling. **Resize terminal** explicitly resizes the shared PTY and affects other viewers.
 - Updated hosts send terminal dimensions with replay and live output. Android applies them in parser order and follows desktop size changes without sending a resize back. Colors and styles are preserved in the wrapped reading view. Older hosts retain polling-based dimension updates; update the host and desktop viewers for synchronized sizing.

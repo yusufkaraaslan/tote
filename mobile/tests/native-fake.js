@@ -2,7 +2,7 @@ import { version } from '../package.json';
 const updateVersion = `${Number(version.split('.')[0])+1}.0.0`;
 const calls = window.testCalls = [];
 const state = window.testState = {ws:'work',activeSocket:null,speech:null,keyboards:0};
-const sessions=[{id:'s1',wsId:'work',title:'Codex',alive:true,cols:100,rows:83},{id:'s2',wsId:'work',title:'Claude',alive:true,cols:80,rows:24}];
+const sessions=[{id:'s1',accessControl:true,wsId:'work',title:'Codex',alive:true,cols:100,rows:83},{id:'s2',wsId:'work',title:'Claude',alive:true,cols:80,rows:24}];
 const views={work:{activeGroup:'build',groups:[{id:'build',name:'Build',tree:{type:'leaf',kind:'term',id:'l1',ref:'s1'}},{id:'review',name:'Review',tree:{type:'leaf',kind:'term',id:'l2',ref:'s2'}}]}};
 views.second={activeGroup:'build',groups:[{id:'build',name:'Build',tree:{type:'leaf',kind:'term',id:'l1',ref:'previous-server-session'}}]};
 window.emitOutput=(id,data,grid={})=>state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'pty:data',p:{id,data,...grid}})});
@@ -33,6 +33,7 @@ export function socketFactory(url){
       case 'views:get':r=views;break;
       case 'pty:list':r=sessions;break;
       case 'pty:attach':r=sessions.find(s=>s.id===m.a[0]);emit({t:'ev',e:'pty:data',p:{id:r.id,replay:true,cols:r.cols,rows:r.rows,controlsSize:false,data:'Restored '+r.title+'\r\n'+Array.from({length:r.rows-3},(_,i)=>'line '+i+'\r\n').join('')+'$ \x1b[6n\x1b[c'}});break;
+      case 'pty:access':r={readOnly:m.a[0].mode==='observe',controller:m.a[0].mode==='observe'?'another-viewer':'this-viewer'};break;
       case 'pty:write':emit({t:'ev',e:'pty:data',p:{id:m.a[0].id,data:'\r\nREPLY '+m.a[0].data}});break;
       case 'pty:kill': {
         if (state.killFail) { emit({t:'ret',id:m.id,ok:false,error:'Close failed'}); return; }

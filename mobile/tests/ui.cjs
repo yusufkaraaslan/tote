@@ -74,6 +74,11 @@ app.whenReady().then(async()=>{
   assert.equal(await run("document.querySelectorAll('#workspace select').length"),0);
   await run("document.querySelector('#nav-close').click()");
   await until("terminalText().includes('Restored Codex') && document.querySelector('#terminal-scroll').scrollTop>300");
+  await run("document.querySelector('#observe').click()");
+  await until("document.querySelector('#terminal-access').textContent.includes('Read-only') && !document.querySelector('#take-control').disabled");
+  assert(await run("['send','fit','close-terminal','close-terminal-menu'].every(id=>document.getElementById(id).disabled)"));
+  await run("document.querySelector('#take-control').click()");
+  await until("!document.querySelector('#fit').disabled && document.querySelector('#terminal-access').textContent.includes('size here')");
   assert(await run("document.querySelector('#terminal-scroll').scrollWidth<=document.querySelector('#terminal-scroll').clientWidth"),'wrapped output fits the phone');
   await run("emitOutput('s1','\\r\\n'+ 'A long line with readable words. '.repeat(30))");
   await until("document.querySelector('#terminal-text').textContent.includes('A long line with readable words.')");
@@ -143,6 +148,8 @@ app.whenReady().then(async()=>{
   win.showInactive(); await new Promise(r=>setTimeout(r,200));
   fs.writeFileSync('/tmp/tote-android-diagnostics.png',(await win.webContents.capturePage()).toPNG()); win.hide();
   await run("document.querySelector('#diagnostics-close').click()");
+  await run("document.querySelector('#observe').click()");
+  await until("!document.querySelector('#take-control').disabled && document.querySelector('#close-terminal').disabled");
   await run("document.querySelector('#draft').value='offline draft';document.querySelector('#draft').dispatchEvent(new Event('input'));window.dropConnection()");
   assert.equal(await run("document.querySelector('#send').disabled"),true);
   await run("document.querySelector('#open-diagnostics').click()");
@@ -150,7 +157,11 @@ app.whenReady().then(async()=>{
   assert.equal(await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent).host.state"),'cached');
   assert.equal(await run("JSON.parse(document.querySelector('#diagnostics-preview').textContent).connection.state"),'disconnected');
   await run("document.querySelector('#diagnostics-close').click()");
-  await until("document.querySelector('#connection-banner').hidden && !document.querySelector('#send').disabled");
+  await until("document.querySelector('#connection-banner').hidden && !document.querySelector('#take-control').disabled");
+  assert.equal(await run("testCalls.filter(c=>c.m==='pty:attach').at(-1).a[1].readOnly"), true);
+  assert.equal(await run("document.querySelector('#send').disabled"), true);
+  await run("document.querySelector('#take-control').click()");
+  await until("!document.querySelector('#send').disabled");
   assert.equal(await run("document.querySelector('#draft').value"),'offline draft');
   assert.equal(await run("testCalls.filter(c=>c.m==='pty:write').length"),1,'no input replay');
   assert.equal(await run("testCalls.filter(c=>c.m==='pty:resize'||c.m==='views:save').length"),0);

@@ -141,7 +141,8 @@ class Host {
     return this.sessions.list().filter((s) => s.wsId === wsId && s.alive).map((s) => s.title);
   }
 
-  async dropSpace(id) {
+  async dropSpace(id, viewerId) {
+    this.sessions.assertWorkspaceWritable(id, viewerId);
     const space = this.workspace.space(id);
     if (space && this.workspace.isRemote(space)) {
       try { await this.workspace.conn(space).disconnect(); } catch {}
@@ -187,7 +188,7 @@ function methods(host) {
       return space;
     },
     'workspaces:remove': async (ctx, id) => {
-      await host.dropSpace(id);
+      await host.dropSpace(id, ctx.viewer.id);
       W.remove(id);
       host.spacesChanged();
       return host.wsState(ctx);
@@ -243,7 +244,7 @@ function methods(host) {
     'workspaces:discardConfirmed': async (ctx, id) => {
       const w = W.space(id);
       if (!w || !w.temp) throw new Error('Not a temp space: ' + id);
-      await host.dropSpace(id);
+      await host.dropSpace(id, ctx.viewer.id);
       W.discardTemp(id);
       host.spacesChanged();
       return host.wsState(ctx);
@@ -267,6 +268,7 @@ function methods(host) {
     },
     'remote:state': (ctx, id) => host.ws(ctx).remoteState(id),
     'remote:disconnect': async (ctx, id) => {
+      host.sessions.assertWorkspaceWritable(id, ctx.viewer.id);
       const space = W.space(id);
       if (space && W.isRemote(space)) await W.conn(space).disconnect();
       return host.ws(ctx).remoteState(id);
@@ -402,14 +404,15 @@ function methods(host) {
         spec: { file, args, cwd, cols, rows },
         viewerId: ctx.viewer.id,
       });
-      return { id: sid, sizeSync: true, workspace: space.name, cwd: conn ? conn.root : cwd, host: conn ? conn.host : null };
+      return { id: sid, sizeSync: true, accessControl: true, workspace: space.name, cwd: conn ? conn.root : cwd, host: conn ? conn.host : null };
     },
     'pty:list': () => host.sessions.list(),
-    'pty:attach': (ctx, sid) => host.sessions.attach(sid, ctx.viewer.id),
+    'pty:attach': (ctx, sid, options) => host.sessions.attach(sid, ctx.viewer.id, options?.readOnly === true),
+    'pty:access': (ctx, { id, mode }) => host.sessions.setAccess(id, ctx.viewer.id, mode),
     'pty:detach': (ctx, { id }) => host.sessions.detach(id, ctx.viewer.id),
-    'pty:write': (ctx, { id, data }) => host.sessions.write(id, data),
+    'pty:write': (ctx, { id, data }) => host.sessions.write(id, data, ctx.viewer.id),
     'pty:resize': (ctx, { id, cols, rows, claim = true }) => host.sessions.resize(id, cols, rows, ctx.viewer.id, claim),
-    'pty:kill': (ctx, { id }) => host.sessions.kill(id),
+    'pty:kill': (ctx, { id }) => host.sessions.kill(id, ctx.viewer.id),
     'cli:check': async (ctx, command) => {
       if (!command) return true; // plain shell profile always works
       // A remote space runs the agent on the remote, so that is where it has to

@@ -50,7 +50,10 @@ ipcMain.handle('fixture', async (e, name, args) => {
     case 'getSettings': return { setupDone: true };
     case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'devicesOpen': return [];
     case 'ptyList': return hostSessions.get(args[0] ?? current);
-    case 'ptySpawn': case 'ptyAttach': case 'ptyResize': terminalCalls.push({name,args,current}); return null;
+    case 'ptyAttach':
+      terminalCalls.push({name,args,current});
+      return hostSessions.get(args[2] ?? current).find(s => s.id === args[0]);
+    case 'ptySpawn': case 'ptyResize': terminalCalls.push({name,args,current}); return null;
     case 'ptyAvailable': return { ok: true };
     case 'devicesList': return { devices: [], share: {} };
     case 'deviceSettings': return { keepAwake: false };

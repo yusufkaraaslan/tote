@@ -1780,18 +1780,25 @@ async function catchUpSlice() {
  * terminal -- each replays its screen (a reset first, so nothing doubles),
  * catching up on everything the agent printed while the link was down. */
 async function reattachSlice() {
+  const key = state.deviceKey;
   state.needsReattach = false;
   try { await tote.setActiveWorkspace(state.workspaces.active); } catch {}
-  await refreshSessions();
-  for (const [sid, t] of state.terms) {
-    if (!state.sessions.has(sid)) { t.alive = false; t.pane && t.pane.el.classList.add('dead'); continue; }
-    tote.ptyAttach(sid).then((m) => { t.alive = !!m.alive; }).catch(() => {});
+  await refreshSessions(key);
+  const slice = sliceFor(key);
+  if (!slice) return;
+  for (const [sid, t] of slice.terms) {
+    if (!slice.sessions.has(sid)) { t.alive = false; t.pane && t.pane.el.classList.add('dead'); continue; }
+    attachTerm(t).catch(() => {});
   }
+  if (state.deviceKey !== key) return;
   try {
-    state.workspaces = await tote.listWorkspaces();
-    await layoutSync().refresh();
-    await reconcileViews(state.deviceKey);
+    const workspaces = await tote.listWorkspaces();
+    if (state.deviceKey !== key) return;
+    state.workspaces = workspaces;
+    await layoutSync(key).refresh();
+    await reconcileViews(key);
   } catch {}
+  if (state.deviceKey !== key) return;
   renderWorkspaceSwitcher();
   showWorkspaceViews();
   await refreshTree();
@@ -2109,7 +2116,7 @@ function sizeTermElement(t) {
 }
 
 function pushTermSize(t, { claim = false } = {}) {
-  if (!t.alive || !t.pane || t.pane.el.classList.contains('hidden')) return;
+  if (!t.alive || t.readOnly || t.accessPending || !t.pane || t.pane.el.classList.contains('hidden')) return;
   if (!claim && !t.controlsSize) return;
   const size = t.fit?.proposeDimensions();
   if (!size || size.cols < 20 || size.rows < 4) return;
@@ -2119,6 +2126,42 @@ function pushTermSize(t, { claim = false } = {}) {
   // until both ends are updated, without bypassing queued xterm writes.
   if (!t.sizeSync) t.stream.write({ data: '', cols: size.cols, rows: size.rows });
   try { tote.ptyResize(t.sid, size.cols, size.rows, claim); } catch {}
+}
+
+function renderTermAccess(t) {
+  const b = t.accessButton;
+  b.hidden = !t.accessControl && !t.readOnly;
+  const owner = t.controller === 'this-viewer' ? 'size here'
+    : t.controller === 'another-viewer' ? 'size elsewhere' : 'size unclaimed';
+  const access = t.readOnly ? (t.observationConfirmed ? 'Read-only' : 'Input paused') : 'Shared input';
+  const label = t.readOnly && !t.accessControl ? 'Input paused · older host' : access + ' · ' + owner;
+  if (b.textContent !== label) b.textContent = label;
+  b.disabled = !!t.accessPending;
+}
+
+async function setTermAccess(t, mode) {
+  if (t.accessPending) return;
+  t.accessPending = true;
+  if (mode === 'observe') {
+    t.readOnly = true;
+    sessionStorage.setItem(t.accessKey, 'observe');
+  }
+  renderTermAccess(t);
+  try {
+    const access = t.accessControl ? await tote.ptyAccess(t.sid, mode, t.deviceKey)
+      : { readOnly: false, controller: t.controller };
+    t.controlsSize = access.controller === 'this-viewer';
+    t.controller = access.controller;
+    t.readOnly = access.readOnly;
+    t.observationConfirmed = access.readOnly;
+    if (t.readOnly) sessionStorage.setItem(t.accessKey, 'observe');
+    else sessionStorage.removeItem(t.accessKey);
+  } catch (e) { toast(e.message, 'error'); }
+  finally {
+    t.accessPending = false;
+    renderTermAccess(t);
+    if (mode === 'control' && t.deviceKey === state.deviceKey) pushTermSize(t);
+  }
 }
 
 // xterm 6 measures scrolling from the render grid, including while hidden.
@@ -2276,10 +2319,23 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
     menu.style.top = Math.max(8, Math.min(e.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
   }, true);
 
-  const entry = { term, fit, sid, pane, name: title, wsId, alive: false, controlsSize: place };
+  const deviceKey = state.deviceKey;
+  const accessKey = 'tote.observe.' + JSON.stringify([deviceKey, sid]);
+  const accessButton = document.createElement('button');
+  accessButton.className = 'pane-mode';
+  accessButton.title = 'Terminal access options';
+  accessButton.setAttribute('aria-haspopup', 'menu');
+  accessButton.onclick = e => paneMenu(e, pane.el.dataset.leaf);
+  pane.ctrls.appendChild(accessButton);
+  const entry = { term, fit, sid, pane, name: title, wsId, alive: false, controlsSize: place,
+    deviceKey, accessKey, accessButton, readOnly: sessionStorage.getItem(accessKey) === 'observe' };
+  renderTermAccess(entry);
   entry.stream = window.TermStream.create(term, {
     onSize: (p) => {
       entry.hostCols = p.cols; entry.hostRows = p.rows;
+      if (p.controller && p.controller !== entry.controller) {
+        entry.controller = p.controller; entry.accessControl = true; renderTermAccess(entry);
+      }
       if (typeof p.controlsSize === 'boolean') { entry.controlsSize = p.controlsSize; entry.sizeSync = true; }
     },
     onParsed: () => {
@@ -2290,7 +2346,7 @@ function createTermPane(title, { sid = newId('s'), wsId = state.workspaces.activ
   });
   state.terms.set(sid, entry);
   const send = (d) => {
-    if (entry.alive) {
+    if (entry.alive && !entry.readOnly && !entry.accessPending) {
       if (!entry.controlsSize) pushTermSize(entry, { claim: true });
       tote.ptyWrite(sid, d);
     }
@@ -2374,6 +2430,19 @@ function bindTerm(ctx) {
   ctx.term.focus();
 }
 
+async function attachTerm(t) {
+  const meta = await tote.ptyAttach(t.sid, t.readOnly, t.deviceKey);
+  t.accessControl = !!meta.accessControl;
+  t.observationConfirmed = !!meta.readOnly;
+  if (meta.readOnly) {
+    t.readOnly = true;
+    sessionStorage.setItem(t.accessKey, 'observe');
+  }
+  // An exit may already have been delivered with the replay.
+  t.alive = !!meta.alive && !t.pane.el.classList.contains('dead');
+  renderTermAccess(t);
+}
+
 /* A session that exists on the host but has no pane in this window yet: one
  * started by another window, or by this one before a reload. The host replays
  * its screen and scrollback as ordinary pty:data, then streams live output, so
@@ -2383,17 +2452,17 @@ function adoptSession(meta) {
   const ctx = createTermPane(meta.title || 'terminal', { sid: meta.id, wsId: meta.wsId, place: false });
   ctx.entry.alive = !!meta.alive;
   ctx.entry.sizeSync = !!meta.sizeSync;
+  ctx.entry.accessControl = !!meta.accessControl; renderTermAccess(ctx.entry);
   if (meta.cols && meta.rows) ctx.entry.stream.write({ data: '', ...meta });
   if (!meta.alive) ctx.pane.el.classList.add('dead');
-  tote.ptyAttach(meta.id).catch(() => {
+  attachTerm(ctx.entry).catch(() => {
     ctx.entry.alive = false;
     ctx.pane.el.classList.add('dead');
   });
   return ctx.entry;
 }
 
-async function refreshSessions() {
-  const key = state.deviceKey;
+async function refreshSessions(key = state.deviceKey) {
   try {
     const sessions = new Map((await tote.ptyList(key)).map((m) => [m.id, m]));
     const S = sliceFor(key);
@@ -2410,6 +2479,7 @@ async function spawnTerm(profile) {
     term.writeln('\x1b[90m[Tote] workspace "' + res.workspace + '" · cwd ' + where + '\x1b[0m');
     if (profile.hint) term.writeln('\x1b[33m' + profile.hint + '\x1b[0m');
     ctx.entry.sizeSync ||= !!res.sizeSync;
+    ctx.entry.accessControl = !!res.accessControl; ctx.entry.controller = 'this-viewer'; renderTermAccess(ctx.entry);
     bindTerm(ctx);
   } catch (e) {
     term.writeln('\x1b[31mCould not start ' + profile.name + ':\x1b[0m ' + e.message);
@@ -2592,7 +2662,7 @@ function paneShell(key, titleText, dotColor) {
     if (!el.dataset.leaf) return;
     // The local service form is viewer UI beside a guest webview. Let the
     // browser focus/select its controls without first activating the guest.
-    focusPane(el.dataset.leaf, { focusContent: !e.target.closest('.local-provider-controls') });
+    focusPane(el.dataset.leaf, { focusContent: !e.target.closest('.local-provider-controls, .pane-ctrls') });
   }, true);
   x.onclick = (e) => { e.stopPropagation(); if (el.dataset.leaf) closePane(el.dataset.leaf); };
   head.addEventListener('mousedown', (e) => {
@@ -2819,10 +2889,16 @@ function openPane(node) {
   return node;
 }
 
+function termCloseBlocked(lf) {
+  const t = lf.kind === 'term' && state.terms.get(lf.ref);
+  return t && (t.readOnly || t.accessPending);
+}
+
 function closePane(leafId) {
   const S = tiles();
   const lf = T.findLeaf(S.tree, leafId);
   if (!lf) return;
+  if (lf.kind === 'term' && termCloseBlocked(lf)) { toast('Take control before closing this terminal.', 'error'); return; }
   if (lf.kind === 'doc' && isDirty(lf.ref)) {
     const doc = docOf(lf.ref);
     if (!confirm('"' + (doc ? doc.path : '') + '" has unsaved changes.\nClose anyway?')) return;
@@ -3064,6 +3140,15 @@ function paneMenu(e, leafId) {
   const V = wsViews();
   const menu = $('#context-menu');
   menu.innerHTML = '';
+  const lf = T.findLeaf(tiles().tree, leafId);
+  const t = lf?.kind === 'term' && state.terms.get(lf.ref);
+  if (t?.readOnly && !t.accessControl) {
+    menu.appendChild(ctxItem('Enable input on this viewer', () => setTermAccess(t, 'control')));
+  } else if (t?.accessControl) {
+    if (t.controller !== 'this-viewer' || t.readOnly)
+      menu.appendChild(ctxItem('Take control', () => setTermAccess(t, 'control')));
+    if (!t.readOnly || !t.observationConfirmed) menu.appendChild(ctxItem('View read-only', () => setTermAccess(t, 'observe')));
+  }
   const zoomed = tiles().zoom === leafId;
   menu.appendChild(ctxItem(zoomed ? 'unzoom pane' : 'zoom pane', () => { focusPane(leafId); toggleZoom(); }));
   menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-sep' }));
@@ -3096,6 +3181,7 @@ function closeGroup(id) {
   if (idx < 0) return;
   const doomed = gs[idx];
   const leaves = T.leaves(doomed.tree);
+  if (leaves.some(termCloseBlocked)) { toast('Take control of read-only terminals before closing this group.', 'error'); return; }
   if (leaves.length && !confirm(`Close group "${doomed.name}" and its ${leaves.length} pane(s)?`)) return;
 
   const wasActive = V.activeGroup;

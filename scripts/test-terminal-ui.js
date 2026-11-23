@@ -45,7 +45,8 @@ ipcMain.handle('fixture', async (e,name,args) => {
     case 'ptyList':
       if (!initialSessionsRequested) { initialSessionsRequested = true; await initialSessions; }
       return sessions.list();
-    case 'ptyAttach': return sessions.attach(args[0],id);
+    case 'ptyAttach': return sessions.attach(args[0],id,args[1]);
+    case 'ptyAccess': return sessions.setAccess(args[0],id,args[1]);
     case 'ptyResize': return sessions.resize(args[0],args[1],args[2],id,args[3]);
     case 'ptyAvailable': return {ok:true};
     default: return null;
@@ -176,6 +177,13 @@ app.whenReady().then(async()=>{
     await settled();await check();
     assert.deepEqual(await colors(a),[1,0x0cb45a],'mirror replay preserves ANSI and truecolor');
     b.setSize(900,800);await settled();await check();assert(sessions.get('shared').cols>narrow,JSON.stringify({narrow,cols:sessions.get('shared').cols,owner:sessions.get('shared').sizeOwner,viewers:await Promise.all([...windows.values()].map(w=>run(w,"(()=>{const t=state.terms.get('shared');return {width:innerWidth,control:t.controlsSize,fit:t.fit.proposeDimensions()};})()")))}));
+    await run(b, "setTermAccess(state.terms.get('shared'), 'observe')");
+    await run(b, "focusPane('term-leaf');closePane('term-leaf')");
+    assert(await run(b, "state.terms.has('shared') && state.terms.get('shared').accessButton.textContent.includes('Read-only')"));
+    assert.equal(sessions.diagnostics(String(b.webContents.id))[0].controller, 'unclaimed');
+    await run(a, "setTermAccess(state.terms.get('shared'), 'control')");
+    await settled();
+    assert(await run(b, "state.terms.get('shared').accessButton.textContent.includes('elsewhere')"));
     sessions.onData('shared','\x1b[?1049l\r\nFINAL_FIRST');
     sessions.onData('shared','\r\nFINAL_SECOND');
     sessions.onExit('shared',0);

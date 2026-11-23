@@ -92,7 +92,7 @@
     "ws": "^8.23.0"
   },
   "devDependencies": {
-    "electron": "^45.3.4",
+    "electron": "^45.4.1",
     "electron-builder": "^26.18.1"
   },
   "allowScripts": {

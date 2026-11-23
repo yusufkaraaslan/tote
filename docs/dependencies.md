@@ -134,3 +134,9 @@ After the minimatch fix, npm reports 9 high affected-package entries, 0 moderate
 ## Android browser integration (0.5.7)
 
 Added the official `@capacitor/browser` 8.0.5 plugin, pinned to a Capacitor 8 compatible release, for Android Custom Tabs. Provider content stays outside the app’s privileged WebView and keeps the phone browser’s own login state. The existing CSP and native host address restrictions are unchanged. The plugin adds AndroidX Browser 1.9.0; local APK compilation, Java unit tests and lint passed. Renderer tests fake the native opener and do not verify physical provider login or OAuth. See the [official Browser API](https://capacitorjs.com/docs/apis/browser).
+
+## Maintenance review on 2026-11-23
+
+GitHub withdrew the picomatch advisory on November 18. The full desktop and mobile lockfile audits now report zero findings. The scoped minimatch override still protects the older build-tool consumers. [GitHub advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+
+Electron 45.4.1 passed the provider fixture for cookie isolation, popup login, per-window downloads and draft preservation. Its dependency health report passes. The Gradle wrapper now pins the 9.9.2 distribution checksum, and the dependency review action pins 5.0.1. These updates landed after the 0.5.8 candidate. [Electron](https://github.com/yusufkaraaslan/tote/pull/54) · [Gradle](https://github.com/yusufkaraaslan/tote/pull/56) · [Dependency review](https://github.com/yusufkaraaslan/tote/pull/55)

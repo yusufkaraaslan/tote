@@ -322,6 +322,46 @@ describe('viewers', () => {
     } finally { h.cleanup(); }
   });
 
+  test('read-only survives reattach, rejects PTY changes, and releases control on disconnect', async () => {
+    const h = hostHarness();
+    try {
+      const desktop = recorder(), phone = recorder();
+      h.host.addViewer({ id: 'desktop', send: desktop.send });
+      h.host.addViewer({ id: 'phone', send: phone.send });
+      const call = (viewer, method, ...args) => h.host.call(method, viewer, args);
+      const id = 'shared';
+      await call('desktop', 'pty:spawn', { sid: id, profileId: 'sh', cols: 80, rows: 24 });
+      await call('phone', 'pty:attach', id, { readOnly: true });
+      await tick();
+      const latest = v => v.got.filter(([event]) => event === 'pty:data').at(-1)[1];
+      assert.equal(latest(phone).readOnly, true);
+      assert.equal(latest(phone).controller, 'another-viewer');
+      for (const method of ['pty:write', 'pty:resize', 'pty:kill']) {
+        await assert.rejects(call('phone', method, { id, data: 'ignored', cols: 40, rows: 10 }), /read-only/);
+      }
+      await assert.rejects(call('phone', 'workspaces:remove', h.host.sessions.get(id).wsId), /read-only/);
+      await call('phone', 'pty:detach', { id });
+      await call('phone', 'pty:attach', id);
+      await assert.rejects(call('phone', 'pty:write', { id, data: 'ignored again' }), /read-only/);
+      await tick();
+      h.ptys.out(1, 'live output');
+      await tick();
+      assert(phone.data(id).includes('live output'));
+      await Promise.all([call('desktop', 'pty:resize', { id, cols: 90, rows: 30 }),
+        call('phone', 'pty:access', { id, mode: 'control' })]);
+      await tick();
+      assert.equal(latest(desktop).controller, 'another-viewer');
+      assert.equal(latest(phone).controller, 'this-viewer');
+      await call('phone', 'pty:write', { id, data: 'one command' });
+      assert.deepEqual(h.ptys.procs.get(1).written, ['one command']);
+      h.host.removeViewer('phone');
+      assert.equal(latest(desktop).controller, 'unclaimed');
+      h.host.addViewer({ id: 'reconnected', send: phone.send });
+      await call('reconnected', 'pty:attach', id, { readOnly: true });
+      await assert.rejects(call('reconnected', 'pty:kill', { id }), /read-only/);
+    } finally { h.cleanup(); }
+  });
+
   test('removing a space another viewer is in moves that viewer and tells everyone', async () => {
     const h = hostHarness();
     try {

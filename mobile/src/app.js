@@ -28,6 +28,8 @@ let wsId = null, views = {}, sessions = [], groups = [], group = null, pane = nu
 let selection = load('tote.selection', {}), drafts = new Map();
 const sending = new Set(); // Terminal drafts stay in memory, never on the host.
 const closing = new Set();
+const accessPending = new Set();
+let sizeController = null, observationConfirmed = false;
 const closedTerminals = new Set(load('tote.closedTerminals', []));
 let spaceEpoch = 0;
 let connectionEpoch = 0, paneEpoch = 0, refreshEpoch = 0, reconnectTimer, retry = 0, paused = false, busy = false, attached = null;
@@ -86,15 +88,32 @@ function notify(message) { diagnosticLog.add('terminal', message); $('notice').t
 function banner(message) { $('connection-banner').textContent = message; $('connection-banner').hidden = !message; }
 function rememberDraft() { if (selectedDevice && pane) drafts.set(inputKey(), $('draft').value); }
 function fitDraft() { const d = $('draft'); d.style.height = '44px'; d.style.height = Math.min(140, Math.max(44, d.scrollHeight + 2)) + 'px'; }
+function observerKey() { return 'tote.observe.' + inputKey(); }
+function inputBlocked() { return sessionStorage.getItem(observerKey()) === 'observe' || accessPending.has(inputKey()); }
+function renderAccess() {
+  const observing = sessionStorage.getItem(observerKey()) === 'observe';
+  const supported = pane?.session?.accessControl === true;
+  const label = $('terminal-access');
+  label.hidden = !supported && !observing;
+  const where = sizeController === 'this-viewer' ? 'size here'
+    : sizeController === 'another-viewer' ? 'size elsewhere' : 'size unclaimed';
+  const access = observing ? (observationConfirmed ? 'Read-only' : 'Input paused') : 'Shared input';
+  label.textContent = observing && !supported ? 'Input paused · older host' : access + ' · ' + where;
+  $('observe').hidden = !supported || (observing && observationConfirmed);
+  $('take-control').hidden = !observing && (!supported || sizeController === 'this-viewer');
+  $('take-control').textContent = !supported && observing ? 'Enable input on this viewer' : 'Take control';
+  $('observe').disabled = $('take-control').disabled = !ready || busy || attached !== pane?.ref || accessPending.has(inputKey());
+}
 function controls() {
-  const writable = ready && !busy && !closing.has(inputKey()) && pane?.kind === 'term' && pane.session?.alive && attached === pane.ref;
+  renderAccess();
+  const writable = ready && !busy && !inputBlocked() && !closing.has(inputKey()) && pane?.kind === 'term' && pane.session?.alive && attached === pane.ref;
   $('send').disabled = !writable || sending.has(inputKey()) || !$('draft').value.trim();
   document.querySelectorAll('[data-key]').forEach(b => b.disabled = !writable);
   renderNavigation();
   $('new-terminal').disabled = busy || !ready; $('fit').disabled = !writable;
   for (const id of ['close-terminal', 'close-terminal-menu']) {
     $(id).hidden = pane?.kind !== 'term';
-    $(id).disabled = busy || !ready || closing.has(inputKey()) || sending.has(inputKey());
+    $(id).disabled = busy || !ready || (pane?.session && inputBlocked()) || closing.has(inputKey()) || sending.has(inputKey());
   }
   $('mic').disabled = pane?.kind !== 'term'; $('draft').disabled = pane?.kind !== 'term';
   fitDraft();
@@ -232,7 +251,7 @@ async function changeGroup(id) {
 async function showPane(next) {
   rememberDraft(); const token = ++paneEpoch, c = client;
   termStream?.dispose(); termStream = null;
-  const old = attached; attached = null; pane = next;
+  const old = attached; attached = null; sizeController = null; observationConfirmed = false; pane = next;
   selection[selectionKey()] = { group: group?.id, pane: pane?.id }; save('tote.selection', selection);
   $('draft').value = drafts.get(inputKey()) || ''; controls();
   $('terminal-scroll').hidden = true; $('file-view').hidden = true;
@@ -274,6 +293,7 @@ async function showPane(next) {
     onSize: p => {
       if (token !== paneEpoch) return;
       if (typeof p.controlsSize === 'boolean') hostSizeSync = true;
+      if (p.controller && sizeController !== p.controller) { sizeController = p.controller; renderAccess(); }
       if (pane?.session) Object.assign(pane.session, {cols:p.cols,rows:p.rows});
       setTerminalSize(p.cols, p.rows);
     },
@@ -284,7 +304,16 @@ async function showPane(next) {
     },
   });
   attached = pane.ref; // replay may arrive before attach's return frame
-  try { const meta = await c.call('pty:attach', [pane.ref]); if (token === paneEpoch) { pane.session = meta; controls(); } }
+  const storageKey = observerKey();
+  try {
+    const meta = await c.call('pty:attach', [pane.ref, { readOnly: sessionStorage.getItem(storageKey) === 'observe' }]);
+    if (token === paneEpoch) {
+      pane.session = meta;
+      observationConfirmed = !!meta.readOnly;
+      if (observationConfirmed) sessionStorage.setItem(storageKey, 'observe');
+      controls();
+    }
+  }
   catch (e) { if (token === paneEpoch) { attached = null; controls(); } throw e; }
 }
 function cellSize() {
@@ -346,11 +375,11 @@ function hostEvent(event, p) {
   }
 }
 async function writeInput(data) {
-  if (!ready || busy || closing.has(inputKey()) || !pane?.session?.alive || attached !== pane.ref) throw new Error('Terminal is not ready. Your draft is kept on the phone.');
+  if (!ready || busy || inputBlocked() || closing.has(inputKey()) || !pane?.session?.alive || attached !== pane.ref) throw new Error('Terminal is not ready. Your draft is kept on the phone.');
   await client.call('pty:write', [{ id: attached, data }]);
 }
 async function closeTerminal() {
-  if (!ready || busy || pane?.kind !== 'term' || closing.has(inputKey()) || sending.has(inputKey())) return;
+  if (!ready || busy || (pane?.session && inputBlocked()) || pane?.kind !== 'term' || closing.has(inputKey()) || sending.has(inputKey())) return;
   const c = client, epoch = connectionEpoch, space = wsId, id = pane.ref, key = inputKey();
   const hasSession = !!pane.session;
   const consequence = pane.session?.alive
@@ -375,6 +404,26 @@ async function closeTerminal() {
     closing.delete(key); controls();
   }
 }
+async function changeAccess(mode) {
+  const c = client, id = attached, key = inputKey(), storageKey = observerKey(), epoch = paneEpoch;
+  if (!ready || busy || !id || id !== pane?.ref || accessPending.has(key)) return;
+  accessPending.add(key);
+  // Keep observation selected across a lost reply and the next attach.
+  if (mode === 'observe') sessionStorage.setItem(storageKey, 'observe');
+  controls();
+  try {
+    const access = pane.session?.accessControl ? await c.call('pty:access', [{ id, mode }])
+      : { readOnly: false, controller: null };
+    if (c === client && epoch === paneEpoch && id === attached) {
+      if (!access.readOnly) sessionStorage.removeItem(storageKey);
+      observationConfirmed = access.readOnly;
+      sizeController = access.controller;
+    }
+  } catch (e) { notify(e.message); }
+  finally { accessPending.delete(key); controls(); }
+}
+$('observe').onclick = () => changeAccess('observe');
+$('take-control').onclick = () => changeAccess('control');
 $('close-terminal').onclick = closeTerminal;
 $('close-terminal-menu').onclick = closeTerminal;
 $('draft').oninput = () => { rememberDraft(); controls(); };
@@ -395,7 +444,7 @@ $('toggle-keys').onclick = () => { $('keys').hidden = !$('keys').hidden; $('togg
 $('more').onclick = () => { $('workspace-tools').hidden = !$('workspace-tools').hidden; $('more').setAttribute('aria-expanded',String(!$('workspace-tools').hidden)); };
 $('refresh').onclick = () => refresh().catch(e => notify(e.message));
 $('fit').onclick = async () => {
-  if (!term || !attached || !confirm('Resize the shared terminal to this phone? Other viewers will see the new size too.')) return;
+  if (!term || !attached || inputBlocked() || !confirm('Resize the shared terminal to this phone? Other viewers will see the new size too.')) return;
   const cols = Math.max(20, Math.floor(($('stage').clientWidth - 34) / cellSize().width)), rows = Math.max(6, Math.floor(($('stage').clientHeight - 16) / 16));
   try { await client.call('pty:resize', [{ id: attached, cols, rows }]); if (!hostSizeSync) termStream?.write({data:'',cols,rows}); } catch (e) { notify(e.message); }
 };

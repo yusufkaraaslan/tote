@@ -434,7 +434,8 @@ function route(e, name, args) {
   let d = deviceOf(e.sender);
   // Layout requests and session discovery outlive the selected device.
   // Bind them to the captured device, restricted to this window's connections.
-  if (name === 'views:snapshot' || name === 'views:patch' || (name === 'pty:list' && args.length)) {
+  const targetedTerminal = name === 'pty:access' || (name === 'pty:attach' && args.length === 3) || (name === 'pty:list' && args.length);
+  if (name === 'views:snapshot' || name === 'views:patch' || targetedTerminal) {
     const key = args.pop();
     if (typeof key !== 'string') return Promise.reject(new Error('Request needs a device'));
     d = key ? viewing.get(e.sender.id)?.devices.get(key) : null;

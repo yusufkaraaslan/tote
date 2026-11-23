@@ -728,7 +728,8 @@ webview.provider-view {
 }
 #context-menu.hidden { display: none; }
 .ctx-item { padding: 5px 10px; border-radius: 2px; cursor: pointer; color: var(--fg-dim); font-size: 11px; }
-.ctx-item:hover { background: var(--accent-bg); color: var(--accent); }
+#context-menu button.ctx-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; }
+.ctx-item:hover, #context-menu button.ctx-item:is(:hover, :focus-visible) { background: var(--accent-bg); color: var(--accent); }
 .ctx-item.danger { color: var(--red); }
 .ctx-item.danger:hover { background: #1e1210; color: var(--red); }
 .ctx-sep { height: 1px; background: var(--line); margin: 4px 6px; }

@@ -704,12 +704,13 @@ function renderLayoutStatus() {
     button('Retry', () => sync.refresh());
   }
 }
-const providerOf = (id) => state.providers.find((p) => p.id === id);
+const webProviders = () => state.deviceKey ? state.hostProviders : state.providers;
+const providerOf = (id) => webProviders().find((p) => p.id === id);
 const newId = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // A pane's title bar shows loading state; there is no global tab strip.
-function setTabLoading(tabId, on) {
-  const p = panes.get('web:' + tabId);
+function setTabLoading(tabId, on, device) {
+  const p = panes.get(paneKey({ kind: 'web', ref: tabId }, device));
   if (p) p.el.classList.toggle('loading', on);
 }
 
@@ -718,19 +719,79 @@ function openTab(providerId) {
   const V = wsViews();
   const tab = { id: newId('t'), providerId };
   V.tabs.push(tab);
+  state.activeTab = tab.id;
   openPane(T.leaf(newLeafId(), 'web', tab.id));
+  return tab.id;
+}
+
+// Invoked by the local main process for an authenticated device request.
+async function prepareSharedTab(wsId, tabId, providerId) {
+  if (state.deviceKey || !state.sliceLoaded || state.workspaces.active !== wsId) throw Error('Workspace changed on the selected computer.');
+  if (!providerOf(providerId)) throw Error('Unknown web provider.');
+  if (tabId == null) {
+    const existing = wsViews().tabs?.find(t => t.providerId === providerId);
+    if (existing) return existing.id;
+    const sync = layoutSync();
+    if (sync.status().conflicts.length) throw Error('Resolve the layout conflict on the computer first.');
+    tabId = openTab(providerId);
+    await sync.flush();
+    if (sync.status().pending || sync.status().error) throw Error('Resolve the layout on the computer before sharing this pane.');
+    return tabId;
+  }
+  const tab = wsViews().tabs?.find(t => t.id === tabId && t.providerId === providerId);
+  if (!tab) throw Error('Waiting for the web pane on the selected computer.');
+  if (!state.tabs.get(tabId)?.wv) {
+    const group = groups().find(g => T.leaves(g.tree).some(l => l.kind === 'web' && l.ref === tabId));
+    if (!group) throw Error('Waiting for the web pane on the selected computer.');
+    const leaf = T.leaves(group.tree).find(l => l.kind === 'web' && l.ref === tabId);
+    const pane = mountLeaf(leaf);
+    if (group.id === wsViews().activeGroup) applyTiles();
+    else {
+      // A phone can select a group the local window has never opened.
+      // Size its guest without switching the computer's group or editing the tree.
+      const rect = T.rectsFor(group.tree, hostRect(), { gutter: GUTTER }).get(leaf.id);
+      pane.el.style.width = rect.w + 'px';
+      pane.el.style.height = rect.h + 'px';
+      pane.el.classList.add('hidden');
+      keepWebPaneRendering(wsId, tabId);
+    }
+  }
+  return tabId;
+}
+
+// A display:none guest loses its Chromium surface. Keep its last dimensions
+// while another device is watching it behind a different workspace or group.
+function keepWebPaneRendering(wsId, tabId) {
+  const entry = sliceFor(LOCAL)?.tabs.get(tabId);
+  const el = entry?.wv?.closest('.pane');
+  if (!el || entry.wsId !== wsId) return;
+  el.classList.add('sharing-web');
+  el.inert = el.classList.contains('hidden');
+  clearTimeout(entry.shareTimer);
+  entry.shareTimer = setTimeout(() => { el.classList.remove('sharing-web'); el.inert = false; }, 4500);
 }
 
 function ensureWebview(tab, provider, container) {
   let entry = state.tabs.get(tab.id);
+  if (entry?.remote) return entry.remote.element;
   if (entry && entry.wv) return entry.wv;
+  const device = state.deviceKey, wsId = state.workspaces.active;
+  if (device) {
+    const remote = RemoteWeb.mount(container, data => tote.webPane({ wsId, tabId: tab.id, ...data }, device),
+      () => state.deviceKey === device && state.workspaces.active === wsId && !state.deviceDown);
+    state.tabs.set(tab.id, { remote, providerId: tab.providerId, wsId });
+    return remote.element;
+  }
   const wv = document.createElement('webview');
   wv.className = 'provider-view';
   wv.setAttribute('partition', `persist:tote-${provider.id}`);
   if (!provider.local) wv.setAttribute('src', provider.url);
   wv.setAttribute('allowpopups', '');
-  wv.addEventListener('did-start-loading', () => setTabLoading(tab.id, true));
-  wv.addEventListener('did-stop-loading', () => setTabLoading(tab.id, false));
+  wv.addEventListener('dom-ready', () => {
+    tote.registerWebPane?.({ wsId, tabId: tab.id, providerId: provider.id, wcId: wv.getWebContentsId() }).catch(() => {});
+  });
+  wv.addEventListener('did-start-loading', () => setTabLoading(tab.id, true, device));
+  wv.addEventListener('did-stop-loading', () => setTabLoading(tab.id, false, device));
   wv.addEventListener('page-title-updated', (e) => {
     const btn = document.querySelector(`[data-tab="${tab.id}"]`);
     if (btn) btn.title = e.title || provider.url;
@@ -742,8 +803,8 @@ function ensureWebview(tab, provider, container) {
   });
   wv.addEventListener('render-process-gone', () => {
     wv.remove();
-    const en = state.tabs.get(tab.id);
-    if (en) en.wv = null; // pane stays; the next applyTiles recreates the webview
+    const en = sliceFor(device)?.tabs.get(tab.id);
+    if (en?.wv === wv) en.wv = null; // pane stays; the next applyTiles recreates the webview
     toast(provider.name + ' pane crashed - it will reload.', 'error');
   });
   // A click inside the guest never reaches the pane's mousedown, so this is
@@ -864,6 +925,8 @@ function ensureWebview(tab, provider, container) {
 
 function destroyTabWebview(tabId) {
   const en = state.tabs.get(tabId);
+  en?.remote?.dispose();
+  clearTimeout(en?.shareTimer);
   if (en && en.wv) en.wv.remove();
   state.tabs.delete(tabId);
 }
@@ -894,8 +957,9 @@ $('#btn-add-tab').onclick = (e) => {
   const menu = $('#tab-add-menu');
   if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
   menu.innerHTML = '';
-  menu.appendChild(menuNote('web providers — each gets its own login partition'));
-  for (const p of state.providers) {
+  menu.appendChild(menuNote(state.deviceKey ? 'Web panes on ' + state.device.name : 'web providers — each gets its own login partition'));
+  if (state.deviceKey && !webProviders().length) menu.appendChild(menuNote('Update Tote and its background host on this device to open shared web panes.'));
+  for (const p of webProviders()) {
     const item = document.createElement('button');
     item.className = 'term-menu-item';
     const dot = document.createElement('span');
@@ -905,7 +969,8 @@ $('#btn-add-tab').onclick = (e) => {
     item.appendChild(document.createTextNode(p.name));
     const cmd = document.createElement('span');
     cmd.className = 'cmd';
-    try { cmd.textContent = new URL(p.url).hostname; } catch { cmd.textContent = p.url; }
+    if (state.deviceKey) cmd.textContent = state.device?.name || '';
+    else try { cmd.textContent = new URL(p.url).hostname; } catch { cmd.textContent = p.url; }
     item.appendChild(cmd);
     item.onclick = () => { menu.classList.add('hidden'); openTab(p.id); };
     menu.appendChild(item);
@@ -1658,7 +1723,13 @@ async function newFolder(baseDir = '.') {
 }
 
 async function sendToTab(relPath) {
-  const en = state.activeTab && state.tabs.get(state.activeTab);
+  const visible = T.leaves(tiles().tree).filter(leaf => leaf.kind === 'web');
+  const target = visible.find(leaf => leaf.ref === state.activeTab) || visible[0];
+  const en = target && state.tabs.get(target.ref);
+  if (en?.remote) {
+    if (await en.remote.attach(relPath)) toast('Sent ' + relPath + ' to the web pane.', 'success');
+    return;
+  }
   if (!en || !en.wv) {
     toast('Open a web tab first, then send the file.', 'error');
     return;
@@ -1695,7 +1766,7 @@ async function sendToTab(relPath) {
  * files each one under the right device, current or not. */
 
 const LOCAL = '';                    // this machine's slice key
-const SLICE = ['profiles', 'workspaces', 'treeData', 'treeWs', 'views', 'tabs', 'activeTab', 'terms',
+const SLICE = ['hostProviders', 'profiles', 'workspaces', 'treeData', 'treeWs', 'views', 'tabs', 'activeTab', 'terms',
                'sessions', 'cliAvail', 'docs', 'docOrder', 'remote', 'activeTermByWs', 'expanded',
                'sliceLoaded', 'deviceDown', 'deviceDownReason', 'needsReattach'];
 state.deviceKey = LOCAL;
@@ -1703,7 +1774,7 @@ state.slices = new Map();            // device key -> a stashed slice (never the
 
 function freshSlice() {
   return {
-    profiles: [], workspaces: { active: null, list: [] }, treeData: [], treeWs: null, views: {},
+    hostProviders: [], profiles: [], workspaces: { active: null, list: [] }, treeData: [], treeWs: null, views: {},
     tabs: new Map(), activeTab: null, terms: new Map(), sessions: new Map(), cliAvail: new Map(),
     docs: new Map(), docOrder: [], remote: {}, activeTermByWs: {}, expanded: new Set(['inbox']),
     sliceLoaded: false, deviceDown: false, deviceDownReason: '', needsReattach: false,
@@ -1734,7 +1805,14 @@ function unstashSlice(key) {
 
 /* Everything the current device's host owns, read fresh. Shared by boot and
  * by the first visit to a device. */
+async function refreshHostedProviders(key) {
+  if (!key) return;
+  const providers = await tote.webProviders(key).catch(() => []);
+  const slice = sliceFor(key);
+  if (slice) slice.hostProviders = Array.isArray(providers) ? providers : [];
+}
 async function loadHostState() {
+  await refreshHostedProviders(state.deviceKey);
   state.profiles = await tote.getCliProfiles();
   state.workspaces = await tote.listWorkspaces();
   await layoutSync().refresh();
@@ -1782,6 +1860,8 @@ async function catchUpSlice() {
 async function reattachSlice() {
   const key = state.deviceKey;
   state.needsReattach = false;
+  await refreshHostedProviders(key);
+  if (state.deviceKey !== key) return;
   try { await tote.setActiveWorkspace(state.workspaces.active); } catch {}
   await refreshSessions(key);
   const slice = sliceFor(key);
@@ -2623,7 +2703,8 @@ function hostRect() {
 /* ----- pane elements: one per content instance, created once, never moved ----- */
 
 const panes = new Map();
-const paneKey = (lf) => (lf.kind === 'files' ? 'files' : lf.kind + ':' + lf.ref);
+const paneKey = (lf, device = state.deviceKey) => lf.kind === 'files' ? 'files'
+  : lf.kind === 'web' && device ? JSON.stringify([device, 'web', lf.ref]) : lf.kind + ':' + lf.ref;
 
 function paneShell(key, titleText, dotColor) {
   let p = panes.get(key);
@@ -2694,7 +2775,7 @@ function mountLeaf(lf) {
   if (lf.kind === 'web') {
     const V = wsViews();
     const tab = (V.tabs || []).find((t) => t.id === lf.ref);
-    const provider = tab && providerOf(tab.providerId);
+    const provider = tab && (providerOf(tab.providerId) || (state.deviceKey && { id: tab.providerId, name: tab.providerId }));
     if (!provider) return null;
     const p = paneShell(key, provider.name, provider.color);
     ensureWebview(tab, provider, p.body);
@@ -2764,6 +2845,8 @@ function applyTiles() {
     p.el.style.zIndex = S.zoom === lf.id ? 20 : 1;
   }
 
+  for (const el of $('#tiles').querySelectorAll('.sharing-web')) el.inert = el.classList.contains('hidden');
+
   // number the visible panes in leaf order — the index is what ⌘1-9 focuses
   live.forEach((lf, i) => {
     const p = panes.get(paneKey(lf));
@@ -2802,6 +2885,7 @@ function focusPane(leafId, { focusContent = true } = {}) {
   const S = tiles();
   if (!leafId) return;
   const lf = T.findLeaf(S.tree, leafId);
+  if (lf?.kind === 'web') state.activeTab = lf.ref;
   if (S.focus === leafId) { if (focusContent) focusPaneContent(lf); return; }
   S.focus = leafId;
   for (const p of panes.values()) p.el.classList.toggle('focused', p.el.dataset.leaf === leafId);
@@ -3221,6 +3305,7 @@ function focusPaneContent(lf, { claim = true } = {}) {
     if (t.alive) pushTermSize(t, { claim });
   } else if (lf.kind === 'web') {
     const en = state.tabs.get(lf.ref);
+    if (en?.remote) { if (!en.remote.element.contains(document.activeElement)) en.remote.stage.focus(); return; }
     if (!en || !en.wv) return;
     // Copying a startup URL elsewhere and returning to Tote must preserve
     // the form's focus/caret rather than redirecting paste into the guest.
@@ -3549,7 +3634,8 @@ tote.onUpdateGuard?.(async ({ token, release }) => {
     await Promise.all([...layoutSyncs.values()].map(sync => sync.flush()));
     const clean = [state, ...state.slices.values()].every(slice =>
       [...slice.docs.values()].every(doc => doc.savedText == null || doc.text === doc.savedText)) &&
-      [...layoutSyncs.values()].every(sync => !sync.status().pending && !sync.status().busy);
+      [...layoutSyncs.values()].every(sync => !sync.status().pending && !sync.status().busy) &&
+      ![...document.querySelectorAll('.remote-web input')].some(input => input.value);
     if (updateGuardToken === token) tote.updateGuardReply(token, clean);
   } catch { if (updateGuardToken === token) tote.updateGuardReply(token, false); }
 });
@@ -4159,7 +4245,7 @@ async function reconcileViews(key) {
     }
   }
   for (const id of [...state.tabs.keys()]) {
-    if (!tabs.has(id)) { destroyPaneEl('web:' + id); destroyTabWebview(id); }
+    if (!tabs.has(id)) { destroyPaneEl(paneKey({ kind: 'web', ref: id }, key)); destroyTabWebview(id); }
   }
   for (const [sid] of [...state.terms]) {
     if (!terms.has(sid)) { tote.ptyDetach(sid); destroyPaneEl('term:' + sid); state.terms.delete(sid); }
@@ -4200,7 +4286,7 @@ tote.onDownloadDone((m) => {
 });
 
 /* ---------------- boot ---------------- */
-(async function init() {
+const viewerReady = (async function init() {
   const avail = await tote.ptyAvailable();
   if (!avail.ok) {
     toast('node-pty unavailable - terminals disabled. Rebuild with: npm rebuild node-pty', 'error');

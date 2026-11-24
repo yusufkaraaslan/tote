@@ -35,7 +35,7 @@ export function workspaceGroups(view = {}, sessions = [], wsId) {
         return { id: l.id, kind: 'doc', path: doc?.path, title: doc?.path?.split('/').pop() || 'Document', unavailable: !doc };
       }
       const tab = view.tabs?.find(t => t.id === l.ref);
-      return { id: l.id, kind: l.kind, providerId: tab?.providerId, title: l.kind === 'files' ? 'Files' : 'Web tab' };
+      return { id: l.id, kind: l.kind, ref: l.ref, providerId: tab?.providerId, title: l.kind === 'files' ? 'Files' : 'Web tab' };
     }),
   }));
   const other = live.filter(s => !used.has(s.id));

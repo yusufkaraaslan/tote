@@ -32,6 +32,6 @@ function authorize(token, ip, req) {
 
 const LOCAL_METHODS = new Set([
   'local:status', 'local:stop', 'local:settings', 'local:resolve',
-  'local:space', 'local:download', 'local:ingest', 'local:focus',
+  'local:webSource', 'local:webReply', 'local:space', 'local:download', 'local:ingest', 'local:focus',
 ]);
 module.exports = { endpoint, authorize, LOCAL_METHODS };

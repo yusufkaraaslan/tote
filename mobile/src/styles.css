@@ -40,3 +40,5 @@
 #web-providers { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 20px; }
 #web-providers button { min-width: 0; overflow-wrap: anywhere; }
 #web-error { font-size: 12px; color: #dbbd87; }
+
+#empty:has(.remote-web) { padding: 0; }

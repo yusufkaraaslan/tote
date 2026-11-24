@@ -23,7 +23,7 @@ await build({entryPoints:['src/app.js'],bundle:true,outfile:join(dir,'app.js'),f
     `}));
   },
 }]});
-for(const [from,to] of [['src/index.html','index.html'],['src/styles.css','styles.css'],['node_modules/@xterm/xterm/css/xterm.css','xterm.css']])await copyFile(from,join(dir,to));
+for(const [from,to] of [['../src/renderer/remoteWeb.css','remoteWeb.css'],['src/index.html','index.html'],['src/styles.css','styles.css'],['node_modules/@xterm/xterm/css/xterm.css','xterm.css']])await copyFile(from,join(dir,to));
 const env={...process.env,TOTE_UI_DIR:dir,TOTE_SIM_ADDRESS:address};delete env.ELECTRON_RUN_AS_NODE;
 const child=spawn('../node_modules/.bin/electron',['scripts/simulator.cjs'],{stdio:'inherit',env});
 child.on('exit',code=>process.exit(code??1));

@@ -15,7 +15,7 @@ window.placePhoneSession=()=>{
 };
 window.addWebPane=()=>{
  views[state.ws].tabs=[{id:'web-tab',providerId:'claude'}];
- views[state.ws].groups.push({id:'web-group',name:'Web',tree:{type:'leaf',id:'web-leaf',kind:'web',ref:'web-tab'}});
+ if (!views[state.ws].groups.some(g=>g.id==='web-group')) views[state.ws].groups.push({id:'web-group',name:'Web',tree:{type:'leaf',id:'web-leaf',kind:'web',ref:'web-tab'}});
  state.activeSocket?.onmessage({data:JSON.stringify({t:'ev',e:'views:changed',p:views})});
 };
 export async function initNative(){}
@@ -30,6 +30,13 @@ export function socketFactory(url){
       case 'workspaces:list':r={active:state.ws,list:[{id:'work',name:'Work'},{id:'second',name:'Second'},{id:'empty',name:'Empty'}]};break;
       case 'workspaces:setActive':state.ws=m.a[0];if(state.ws==='second'&&!sessions.some(s=>s.id==='s3'))sessions.push({id:'s3',wsId:'second',title:'Second workspace',alive:true,cols:160,rows:83});r={id:state.ws};break;
       case 'device:diagnostics':r={format:'tote-diagnostics-v1',host:{version,state:'current'},terminals:sessions.map(s=>({id:s.id,host:{cols:s.cols,rows:s.rows},alive:true,controller:'another-viewer',data:'DO_NOT_EXPORT'})),events:[{code:'timeout',message:'DO_NOT_EXPORT'}]};break;
+      case 'web:providers':r=[{id:'claude',name:'Claude'},{id:'dsh-local',name:'DSH'}];break;
+      case 'web:open':window.addWebPane();r='web-tab';break;
+      case 'web:pane': {
+        const canvas=document.createElement('canvas');canvas.width=100;canvas.height=80;
+        r={image:canvas.toDataURL('image/jpeg').split(',')[1],source:{token:'guest',width:100,height:80,revision:'frame'}};
+        break;
+      }
       case 'views:get':r=views;break;
       case 'pty:list':r=sessions;break;
       case 'pty:attach':r=sessions.find(s=>s.id===m.a[0]);emit({t:'ev',e:'pty:data',p:{id:r.id,replay:true,cols:r.cols,rows:r.rows,controlsSize:false,data:'Restored '+r.title+'\r\n'+Array.from({length:r.rows-3},(_,i)=>'line '+i+'\r\n').join('')+'$ \x1b[6n\x1b[c'}});break;

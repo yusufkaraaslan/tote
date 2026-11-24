@@ -45,8 +45,14 @@ test('host owns a singleton endpoint and refuses unauthenticated or remote admin
     await server.start({ bind: '127.0.0.1', port: 0 });
     const remote = new DeviceClient({ address: '127.0.0.1', port: Number(server.address.split(':').pop()), device: 'test' });
     try {
-      await remote.connect(); await host.addViewer({ id: 'local', send() {} });
+      await remote.connect();
+      await host.addViewer({ id: 'local', servesWeb:true, send(event, request) {
+        if (event === 'web:request') host.call('local:webReply','local', [{id:request.id, result:request.providerId}]);
+      } });
       assert.equal(runtime.host.viewers.size, 2, 'local and tailnet viewer IDs must never collide');
+      const catalog = await remote.call('web:providers', []);
+      assert(catalog.some(p => p.id === 'dsh-local' && !p.url && !p.local));
+      assert.equal(await remote.call('web:open', [{ wsId:'a', providerId:'dsh-local' }]), 'dsh-local');
       await assert.rejects(remote.call('local:stop', [{ force: true }]), /Not callable/);
       await assert.rejects(remote.call('local:settings', [{}]), /Not callable/);
     } finally { remote.close(); await server.stop(); }

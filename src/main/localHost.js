@@ -51,8 +51,8 @@ class LocalHost {
     throw Error('Background host did not start. Check the profile permissions and local port ' + this.endpoint.port + '.');
   }
 
-  async addViewer({ id, send }) {
-    const viewer = { id, send, output: new Map(), gone: false, up: false, wsId: null };
+  async addViewer({ id, send, servesWeb = false }) {
+    const viewer = { id, send, servesWeb, output: new Map(), gone: false, up: false, wsId: null };
     this.viewers.set(id, viewer);
     try { await this.connect(viewer); }
     catch (error) { this.removeViewer(id); throw error; }
@@ -85,6 +85,8 @@ class LocalHost {
       else v.wsId = list.active;
       if (v.gone || this.closed) { client.close(); return; }
       v.up = true;
+      // Older background hosts keep serving terminals until explicitly upgraded.
+      if (v.servesWeb) await client.call('local:webSource', []).catch(() => {});
     } catch (error) { client.close(); throw error; }
   }
 

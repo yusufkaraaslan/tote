@@ -68,6 +68,8 @@ class Runtime {
   localMethods() {
     const W = this.workspace;
     return {
+      'local:webSource': ctx => { this.host.webPanes.sources.set(ctx.viewer.id, ctx.viewer); return true; },
+      'local:webReply': (ctx, reply) => this.host.webPanes.reply(ctx, reply),
       'local:status': () => ({ running: !this.stopping, stopping: this.stopping, pid: process.pid, version,
         terminals: this.host.sessions.list().filter(s => s.alive).length,
         share: { on: !!this.sharing, address: this.sharing?.address || null, error: this.shareError },

@@ -561,6 +561,8 @@ describe('the wire', () => {
       await w.client.connect();
       await assert.rejects(w.client.call('settings:save', [{}]), /Not callable from another device/);
       await assert.rejects(w.client.call('apps:launch', ['x']), /Not callable from another device/);
+      await assert.rejects(w.client.call('local:webSource', []), /Not callable from another device/);
+      await assert.rejects(w.client.call('local:webReply', [{}]), /Not callable from another device/);
     } finally { await w.done(); }
   });
 

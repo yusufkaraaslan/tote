@@ -67,6 +67,9 @@ app.whenReady().then(async () => {
   const settle = () => run('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))');
   try {
     await win.loadFile(path.join(root, 'src/renderer/index.html'));
+    // The assertions wait for animation frames between screenshots. A hidden
+    // Chromium surface can stop producing frames after its first capture.
+    win.showInactive();
     for (let i = 0; i < 50 && !(await run("document.querySelectorAll('.ws-tab').length")); i++) await new Promise(r => setTimeout(r, 100));
     await settle();
     assert.equal(await run("document.querySelectorAll('.ws-tab').length"), 24);

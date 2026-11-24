@@ -20,6 +20,7 @@ const HOST = new Set([
   // path: a native picker can only browse THIS machine's disk, so on another
   // machine the path is typed instead.
   'workspaces:addLocal', 'workspaces:setPathTo', 'workspaces:promoteTo',
+  'web:providers', 'web:pane',
   'device:diagnostics', 'device:settings', 'device:setKeepAwake', 'device:peers',
   'remote:connect', 'remote:state', 'remote:disconnect',
   'workspace:getRoot', 'workspace:tree', 'workspace:read', 'workspace:readDoc',
@@ -47,7 +48,7 @@ const VIEWER = new Set([
   'apps:list', 'apps:add', 'apps:remove', 'apps:launch',
   'setup:systemCheck', 'setup:fixNpmPrefix',
   'conn:claudeStatus', 'conn:bindClaude', 'conn:mcpSnippet',
-  'pty:run', 'provider:ensureLocal',
+  'pty:run', 'provider:ensureLocal', 'provider:registerPane',
   'workspace:openPath', 'workspace:revealPath',
   'app:openExternal', 'app:newWindow', 'app:version',
   // Which machine this WINDOW looks at is the viewer's business by definition.
@@ -62,6 +63,7 @@ const SPLIT = new Set([
 
 // Host methods with no channel of their own: the second half of a split one.
 const HOST_ONLY = new Set([
+  'web:open', // Android asks the computer's desktop to open a provider.
   'workspaces:measure', 'workspaces:discardConfirmed', 'workspace:fileBytes',
   // device-to-device transfers, driven by main, never by the renderer
   'workspace:readChunk', 'workspace:upload',

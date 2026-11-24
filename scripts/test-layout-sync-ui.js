@@ -24,6 +24,8 @@ const stores = new Map(['', 'remote'].map(key => {
   return [key, new Views({ getViews: () => data, saveViews: v => { data = v; } }, id => id === 'a')];
 }));
 const hostSessions = new Map([['', []], ['remote', []]]), terminalCalls = [];
+let webImage;
+const webCalls = [];
 const windows = [], selected = new Map(), errors = [], writes = [];
 function finish(code) {
   // These are disposable fixture windows. Avoid Chromium's graceful shutdown
@@ -47,6 +49,10 @@ ipcMain.handle('fixture', async (e, name, args) => {
       if (result.ok) for (const w of windows) if (w.webContents.id !== e.sender.id) w.webContents.send('views:changed', result.snapshot.views, key);
       return result;
     }
+    case 'webProviders': return [{ id: 'custom-host', name: 'Host provider' }];
+    case 'webPane':
+      webCalls.push(args);
+      return { source:{token:'test',width:50,height:50,revision:'image'}, image:webImage };
     case 'getSettings': return { setupDone: true };
     case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'devicesOpen': return [];
     case 'ptyList': return hostSessions.get(args[0] ?? current);
@@ -140,6 +146,19 @@ app.whenReady().then(async () => {
     assert.equal(terminalCalls.filter(c=>c.name==='ptyAttach' && c.args[0]==='phone-session').length,2);
     assert.equal(terminalCalls.filter(c=>c.name==='ptyResize' && c.args[3]!==false).length,0,'passive desktop attachment must not claim sizing');
     for (const w of windows) assert.deepEqual(await run(w, "({cols:state.terms.get('phone-session').term.cols,rows:state.terms.get('phone-session').term.rows})"), {cols:100,rows:40});
+    await run(a, "switchDevice({key:'remote'})");
+    webImage = await run(a, "document.createElement('canvas').toDataURL('image/jpeg').split(',')[1]");
+    await run(a, "document.querySelector('#btn-add-tab').click();[...document.querySelectorAll('#tab-add-menu button')].find(b=>b.textContent.includes('Host provider')).click()");
+    // This harness runs hidden windows, so make the viewer visible for its frame pull.
+    a.showInactive();
+    await until(a, "!!document.querySelector('.remote-web img:not([hidden])')");
+    assert.equal(await run(a, "document.querySelectorAll('webview.provider-view').length"),0);
+    assert(webCalls.every(([request,device])=>device==='remote' && request.wsId==='a'));
+    await run(a, "switchDevice(null)");
+    await pause(600);
+    const count = webCalls.length;
+    await pause(650);
+    assert.equal(webCalls.length,count,'hidden device stops pulling web pages');
     assert.deepEqual(errors, []);
     console.log('Layout sync UI passed: live pane identity, dirty buffers, conflict choice, saves captured before device switches, and rapid switching.');
     finish(0);

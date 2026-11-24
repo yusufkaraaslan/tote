@@ -22,6 +22,7 @@ const { PtyManager } = require('./ptyManager');
 const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnippet } = require('./installer');
 const { LocalHost } = require('./localHost');
 const hostStartup = require('./hostStartup');
+const sharedWeb = new (require('./sharedWeb').SharedWeb)();
 let hostLaunch;
 let selfUpdater;
 let installingUpdate = false;
@@ -155,7 +156,13 @@ function setupProviderPopups(contents) {
     shell.openExternal(url);
     return { action: 'deny' };
   });
-  contents.on('did-create-window', win => setupProviderPopups(win.webContents));
+  contents.on('did-create-window', win => {
+    const popup = win.webContents;
+    sharedWeb.popups.set(contents, popup);
+    if (sharedWeb.remoteWorkspace.has(contents)) sharedWeb.remoteWorkspace.set(popup, sharedWeb.remoteWorkspace.get(contents));
+    win.once('closed', () => { if (sharedWeb.popups.get(contents) === popup) sharedWeb.popups.delete(contents); });
+    setupProviderPopups(popup);
+  });
 }
 
 // Per-provider persistent session: keeps the login alive across restarts,
@@ -175,7 +182,8 @@ function setupProviderSession(provider) {
     // A window showing another machine downloads for THAT machine: stage here
     // (Chromium only writes locally), push it up when done. Which device, and
     // which of its spaces, are fixed now, when the download starts.
-    const dev = owner && deviceOf(owner);
+    const sharedSpace = sharedWeb.remoteWorkspace.get(guest);
+    const dev = !sharedSpace && owner && deviceOf(owner);
     if (dev) {
       const stage = path.join(app.getPath('userData'), 'devices', sha(dev.key), 'staging');
       fs.mkdirSync(stage, { recursive: true });
@@ -206,7 +214,7 @@ function setupProviderSession(provider) {
     const folder = fs.mkdtempSync(path.join(stage, 'download-'));
     const target = path.join(folder, path.basename(item.getFilename() || 'download'));
     item.setSavePath(target);
-    const destination = owner
+    const destination = sharedSpace ? Promise.resolve({ wsId: sharedSpace }) : owner
       ? host.call('local:download', viewerIdOf(owner), [])
       : host.admin('local:download');
     // Attach rejection handling immediately, even for a long-running download.
@@ -303,9 +311,10 @@ async function launchApp(entry, context) {
 // Every window is a viewer of the local host, with its own active space. More
 // than one is allowed (app:newWindow) -- which is also how the host/viewer
 // split is exercised on one machine before any network exists.
-async function createWindow() {
+async function createWindow(workspaceId) {
   if (installingUpdate) throw Error("Wait for the update operation to finish.");
   const win = new BrowserWindow({
+    show: !workspaceId,
     width: 1480,
     height: 920,
     minWidth: 1080,
@@ -343,12 +352,16 @@ async function createWindow() {
   });
 
   try {
-    await host.addViewer({ id: vid, send: (ev, payload) => { if (!wc.isDestroyed()) wc.send(ev, payload); } });
+    await host.addViewer({ id: vid, servesWeb: true, send: (ev, payload) => {
+      if (ev === 'web:request') serveWebRequest(vid, payload);
+      else if (!wc.isDestroyed()) wc.send(ev, payload);
+    } });
+    if (workspaceId) await host.call('workspaces:setActive', vid, [workspaceId]);
   } catch (error) { if (!win.isDestroyed()) win.destroy(); throw error; }
   if (win.isDestroyed()) return;
   lastFocused = vid;
   host.call('local:focus', vid, []).catch(() => {});
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  const loaded = win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   // Re-activation is the renderer's cue to put keyboard focus back inside the
   // focused pane. The main process is the authority on window activation: the
@@ -371,6 +384,7 @@ async function createWindow() {
   wc.on('will-navigate', (e, url) => {
     if (url !== wc.getURL()) e.preventDefault();
   });
+  if (workspaceId) { await loaded; win.showInactive(); }
   return win;
 }
 
@@ -390,6 +404,7 @@ app.on('web-contents-created', (event, contents) => {
     Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(owner) || undefined });
   });
   if (contents.getType() !== 'webview') return;
+  contents.on('did-navigate', (_event, _url, code) => sharedWeb.responses.set(contents, code));
   // A web page holding the keyboard swallows every keystroke, so the pane keys
   // (⌘1-9, ctrl+`, MOD arrows/F/W/E/digits) never reached the window's keydown
   // listener while you were in a web pane -- exactly where jumping out matters
@@ -435,7 +450,7 @@ function route(e, name, args) {
   // Layout requests and session discovery outlive the selected device.
   // Bind them to the captured device, restricted to this window's connections.
   const targetedTerminal = name === 'pty:access' || (name === 'pty:attach' && args.length === 3) || (name === 'pty:list' && args.length);
-  if (name === 'views:snapshot' || name === 'views:patch' || targetedTerminal) {
+  if (name.startsWith('web:') || name === 'views:snapshot' || name === 'views:patch' || targetedTerminal) {
     const key = args.pop();
     if (typeof key !== 'string') return Promise.reject(new Error('Request needs a device'));
     d = key ? viewing.get(e.sender.id)?.devices.get(key) : null;
@@ -799,6 +814,58 @@ ipcMain.handle('pty:run', async (e, { command, args }) => {
 
 // --- IPC: providers / tabs -------------------------------------------------------------------
 
+ipcMain.handle('provider:registerPane', (e, pane) => {
+  const guest = webContents.fromId(pane.wcId);
+  if (!host.viewers.has(viewerIdOf(e.sender)) || guest?.hostWebContents !== e.sender ||
+      guest.getType() !== 'webview' || guest.session !== session.fromPartition(partitionFor(pane.providerId))) {
+    throw Error('Unknown provider pane.');
+  }
+  const provider = configStore.getProviders().find(p => p.id === pane.providerId);
+  if (!provider) throw Error('Unknown web provider.');
+  if (provider.local) sharedWeb.localOrigins.set(guest, new URL(provider.url).origin);
+  sharedWeb.register(pane, guest);
+});
+
+const openingWebWindows = new Map();
+async function webWindow(wsId) {
+  if (openingWebWindows.has(wsId)) return openingWebWindows.get(wsId);
+  for (const viewer of host.viewers.values()) {
+    if (viewer.wsId !== wsId || !viewer.up) continue;
+    const wc = webContents.fromId(Number(viewer.id.slice(1)));
+    if (wc && !deviceOf(wc)) return wc;
+  }
+  // A saved pane can belong to a workspace that no local window is showing.
+  // Opening another window preserves the page and drafts in every existing one.
+  const opening = createWindow(wsId).then(win => win.webContents).finally(() => openingWebWindows.delete(wsId));
+  openingWebWindows.set(wsId, opening);
+  return opening;
+}
+
+async function serveWebRequest(vid, request) {
+  const reply = { id: request.id };
+  try {
+    let guest = sharedWeb.guest(request);
+    if (!guest || request.operation === 'open') {
+      if (request.operation === 'input') throw Error('The web page changed. Try the action again.');
+      const owner = await webWindow(request.wsId);
+      const args = [request.wsId, request.tabId ?? null, request.providerId];
+      const tabId = await owner.executeJavaScript('viewerReady.then(() => prepareSharedTab(...' + JSON.stringify(args) + '))');
+      if (request.operation === 'open') reply.result = tabId;
+      else guest = sharedWeb.guest(request);
+    }
+    if (request.operation === 'frame' && guest?.hostWebContents) {
+      const target = JSON.stringify([request.wsId, request.tabId]);
+      await guest.hostWebContents.executeJavaScript('keepWebPaneRendering(...' + target + ')');
+    }
+    if (request.operation !== 'open') reply.result = await sharedWeb.handle(guest, request, attachWebFile);
+  } catch (error) {
+    // Browser errors can include a full URL. Keep the response bounded and generic.
+    reply.error = /^(Open this workspace|Waiting for|The web |Unsupported web|Invalid web|Use the startup link|Resolve the layout|Workspace changed|Unknown web provider)/.test(error.message)
+      ? error.message.slice(0, 180) : 'Web pane unavailable. Check the page on the selected computer.';
+  }
+  await host.call('local:webReply', vid, [reply]).catch(() => {});
+}
+
 ipcMain.handle('provider:ensureLocal', async (e, providerId) => {
   localOnly(e, 'Starting a local web service');
   const provider = configStore.getProviders().find((p) => p.id === providerId);
@@ -814,7 +881,11 @@ ipcMain.handle('provider:ensureLocal', async (e, providerId) => {
 ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
   const wc = webContents.fromId(wcId);
   if (!wc) throw new Error('Tab is not ready yet - click it first, then retry.');
-  const { name, b64 } = await hostCall(e, 'workspace:fileBytes', relPath);
+  const file = await hostCall(e, 'workspace:fileBytes', relPath);
+  return attachWebFile(wc, file);
+});
+
+function attachWebFile(wc, { name, b64 }) {
   const script = `(async () => {
     const bin = atob(${JSON.stringify(b64)});
     const bytes = new Uint8Array(bin.length);
@@ -835,7 +906,7 @@ ipcMain.handle('tab:sendFile', async (e, { wcId, relPath }) => {
     return 'dropped onto page';
   })()`;
   return wc.executeJavaScript(script);
-});
+}
 
 // --- IPC: misc ---------------------------------------------------------------------------------------
 

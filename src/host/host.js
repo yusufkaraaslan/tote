@@ -13,6 +13,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const Diagnostics = require('../shared/diagnostics');
 const { Sessions } = require('./sessions');
+const { WebPanes } = require('./webPanes');
 const { Views } = require('./views');
 const { shellCommand } = require('../main/ptyManager');
 const { shq } = require('../main/sshfix');
@@ -43,6 +44,7 @@ class Host {
     // viewerId -> { id, wsId, send(event, payload) }
     this.viewers = new Map();
     this.views = new Views(cfg, id => !!workspace.space(id));
+    this.webPanes = new WebPanes();
     this.sessions = new Sessions(ptys, (viewerId, ev, payload) => {
       const v = this.viewers.get(viewerId);
       if (v) v.send(ev, payload);
@@ -63,6 +65,7 @@ class Host {
   }
 
   removeViewer(id) {
+    this.webPanes.remove(id);
     this.sessions.detachAll(id);
     this.viewers.delete(id);
     this.syncWatches();
@@ -181,6 +184,23 @@ function methods(host) {
   const cfg = host.cfg;
 
   return {
+    'web:providers': () => cfg.getProviders().map(({ id, name, color }) => ({ id, name, color })),
+    'web:open': (ctx, { wsId, providerId }) => {
+      if (!cfg.getProviders().some(p => p.id === providerId)) throw Error('Unknown web provider.');
+      return host.webPanes.request(ctx, 'open', { wsId, providerId });
+    },
+    'web:pane': async (ctx, { wsId, tabId, input, source }) => {
+      if (wsId !== ctx.wsId) throw Error('The selected workspace has changed.');
+      if (typeof tabId !== 'string' || tabId.length > 256 ||
+          (input && JSON.stringify(input).length > 100000) ||
+          (source && JSON.stringify(source).length > 512)) throw Error('Invalid web pane request.');
+      const tab = cfg.getViews()[wsId]?.tabs?.find(t => t.id === tabId);
+      if (!tab) throw Error('Waiting for this web pane to be saved on the selected computer.');
+      const file = input?.type === 'file' ? await host.methods['workspace:fileBytes'](ctx, input.path) : undefined;
+      return host.webPanes.request(ctx, input ? 'input' : 'frame', {
+        wsId, tabId, providerId: tab.providerId, input, source, file,
+      });
+    },
     /* ----- spaces ----- */
     'workspaces:list': (ctx) => host.wsState(ctx),
     'workspaces:setActive': (ctx, id) => {

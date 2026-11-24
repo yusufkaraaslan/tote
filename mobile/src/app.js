@@ -7,7 +7,7 @@ import { ComputerSearch } from './discovery.js';
 import { DeviceClient } from './client.js';
 import { Native, Updater, Speech, Discovery, Browser, initNative, socketFactory } from './native.js';
 import { webUrl } from './web.js';
-import providers from '../../config/providers.json';
+import RemoteWeb from '../../src/renderer/remoteWeb.js';
 import { tailnetAddress, portNumber, workspaceGroups, chooseSelection, draftKey } from './model.js';
 import TermReports from '../../src/renderer/termreports.js';
 import Updates from '../../src/shared/updates.js';
@@ -15,8 +15,8 @@ import lockUpdateEditing from '../../src/shared/updateLock.js';
 import Diagnostics from '../../src/shared/diagnostics.js';
 import TermStream from '../../src/renderer/termstream.js';
 
-const webProviders = providers.filter(p => !p.local);
-const providerFor = id => providers.find(p => p.id === id);
+let webProviders = [], sharedPane;
+const providerFor = id => webProviders.find(p => p.id === id);
 const diagnosticLog = Diagnostics.createLog(), diagnosticCache = new Map(), hostVersions = new Map();
 const $ = id => document.getElementById(id);
 $('build-version').textContent = 'Android ' + version;
@@ -86,7 +86,7 @@ const selectionKey = () => JSON.stringify([selectedDevice?.id, wsId]);
 const inputKey = () => draftKey(selectedDevice?.id, wsId, pane?.ref || pane?.id);
 function notify(message) { diagnosticLog.add('terminal', message); $('notice').textContent = message; $('notice').hidden = false; clearTimeout(messageTimer); messageTimer = setTimeout(() => $('notice').hidden = true, 6500); }
 function banner(message) { $('connection-banner').textContent = message; $('connection-banner').hidden = !message; }
-function rememberDraft() { if (selectedDevice && pane) drafts.set(inputKey(), $('draft').value); }
+function rememberDraft() { if (selectedDevice && pane?.kind === 'term') drafts.set(inputKey(), $('draft').value); }
 function fitDraft() { const d = $('draft'); d.style.height = '44px'; d.style.height = Math.min(140, Math.max(44, d.scrollHeight + 2)) + 'px'; }
 function observerKey() { return 'tote.observe.' + inputKey(); }
 function inputBlocked() { return sessionStorage.getItem(observerKey()) === 'observe' || accessPending.has(inputKey()); }
@@ -148,6 +148,7 @@ $('add-device').onsubmit = e => {
   } catch (e) { notify(e.message); }
 };
 function stopConnection() {
+  sharedPane?.dispose(); sharedPane = null; webProviders = [];
   connectionEpoch++; spaceEpoch++; refreshEpoch++; paneEpoch++; clearTimeout(reconnectTimer); clearInterval(polling);
   const old = client; client = null; ready = false; busy = false; attached = null; old?.close(); controls();
 }
@@ -180,6 +181,9 @@ async function connect() {
     $('version-notice').textContent = Updates.peer(hello, version).message;
     $('version-notice').hidden = !$('version-notice').textContent;
     hostVersions.set(device.id, Diagnostics.report({host:{version:hello.tote}}).host.version);
+    const catalog = await c.call('web:providers').catch(() => []);
+    if (epoch !== connectionEpoch) return;
+    webProviders = Array.isArray(catalog) ? catalog : [];
     ready = true; connectedAt = Date.now(); await refresh(true);
     if (epoch !== connectionEpoch) return;
     banner(''); controls(); learnComputers(c); polling = setInterval(() => refresh().catch(e => notify(e.message)), 10000);
@@ -224,7 +228,7 @@ async function renderGroups(force = false) {
   if (!force && pane?.id === '_files') return;
   groups = workspaceGroups(views[wsId], sessions, wsId);
   for (const g of groups) g.panes = g.panes.filter(p => p.kind !== 'term' || !closedTerminals.has(draftKey(selectedDevice.id, wsId, p.ref)));
-  for (const g of groups) for (const p of g.panes) if (p.kind === 'web') p.title = providerFor(p.providerId)?.name || 'Web tab';
+  for (const g of groups) for (const p of g.panes) if (p.kind === 'web') p.title = providerFor(p.providerId)?.name || p.providerId || 'Web tab';
   const saved = selection[selectionKey()] || {};
   const chosen = chooseSelection(groups, group?.id || saved.group || views[wsId]?.activeGroup, pane?.id || saved.pane, force);
   group = chosen.group;
@@ -249,6 +253,7 @@ async function changeGroup(id) {
   await showPane(chosen);
 }
 async function showPane(next) {
+  sharedPane?.dispose(); sharedPane = null;
   rememberDraft(); const token = ++paneEpoch, c = client;
   termStream?.dispose(); termStream = null;
   const old = attached; attached = null; sizeController = null; observationConfirmed = false; pane = next;
@@ -263,13 +268,13 @@ async function showPane(next) {
   if (pane.kind === 'files') { await showFiles(); return; }
   if (pane.kind === 'doc') { await readFile(pane.path); return; }
   if (pane.kind === 'web') {
-    const provider = providerFor(pane.providerId);
-    showEmpty(provider?.local ? 'This web app runs on your computer. Open a URL reachable from your phone.'
-      : 'Open this provider with your phone’s browser login. Your computer’s web session stays on the computer.');
-    const button = document.createElement('button');
-    button.textContent = provider && !provider.local ? 'Open ' + provider.name : 'Enter web address';
-    button.onclick = () => provider && !provider.local ? openWeb(provider.url) : showWebDialog();
-    $('empty').append(document.createElement('br'), button);
+    const tabId = pane.ref, space = wsId;
+    showEmpty('');
+    sharedPane = RemoteWeb.mount($('empty'), data => c.call('web:pane', [{ wsId: space, tabId, ...data }]),
+      () => ready && !busy && client === c && token === paneEpoch && !paused);
+    const key = inputKey(), field = sharedPane.input;
+    field.value = drafts.get(key) || '';
+    field.oninput = () => { if (field.value) drafts.set(key, field.value); else drafts.delete(key); };
     return;
   }
   if (pane.kind !== 'term') { showEmpty('This pane is not supported on Android.'); return; }
@@ -488,13 +493,31 @@ async function openWeb(value) {
 }
 function showWebDialog() {
   $('web-error').textContent = '';
+  const c = client, space = wsId;
+  $('web-providers').replaceChildren();
+  if (!webProviders.length) $('web-error').textContent = 'Update Tote and its background host on the selected computer to open shared panes.';
+  for (const provider of webProviders) {
+    const button = document.createElement('button');
+    button.textContent = provider.name;
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const existing = groups.flatMap(g => g.panes).find(p => p.kind === 'web' && p.providerId === provider.id);
+        const ref = existing?.ref ?? await c.call('web:open', [{ wsId: space, providerId: provider.id }]);
+        if (client !== c || wsId !== space || !$('web-dialog').open) return;
+        await refresh();
+        if (client !== c || wsId !== space || !$('web-dialog').open) return;
+        const target = groups.find(g => g.panes.some(p => p.kind === 'web' && p.ref === ref));
+        if (!target) throw Error('The pane layout is changing. Select the pane again.');
+        $('web-dialog').close();
+        group = target;
+        await showPane(group.panes.find(p => p.kind === 'web' && p.ref === ref));
+      } catch (error) { if (client === c && wsId === space) $('web-error').textContent = error.message; }
+      finally { button.disabled = false; }
+    };
+    $('web-providers').append(button);
+  }
   $('web-dialog').showModal();
-}
-for (const provider of webProviders) {
-  const button = document.createElement('button');
-  button.textContent = provider.name;
-  button.onclick = () => openWeb(provider.url);
-  $('web-providers').append(button);
 }
 $('open-web').onclick = showWebDialog;
 $('workspace-tools').addEventListener('click', e => {
@@ -608,6 +631,7 @@ function renderUpdateDrafts() {
       rememberDraft();
       if (drafts.get(key) !== text) { renderUpdateDrafts(); return; }
       if (inputKey() === key && $('draft').value === text) { $('draft').value = ''; controls(); }
+      if (inputKey() === key && sharedPane?.input.value === text) sharedPane.input.value = '';
       drafts.delete(key); renderUpdateDrafts();
     };
     row.append(label, discard); list.append(row);
@@ -633,6 +657,10 @@ $('updates-download').onclick = async () => {
 $('updates-cancel').onclick = () => Updater.cancel();
 $('updates-install').onclick = async () => {
   cancelVoice(); renderUpdateDrafts();
+  if ([...document.querySelectorAll('.remote-web input[type=password]')].some(input => input.value)) {
+    $('updates-status').textContent = 'Insert or clear the text in your web pane before installing.';
+    return;
+  }
   if ([...drafts.values()].some(text => text.trim())) {
     $('updates-progress').textContent = 'Save or clear your phone drafts before installing an update. Review unsent drafts above.'; return;
   }
@@ -665,6 +693,10 @@ $('updates-check').onclick = async () => {
 $('updates-open').onclick = async () => {
   if (!updateVersion) return;
   renderUpdateDrafts();
+  if ([...document.querySelectorAll('.remote-web input[type=password]')].some(input => input.value)) {
+    $('updates-status').textContent = 'Insert or clear the text in your web pane before installing.';
+    return;
+  }
   if ([...drafts.values()].some(text => text.trim())) { $('updates-status').textContent = 'Save or clear your phone drafts before installing an update. Drafts are currently kept only in memory.'; return; }
   try { await Native.openUpdates({ version: updateVersion }); } catch { $('updates-status').textContent = 'Could not open the release page.'; }
 };

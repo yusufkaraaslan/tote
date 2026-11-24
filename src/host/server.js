@@ -136,7 +136,8 @@ class DeviceServer {
 // The production authorizer: whois the caller, compare owners.
 function tailnetAuthorizer() {
   let owner = null;
-  return async (ip) => {
+  return async (ip, req) => {
+    if (req?.headers?.origin !== undefined) return { ok: false, reason: 'Native device connection required' };
     if (owner == null) owner = (await TS.status()).owner;
     return TS.authorize(owner, await TS.whois(ip));
   };

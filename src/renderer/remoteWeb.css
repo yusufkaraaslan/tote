@@ -1,0 +1,8 @@
+.remote-web { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.remote-web-stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #141619; }
+.remote-web-stage img { max-width: 100%; max-height: 100%; user-select: none; touch-action: none; }
+.remote-web-stage span { position: absolute; padding: .6em; background: #24262b; color: #eee; }
+.remote-web form { display: flex; align-items: center; gap: .3em; padding: .3em; }
+.remote-web input { min-width: 0; flex: 1; }
+
+.remote-web [hidden] { display: none; }

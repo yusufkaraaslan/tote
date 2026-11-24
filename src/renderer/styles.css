@@ -149,6 +149,7 @@ body.on-device #context-device { color: var(--warn-fg); }
   background: var(--bg-raise); border: 1px solid var(--line); border-radius: 0;
 }
 .pane.hidden { display: none; }
+.pane.hidden.sharing-web { display: flex; opacity: 0; pointer-events: none; z-index: -1 !important; }
 /* Another machine dropped: keep its panes on screen, dimmed, under a banner
    -- an empty view would read as "nothing is running there". */
 #device-offline {

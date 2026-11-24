@@ -1,6 +1,6 @@
 // Exercise the real main/preload/provider plumbing with loopback pages and
 // disposable configuration. No user sessions, credentials or workspace files.
-const { app, BrowserWindow, webContents, session, clipboard } = require('electron');
+const { app, BrowserWindow, webContents, session, clipboard, nativeImage } = require('electron');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const http = require('node:http'), assert = require('node:assert/strict');
 const updateLogic = require('../src/main/updates');
@@ -19,7 +19,7 @@ const configDir = path.join(scratch, 'profile/config');
 fs.mkdirSync(configDir, { recursive: true });
 const write = (name, value) => fs.writeFileSync(path.join(configDir, name + '.json'), JSON.stringify(value));
 write('settings', { setupDone: true, bridgeDownloads: false, shareDevice: false, keepAwake: false, scratchRoot: path.join(scratch, 'scratch') });
-write('workspaces', { active: 'global', list: ['global', 'second'].map(id => ({ id, name: id, path: path.join(scratch, id) })) });
+write('workspaces', { active: 'global', list: ['global', 'second', 'third'].map(id => ({ id, name: id, path: path.join(scratch, id) })) });
 write('cli-profiles', []); write('apps', { list: [] }); write('views', {});
 const errors = [];
 app.on('browser-window-created', (_event, win) => {
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
     return res.end('download from ' + name);
   }
   res.setHeader('Content-Type', 'text/html');
-  res.end('<!doctype html><title>Fixture provider</title><textarea id="draft"></textarea>');
+  res.end('<!doctype html><title>Fixture provider</title><style>body{background:#468cc8}</style><textarea id="draft"></textarea>');
 });
 let finishing = false;
 async function finish(code) {
@@ -95,6 +95,20 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(await first.executeJavaScript('typeof require'), 'undefined');
     assert(!/Electron\//.test(first.getUserAgent()), 'provider UA must use the real Chromium UA without Electron');
     await first.executeJavaScript("document.cookie='fixtureLogin=retained; path=/';document.querySelector('#draft').value='unsent provider draft'");
+    const { LocalHost } = require('../src/main/localHost');
+    const remote = new LocalHost(app.getPath('userData')).client();
+    await remote.connect();
+    const tabId = await run(a, "layoutSync().flush().then(() => wsViews().tabs[0].id)");
+    const request = { wsId: 'global', tabId };
+    const frame = await remote.call('web:pane', [request]);
+    assert(Buffer.from(frame.image, 'base64').subarray(0, 2).equals(Buffer.from([255, 216])), 'remote viewer gets a JPEG of the live guest');
+    const click = await first.executeJavaScript("(() => { const r = document.querySelector('#draft').getBoundingClientRect(); return {x:(r.x+5)/innerWidth, y:(r.y+5)/innerHeight}; })()");
+    await remote.call('web:pane', [{ ...request, source: frame.source, input: { type:'click', ...click } }]);
+    await remote.call('web:pane', [{ ...request, source: frame.source, input: { type:'text', text:'remote editing ' } }]);
+    assert.match(await first.executeJavaScript("document.querySelector('#draft').value"), /remote editing /);
+    await assert.rejects(remote.call('web:pane', [{ ...request, wsId:'second' }]), /workspace/);
+    await assert.rejects(remote.call('web:pane', [{ ...request, source:{}, input:{type:'text',text:'stale'} }]), /page changed/);
+    await first.executeJavaScript("document.querySelector('#draft').value='unsent provider draft'");
     await first.session.cookies.flushStore();
     await first.executeJavaScript(`window.open(${JSON.stringify(url + '/popup')});void 0`);
     const popup = await until(() => BrowserWindow.getAllWindows().find(w => w !== a && w.webContents.getURL().endsWith('/popup')), 'OAuth popup');
@@ -128,7 +142,14 @@ server.listen(0, '127.0.0.1', async () => {
       assert.equal(fs.existsSync(path.join(scratch, 'second/inbox/fixture', name + '.txt')), false);
     }
     nested.destroy(); popup.destroy();
-    await run(a, "switchWorkspace('second')"); await run(a, "switchWorkspace('global')");
+    await run(a, "switchWorkspace('second')");
+    const hiddenFrame = await remote.call('web:pane', [request]);
+    const pixels = nativeImage.createFromBuffer(Buffer.from(hiddenFrame.image,'base64'));
+    const {width,height} = pixels.getSize();
+    const center = pixels.crop({x:Math.floor(width/2),y:Math.floor(height/2),width:1,height:1}).toBitmap();
+    assert.ok(Math.abs(center[0]-200)<5 && Math.abs(center[1]-140)<5 && Math.abs(center[2]-70)<5,
+      'the hidden guest retains its actual page pixels');
+    await run(a, "switchWorkspace('global')");
     assert.equal((await guest(a)).id, first.id, 'switching spaces restores the original provider instance');
     assert.equal((await guest(b)).id, secondId, 'another window keeps its own active-space provider');
     assert.equal(await first.executeJavaScript("document.querySelector('#draft').value"), 'unsent provider draft');
@@ -200,6 +221,10 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
     assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
     await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length === 0"), 'successful login hides the connection form');
+    const localTab = await run(a, "layoutSync().flush().then(() => wsViews().tabs.find(t=>t.providerId==='local-fixture').id)");
+    const signedIn = await remote.call('web:pane', [{ wsId:'global', tabId:localTab }]);
+    assert.ok(signedIn.image, 'remote viewer sees the signed-in loopback service');
+    assert(!JSON.stringify(signedIn).includes('fixture-secret'), 'startup URL is never sent');
     await until(() => !local.isLoading(), 'authenticated page loaded');
     await local.executeJavaScript("document.querySelector('#draft').value='unsent local draft'");
     await run(a, "document.querySelector('.local-provider-retry').click()");
@@ -213,6 +238,30 @@ server.listen(0, '127.0.0.1', async () => {
     await local.session.clearStorageData({ storages: ['cookies'] });
     local.reload();
     await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length > 0 && document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'expired login shows the form again');
+    const challenge = await remote.call('web:pane', [{ wsId:'global', tabId:localTab }]);
+    assert.equal(challenge.source.needsLogin, true, 'remote pane shows startup login on an actual challenge');
+    const signIn = value => remote.call('web:pane', [{ wsId:'global', tabId:localTab, source:challenge.source, input:{type:'login',url:value} }]);
+    await assert.rejects(signIn('https://example.invalid/?token=fixture-secret'), /startup link/);
+    await signIn(url + '/login?token=fixture-secret');
+    await until(() => local.getURL() === url + '/authenticated', 'remote startup link signs in on the selected computer');
+    // The remote provider picker can open even when no desktop window is in that space.
+    await remote.call('workspaces:setActive', ['third']);
+    const newTab = await remote.call('web:open', [{ wsId:'third', providerId:'fixture' }]);
+    await until(async () => {
+      try { return (await remote.call('web:pane', [{ wsId:'third', tabId:newTab }])).image; } catch { return false; }
+    }, 'host opens a live web pane for an unviewed workspace');
+    assert.equal(await run(a, 'state.workspaces.active'), 'global');
+    assert.equal(await run(b, 'state.workspaces.active'), 'second');
+    const snapshot = await remote.call('views:snapshot', []);
+    const third = snapshot.views.third, originalGroup = third.activeGroup;
+    third.tabs.push({ id:'other-tab', providerId:'fixture' });
+    third.groups.push({ id:'other', name:'Other', tree:{ type:'leaf', id:'other-leaf', kind:'web', ref:'other-tab' } });
+    assert.equal((await remote.call('views:patch', [{ changes:[{ wsId:'third', revision:snapshot.revisions.third, value:third }] }])).ok, true);
+    await until(async () => {
+      try { return (await remote.call('web:pane', [{ wsId:'third', tabId:'other-tab' }])).image; } catch { return false; }
+    }, 'a previously unopened group can supply its own live web page');
+    assert.equal((await remote.call('views:get', [])).third.activeGroup, originalGroup, 'remote group selection stays local');
+    remote.close();
     await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/login?token=expired')};document.querySelector('.local-provider-controls').requestSubmit()`);
     await until(() => run(a, "document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'invalid login does not claim to be connected');
     await run(a, `document.querySelector('.local-provider-controls input').value=${JSON.stringify(url + '/unavailable')};document.querySelector('.local-provider-controls').requestSubmit()`);

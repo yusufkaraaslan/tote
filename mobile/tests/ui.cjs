@@ -54,10 +54,12 @@ app.whenReady().then(async()=>{
   await run("document.querySelector('#web-url').value='http://127.0.0.1:3080';document.querySelector('#web-form').requestSubmit()");
   await until("document.querySelector('#web-error').textContent.includes('points to the phone')");
   assert.equal(await run('testState.openedWeb'),undefined);
+  assert.equal(await run("document.querySelectorAll('#web-providers button').length"),2,'includes host-local providers');
   await run("document.querySelector('#web-providers button').click()");
-  await until("!!testState.openedWeb && !document.querySelector('#web-dialog').open");
-  assert.match(await run('testState.openedWeb'),/^https:\/\//);
-  assert.equal(await run("document.querySelector('#draft').value"),'Keep this unsent draft');
+  await until("document.querySelector('#empty .remote-web img:not([hidden])') && !document.querySelector('#web-dialog').open");
+  assert.equal(await run('testState.openedWeb'),undefined,'provider pane stays on the host');
+  await select('groups','build');
+  await until("document.querySelector('#draft').value==='Keep this unsent draft'");
   await run("document.querySelector('#open-web').click();testState.webFail=true;document.querySelector('#web-url').value='http://100.64.1.2:3080/?token=test';document.querySelector('#web-form').requestSubmit()");
   await until("document.querySelector('#web-error').textContent==='Browser unavailable'");
   assert.equal(await run("document.querySelector('#web-dialog').open"),true);
@@ -224,11 +226,11 @@ app.whenReady().then(async()=>{
   assert.equal(await run("testCalls.filter(c=>c.m==='pty:kill').at(-1).a[0].id"),'s2','current terminal closes and selection moves to a live terminal');
   await run("window.confirm=oldConfirm;void 0");
   await run('addWebPane()'); await until("!!document.querySelector('[data-group=web-group]')");
-  await select('groups','web-group'); await until("!!document.querySelector('#empty button')");
+  await select('groups','web-group'); await until("!!document.querySelector('#empty .remote-web img:not([hidden])')");
   assert.equal(await run("document.querySelector('#pane-label').textContent"),'Claude');
   assert.equal(await run("document.querySelector('#close-terminal').hidden"),true,'web panes have no terminal close action');
-  await run("document.querySelector('#empty button').click()");
-  await until("testState.openedWeb==='https://claude.ai/'");
+  await run("document.querySelector('.remote-web input:not([type=password])').value='remote draft';document.querySelector('.remote-web form:not([hidden]):last-child').requestSubmit()");
+  await until("testCalls.some(c=>c.m==='web:pane' && c.a[0].tabId==='web-tab' && c.a[0].input?.text==='remote draft')");
   await select('groups','build');
   await until("!document.querySelector('#terminal-scroll').hidden");
   // Drafts must remain reviewable after their computer/session disappears.

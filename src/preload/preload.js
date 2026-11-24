@@ -74,6 +74,9 @@ contextBridge.exposeInMainWorld('tote', {
   ptyRun: (command) => ipcRenderer.invoke('pty:run', { command, args: [] }),
 
   // providers / tabs
+  registerWebPane: (pane) => ipcRenderer.invoke('provider:registerPane', pane),
+  webProviders: (device) => ipcRenderer.invoke('web:providers', device),
+  webPane: (request, device) => ipcRenderer.invoke('web:pane', request, device),
   ensureLocal: (providerId) => ipcRenderer.invoke('provider:ensureLocal', providerId),
   sendFileToTab: (wcId, relPath) => ipcRenderer.invoke('tab:sendFile', { wcId, relPath }),
   openExternal: (url) => ipcRenderer.send('app:openExternal', url),

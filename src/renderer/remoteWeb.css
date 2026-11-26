@@ -6,3 +6,5 @@
 .remote-web input { min-width: 0; flex: 1; }
 
 .remote-web [hidden] { display: none; }
+.independent-web { container-type: size; }
+.independent-web img { width: min(100cqw, calc(100cqh * var(--frame-aspect))); height: auto; }

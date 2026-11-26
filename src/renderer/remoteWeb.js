@@ -1,7 +1,8 @@
 // One request at a time per visible pane. A frame identifies the exact guest
 // and viewport an input was aimed at; never resend input after a disconnect.
 (function (root) {
-  function mount(container, call, active = () => true) {
+  let viewerId;
+  function mount(container, call, active = () => true, independent = false) {
     const panel = document.createElement('section');
     panel.className = 'remote-web';
     const stage = document.createElement('div');
@@ -35,6 +36,9 @@
     login.append(link, connect);
     panel.append(stage, login, form);
     container.append(panel);
+    // A window keeps its identity when a phone switches away and remounts a tab.
+    const viewId = independent ? (viewerId ??= crypto.randomUUID()) : null;
+    if (viewId) stage.classList.add('independent-web');
     let source = null, lastImage = null, disposed = false, timer, queue = Promise.resolve(), pending = 0;
     const visible = () => !disposed && panel.isConnected && active() && !document.hidden && panel.getClientRects().length;
     const problem = error => {
@@ -47,14 +51,23 @@
       let delay = 450;
       if (visible() && !pending) {
         try {
-          const frame = await call({ source });
+          let requested = source;
+          if (viewId) {
+            const w = stage.clientWidth, h = stage.clientHeight;
+            if (!w || !h) return;
+            const scale = Math.min(1, 4096 / Math.max(w, h), Math.sqrt(8388608 / (w * h)));
+            requested = { ...source, viewport: { id: viewId, width: Math.max(1, Math.floor(w * scale)), height: Math.max(1, Math.floor(h * scale)) } };
+          }
+          const frame = await call({ source: requested });
           if (visible()) {
+            if (viewId && frame.source?.viewport?.id !== viewId) throw Error('Update the Tote viewer on the selected computer to open an independent DSH view.');
             if (frame.image) {
               if (typeof frame.image !== 'string' || frame.image.length > 3 * 1024 * 1024) throw Error('Invalid web pane image.');
               const next = new Image();
               next.src = 'data:image/jpeg;base64,' + frame.image;
               await next.decode();
               if (!visible()) return;
+              if (viewId) image.style.setProperty('--frame-aspect', next.naturalWidth / next.naturalHeight);
               image.src = next.src; lastImage = frame.source.revision;
             }
             if (lastImage !== frame.source.revision) throw Error('Refreshing the web pane…');

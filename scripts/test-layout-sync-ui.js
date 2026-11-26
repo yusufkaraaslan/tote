@@ -49,10 +49,10 @@ ipcMain.handle('fixture', async (e, name, args) => {
       if (result.ok) for (const w of windows) if (w.webContents.id !== e.sender.id) w.webContents.send('views:changed', result.snapshot.views, key);
       return result;
     }
-    case 'webProviders': return [{ id: 'custom-host', name: 'Host provider' }];
+    case 'webProviders': return [{ id: 'custom-host', name: 'Host provider' }, { id:'dsh-local', name:'DSH' }];
     case 'webPane':
       webCalls.push(args);
-      return { source:{token:'test',width:50,height:50,revision:'image'}, image:webImage };
+      return { source:{token:'test',width:50,height:50,revision:'image',viewport:args[0].source?.viewport}, image:webImage };
     case 'getSettings': return { setupDone: true };
     case 'getProviders': case 'getCliProfiles': case 'listApps': case 'tree': case 'devicesOpen': return [];
     case 'ptyList': return hostSessions.get(args[0] ?? current);
@@ -154,6 +154,18 @@ app.whenReady().then(async () => {
     await until(a, "!!document.querySelector('.remote-web img:not([hidden])')");
     assert.equal(await run(a, "document.querySelectorAll('webview.provider-view').length"),0);
     assert(webCalls.every(([request,device])=>device==='remote' && request.wsId==='a'));
+    await run(a, "openTab('dsh-local')");
+    await until(a, "!!document.querySelector('.independent-web img:not([hidden])')");
+    const requestedSize = () => webCalls.map(([r]) => r.source?.viewport).filter(Boolean).at(-1);
+    const before = requestedSize();
+    assert(before.width > 0 && before.height > 0);
+    const [winWidth,winHeight] = a.getSize();
+    a.setSize(winWidth + 160,winHeight + 100);
+    for (let i=0;i<50 && requestedSize().height === before.height;i++) await pause(50);
+    const after = requestedSize();
+    assert.notEqual(after.height,before.height);
+    assert.equal(after.id,before.id);
+    assert.deepEqual([after.width,after.height],await run(a, "(() => {const s=document.querySelector('.independent-web');return [s.clientWidth,s.clientHeight]})()"));
     await run(a, "switchDevice(null)");
     await pause(600);
     const count = webCalls.length;

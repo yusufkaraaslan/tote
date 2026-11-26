@@ -778,7 +778,7 @@ function ensureWebview(tab, provider, container) {
   const device = state.deviceKey, wsId = state.workspaces.active;
   if (device) {
     const remote = RemoteWeb.mount(container, data => tote.webPane({ wsId, tabId: tab.id, ...data }, device),
-      () => state.deviceKey === device && state.workspaces.active === wsId && !state.deviceDown);
+      () => state.deviceKey === device && state.workspaces.active === wsId && !state.deviceDown, tab.providerId === 'dsh-local');
     state.tabs.set(tab.id, { remote, providerId: tab.providerId, wsId });
     return remote.element;
   }

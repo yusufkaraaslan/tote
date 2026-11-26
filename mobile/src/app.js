@@ -271,7 +271,7 @@ async function showPane(next) {
     const tabId = pane.ref, space = wsId;
     showEmpty('');
     sharedPane = RemoteWeb.mount($('empty'), data => c.call('web:pane', [{ wsId: space, tabId, ...data }]),
-      () => ready && !busy && client === c && token === paneEpoch && !paused);
+      () => ready && !busy && client === c && token === paneEpoch && !paused, pane.providerId === 'dsh-local');
     const key = inputKey(), field = sharedPane.input;
     field.value = drafts.get(key) || '';
     field.oninput = () => { if (field.value) drafts.set(key, field.value); else drafts.delete(key); };

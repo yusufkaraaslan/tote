@@ -26,8 +26,8 @@ class SharedWeb {
     });
   }
 
-  guest({ wsId, tabId, providerId }) {
-    let wc = this.panes.get(JSON.stringify([wsId, tabId, providerId]))?.values().next().value;
+  guest({ wsId, tabId, providerId, independentGuest }) {
+    let wc = independentGuest || this.panes.get(JSON.stringify([wsId, tabId, providerId]))?.values().next().value;
     while (wc && this.popups.has(wc)) wc = this.popups.get(wc);
     return wc;
   }
@@ -57,21 +57,40 @@ class SharedWeb {
       const debug = wc.debugger;
       if (!debug.isAttached()) { debug.attach(); screen.ownsDebugger = true; }
       const command = (method, params = {}) => debug.sendCommand(method, params);
+      const requested = request.independentGuest && request.source.viewport;
+      // Only a frame can resize its private browser. Input always targets the
+      // last rendered viewport, including across concurrent resize requests.
+      if (requested && request.operation === 'frame' &&
+          (screen.viewport?.width !== requested.width || screen.viewport?.height !== requested.height)) {
+        await command('Emulation.setDeviceMetricsOverride', {
+          width: requested.width, height: requested.height, deviceScaleFactor: 1, mobile: false,
+        });
+        screen.viewport = { id: requested.id, width: requested.width, height: requested.height };
+        screen.token = randomUUID();
+      }
       const token = screen.token;
       const { cssVisualViewport: viewport } = await command('Page.getLayoutMetrics');
       const { clientWidth: width, clientHeight: height } = viewport;
       if (!(width > 0 && height > 0)) throw Error('The web pane has no visible page on the computer.');
       if (request.operation === 'frame') {
-        const pixels = await wc.capturePage(undefined, { stayHidden: false, stayAwake: true });
-        if (pixels.isEmpty()) throw Error('Waiting for the web page on the selected computer.');
-        const size = pixels.getSize();
-        const jpeg = size.width > 1440 || size.height > 1440
-          ? pixels.resize(size.width >= size.height ? { width: 1440 } : { height: 1440 }) : pixels;
-        const data = jpeg.toJPEG(73).toString('base64');
+        let data;
+        if (requested) {
+          const clip = { x: viewport.pageX, y: viewport.pageY, width, height,
+            scale: Math.min(1, 1920 / Math.max(width, height)) };
+          ({ data } = await command('Page.captureScreenshot', { format: 'jpeg', quality: 73, clip, captureBeyondViewport: true }));
+        } else {
+          const pixels = await wc.capturePage(undefined, { stayHidden: false, stayAwake: true });
+          if (pixels.isEmpty()) throw Error('Waiting for the web page on the selected computer.');
+          const size = pixels.getSize();
+          const jpeg = size.width > 1440 || size.height > 1440
+            ? pixels.resize(size.width >= size.height ? { width: 1440 } : { height: 1440 }) : pixels;
+          data = jpeg.toJPEG(73).toString('base64');
+        }
         if (data.length > 3 * 1024 * 1024 || token !== screen.token) throw Error('The web page changed. Refreshing…');
         const revision = createHash('sha256').update(data).digest('base64');
         const needsLogin = this.localOrigins.has(wc) && [401, 403].includes(this.responses.get(wc));
         const source = { token, width, height, revision, needsLogin };
+        if (requested) source.viewport = screen.viewport;
         return request.source?.revision === revision ? { source } : { source, image: data };
       }
       if (Date.now() >= deadline || screen.token !== token || request.source?.token !== token || request.source.width !== width || request.source.height !== height) {
@@ -109,7 +128,9 @@ class SharedWeb {
       throw Error('Unsupported web pane gesture.');
     });
     screen.queue = work.catch(() => {}).finally(() => {
-      if (--screen.pending) return;
+      // The private browser has no native viewport. Keep its emulated size
+      // while its pane is hidden; closing the browser releases the debugger.
+      if (--screen.pending || request.independentGuest) return;
       screen.release = setTimeout(() => {
         if (screen.ownsDebugger && !wc.isDestroyed() && wc.debugger.isAttached()) wc.debugger.detach();
         screen.ownsDebugger = false;

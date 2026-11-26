@@ -84,7 +84,7 @@ server.listen(0, '127.0.0.1', async () => {
     const url = `http://127.0.0.1:${server.address().port}`;
     write('providers', [
       { id: 'fixture', name: 'Fixture', url, color: '#123456' },
-      { id: 'local-fixture', name: 'Local fixture', url: url + '/local', local: { startCommand: 'must-not-run' } },
+      { id: 'dsh-local', name: 'Local fixture', url: url + '/local', local: { startCommand: 'must-not-run' } },
     ]);
     require('../src/main/main');
     await app.whenReady();
@@ -153,8 +153,8 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal((await guest(a)).id, first.id, 'switching spaces restores the original provider instance');
     assert.equal((await guest(b)).id, secondId, 'another window keeps its own active-space provider');
     assert.equal(await first.executeJavaScript("document.querySelector('#draft').value"), 'unsent provider draft');
-    await run(a, "openTab('local-fixture')");
-    const localId = await until(() => run(a, "(() => { try { return [...state.tabs.values()].find(t=>t.providerId==='local-fixture')?.wv.getWebContentsId(); } catch { return null; } })()"), 'local provider guest');
+    await run(a, "openTab('dsh-local')");
+    const localId = await until(() => run(a, "(() => { try { return [...state.tabs.values()].find(t=>t.providerId==='dsh-local')?.wv.getWebContentsId(); } catch { return null; } })()"), 'local provider guest');
     const local = webContents.fromId(localId);
     await until(() => local.getURL() === url + '/local', 'existing local service loaded');
     await until(() => run(a, "!document.querySelector('.local-provider-retry').disabled"), 'local startup completed');
@@ -221,10 +221,53 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(await run(a, "document.querySelector('.local-provider-controls input').value"), '');
     assert.equal(await run(a, "JSON.stringify({providers:state.providers, views:state.views}).includes('fixture-secret')"), false);
     await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length === 0"), 'successful login hides the connection form');
-    const localTab = await run(a, "layoutSync().flush().then(() => wsViews().tabs.find(t=>t.providerId==='local-fixture').id)");
+    const localTab = await run(a, "layoutSync().flush().then(() => wsViews().tabs.find(t=>t.providerId==='dsh-local').id)");
     const signedIn = await remote.call('web:pane', [{ wsId:'global', tabId:localTab }]);
     assert.ok(signedIn.image, 'remote viewer sees the signed-in loopback service');
     assert(!JSON.stringify(signedIn).includes('fixture-secret'), 'startup URL is never sent');
+    const independent = async (viewport, previous = null, client = remote) => {
+      const req = { wsId:'global', tabId:localTab, source:{...previous, viewport} };
+      return until(async () => {
+        try { return await client.call('web:pane', [req]); }
+        catch (error) { if (!error.message.includes('Waiting for DSH')) throw error; }
+      }, 'independent DSH page loads');
+    };
+    const laptop = {id:require('node:crypto').randomUUID(), width:840, height:460};
+    const phone = {id:require('node:crypto').randomUUID(), width:370, height:640};
+    const localSize = await local.executeJavaScript('[innerWidth,innerHeight]');
+    await local.executeJavaScript("localStorage.setItem('draft','source draft')");
+    const pc = await independent(laptop), small = await independent(phone);
+    assert.deepEqual([pc.source.width,pc.source.height], [840,460]);
+    assert.deepEqual(nativeImage.createFromBuffer(Buffer.from(pc.image,'base64')).getSize(), {width:840,height:460});
+    assert.deepEqual([small.source.width,small.source.height], [370,640]);
+    assert.notEqual(pc.source.token,small.source.token);
+    assert.equal(pc.source.needsLogin, false);
+    const privatePages = webContents.getAllWebContents().filter(w => w.getURL() === url + '/local' && w.session !== local.session);
+    assert.equal(privatePages.length, 2);
+    const laptopPage = (await Promise.all(privatePages.map(async w => await w.executeJavaScript('innerWidth') === 840 ? w : null))).find(Boolean);
+    const send = (source, input) => remote.call('web:pane', [{ wsId:'global', tabId:localTab, source, input }]);
+    await send(pc.source, { type:'click', x:15/840, y:15/460 });
+    await send(pc.source, { type:'text', text:'private draft' });
+    const resized = await independent({...laptop,width:570},pc.source);
+    assert.deepEqual([resized.source.width,resized.source.height], [570,460]);
+    assert.equal(await laptopPage.executeJavaScript("document.querySelector('#draft').value"), 'private draft');
+    assert.equal(await laptopPage.executeJavaScript("localStorage.getItem('draft')"), null);
+    await laptopPage.executeJavaScript("localStorage.setItem('draft','laptop draft')");
+    assert.equal(await local.executeJavaScript("localStorage.getItem('draft')"), 'source draft');
+    assert.equal(await privatePages.find(w=>w!==laptopPage).executeJavaScript("localStorage.getItem('draft')"), null);
+    assert.equal(await privatePages.find(w=>w!==laptopPage).executeJavaScript("document.querySelector('#draft').value"), '');
+    assert.equal(await local.executeJavaScript("document.querySelector('#draft').value"), '');
+    assert.deepEqual(await local.executeJavaScript('[innerWidth,innerHeight]'), localSize);
+    await assert.rejects(send(pc.source, {type:'text',text:'stale'}), /page changed/);
+    await assert.rejects(independent({...laptop,width:-1}), /Invalid web pane dimensions/);
+    const secondViewer = new LocalHost(app.getPath('userData')).client();
+    try {
+      await secondViewer.connect();
+      await secondViewer.call('workspaces:setActive', ['global']);
+      const other = await independent(laptop, null, secondViewer);
+      assert.notEqual(other.source.token, resized.source.token);
+      assert.equal(await laptopPage.executeJavaScript('innerWidth'), 570);
+    } finally { secondViewer.close(); }
     await until(() => !local.isLoading(), 'authenticated page loaded');
     await local.executeJavaScript("document.querySelector('#draft').value='unsent local draft'");
     await run(a, "document.querySelector('.local-provider-retry').click()");
@@ -232,7 +275,7 @@ server.listen(0, '127.0.0.1', async () => {
     assert.equal(await local.executeJavaScript("document.querySelector('#draft').value"), 'unsent local draft', 'a late Retry does not reload a connected app');
     assert.equal(await run(a, "document.querySelector('.local-provider-status').textContent"), 'Connected');
     // A fresh pane shares the signed cookie, without pasting or saving a token.
-    await run(b, "openTab('local-fixture')");
+    await run(b, "openTab('dsh-local')");
     await until(() => run(b, "document.querySelector('.local-provider-controls')?.getClientRects().length === 0"), 'new pane reconnects with the existing login cookie');
     // A real expired/cleared login must restore the connection controls.
     await local.session.clearStorageData({ storages: ['cookies'] });
@@ -240,6 +283,12 @@ server.listen(0, '127.0.0.1', async () => {
     await until(() => run(a, "document.querySelector('.local-provider-controls').getClientRects().length > 0 && document.querySelector('.local-provider-status').textContent.startsWith('Sign-in required')"), 'expired login shows the form again');
     const challenge = await remote.call('web:pane', [{ wsId:'global', tabId:localTab }]);
     assert.equal(challenge.source.needsLogin, true, 'remote pane shows startup login on an actual challenge');
+    const fresh = {...phone, id:require('node:crypto').randomUUID()};
+    const privateChallenge = await independent(fresh);
+    assert.equal(privateChallenge.source.needsLogin, true);
+    await send(privateChallenge.source, {type:'login',url:url + '/login?token=fixture-secret'});
+    assert.equal((await independent(fresh)).source.needsLogin, false);
+    assert.equal((await local.session.cookies.get({url,name:'localLogin'})).length, 0, 'private sign-in stays in that browser');
     const signIn = value => remote.call('web:pane', [{ wsId:'global', tabId:localTab, source:challenge.source, input:{type:'login',url:value} }]);
     await assert.rejects(signIn('https://example.invalid/?token=fixture-secret'), /startup link/);
     await signIn(url + '/login?token=fixture-secret');

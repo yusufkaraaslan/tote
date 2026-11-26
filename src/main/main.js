@@ -23,6 +23,7 @@ const { systemCheck, fixNpmPrefix, claudeStatus, bindClaudeToWorkspace, mcpSnipp
 const { LocalHost } = require('./localHost');
 const hostStartup = require('./hostStartup');
 const sharedWeb = new (require('./sharedWeb').SharedWeb)();
+const { dshGuest, closeDshViews } = require('./dshViews');
 let hostLaunch;
 let selfUpdater;
 let installingUpdate = false;
@@ -139,12 +140,13 @@ function providerViewer(contents) {
   return null;
 }
 
-function setupProviderPopups(contents) {
+function setupProviderPopups(contents, privateView = false) {
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
+          ...(privateView ? { show: false } : {}),
           width: 560,
           height: 720,
           autoHideMenuBar: true,
@@ -153,7 +155,7 @@ function setupProviderPopups(contents) {
         },
       };
     }
-    shell.openExternal(url);
+    if (!privateView) shell.openExternal(url);
     return { action: 'deny' };
   });
   contents.on('did-create-window', win => {
@@ -161,15 +163,19 @@ function setupProviderPopups(contents) {
     sharedWeb.popups.set(contents, popup);
     if (sharedWeb.remoteWorkspace.has(contents)) sharedWeb.remoteWorkspace.set(popup, sharedWeb.remoteWorkspace.get(contents));
     win.once('closed', () => { if (sharedWeb.popups.get(contents) === popup) sharedWeb.popups.delete(contents); });
-    setupProviderPopups(popup);
+    if (privateView) {
+      const close = () => { if (!win.isDestroyed()) win.destroy(); };
+      contents.once('destroyed', close);
+      win.once('closed', () => contents.removeListener('destroyed', close));
+    }
+    setupProviderPopups(popup, privateView);
   });
 }
 
 // Per-provider persistent session: keeps the login alive across restarts,
 // spoofs a desktop Chrome UA, and routes downloads into the ACTIVE workspace's
 // inbox/<provider>/ (resolved at download time, so switching spaces re-routes).
-function setupProviderSession(provider) {
-  const ses = session.fromPartition(partitionFor(provider.id));
+function setupProviderSession(provider, ses = session.fromPartition(partitionFor(provider.id))) {
   if (ses.__toteReady) return;
   ses.__toteReady = true;
   ses.setUserAgent(chromeUA(ses));
@@ -348,6 +354,7 @@ async function createWindow(workspaceId) {
     }
     for (const [id, owner] of wizardOwners) if (owner === wcId) { ptys.kill(id); wizardOwners.delete(id); }
     host.removeViewer(vid);
+    if (!host.viewers.size) closeDshViews();
     if (lastFocused === vid) lastFocused = null;
   });
 
@@ -841,9 +848,34 @@ async function webWindow(wsId) {
   return opening;
 }
 
+async function loadDshPage(wc, request) {
+  const provider = configStore.getProviders().find(p => p.id === request.providerId);
+  if (!provider) throw Error('Unknown web provider.');
+  const privateSession = wc.session;
+  setupProviderSession(provider, privateSession);
+  setupProviderPopups(wc, true);
+  sharedWeb.remoteWorkspace.set(wc, request.wsId);
+  if (provider.local) sharedWeb.localOrigins.set(wc, new URL(provider.url).origin);
+  wc.on('did-navigate', (_event, _url, code) => sharedWeb.responses.set(wc, code));
+  // DSH stores drafts in localStorage and its login in an HTTP-only
+  // cookie. Seed the login for the configured service in memory only.
+  const ses = session.fromPartition(partitionFor(provider.id));
+  const cookies = await ses.cookies.get({ url: provider.url });
+  for (const cookie of cookies.filter(c => c.httpOnly)) {
+    const { name, value, path, secure, httpOnly, sameSite, expirationDate } = cookie;
+    await privateSession.cookies.set({ url: provider.url, name, value, path, secure, httpOnly, sameSite,
+      ...(expirationDate !== undefined && { expirationDate }), ...(!cookie.hostOnly && { domain: cookie.domain }) });
+  }
+  const launch = provider.local && await localServices.ensure(provider);
+  if (!wc.isDestroyed()) await wc.loadURL(launch?.url || provider.url);
+}
+
 async function serveWebRequest(vid, request) {
   const reply = { id: request.id };
   try {
+    if (request.providerId === 'dsh-local' && request.source?.viewport) {
+      request.independentGuest = dshGuest(request, wc => loadDshPage(wc, request));
+    }
     let guest = sharedWeb.guest(request);
     if (!guest || request.operation === 'open') {
       if (request.operation === 'input') throw Error('The web page changed. Try the action again.');

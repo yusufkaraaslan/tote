@@ -198,7 +198,7 @@ function methods(host) {
       if (!tab) throw Error('Waiting for this web pane to be saved on the selected computer.');
       const file = input?.type === 'file' ? await host.methods['workspace:fileBytes'](ctx, input.path) : undefined;
       return host.webPanes.request(ctx, input ? 'input' : 'frame', {
-        wsId, tabId, providerId: tab.providerId, input, source, file,
+        wsId, tabId, providerId: tab.providerId, viewerId: ctx.viewer.id, input, source, file,
       });
     },
     /* ----- spaces ----- */

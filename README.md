@@ -223,7 +223,7 @@ Tailscale SSH. It listens only on the host's Tailscale address, normally TCP
 `47821`, and checks callers with `tailscale whois`. Tailscale provides the encrypted
 network connection; there is no Tote cloud account, API key or pairing code.
 
-Desktop and Android viewers can open the selected computer’s live web panes, including DSH and custom providers. The page, login and OAuth popups stay in Tote on that computer. Keep a desktop Tote window open there to serve web panes. The background host continues to serve files and terminals when the window closes.
+Desktop and Android viewers can open web panes on the selected computer. DSH opens a separate browser view sized to each viewer's pane. The DSH backend and login are shared, and each view has its own scrolling and browser storage. Other providers share their live page and OAuth popups. Keep a desktop Tote window open on the serving computer. Its background host continues to serve files and terminals when the window closes.
 
 ### 3. Connect Android
 
